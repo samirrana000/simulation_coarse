@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CG Protein Simulator — C&alpha; Elastic Network</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header>
+    <h1>CG Protein Simulator</h1>
+    <p class="subtitle">C&alpha; + ligand coarse-grained model &middot; Langevin (BAOAB) dynamics &middot; fully client-side</p>
+  </header>
+
+  <div id="layout">
+    <!-- ======================= LEFT: CONTROL PANEL ======================= -->
+    <aside id="controls">
+
+      <details open class="panel">
+        <summary>1&nbsp;&mdash;&nbsp;Structure</summary>
+        <div class="panel-body">
+          <label class="field">
+            <span class="lbl">PDB ID</span>
+            <input id="pdbId" type="text" maxlength="4" placeholder="e.g. 1UBQ" />
+            <button id="fetchBtn" class="btn">Fetch (RCSB / PDBe)</button>
+          </label>
+          <div class="or">— or —</div>
+          <label class="field">
+            <span class="lbl">PDB file</span>
+            <input id="fileInput" type="file" accept=".pdb,.ent,.txt" />
+          </label>
+          <div class="examples">
+            Examples:
+            <a href="#" data-ex="1UBQ">1UBQ</a> (apo monomer),
+            <a href="#" data-ex="1CRN">1CRN</a>,
+            <a href="#" data-ex="4HHB">4HHB</a> (multi-subunit),
+            <a href="#" data-ex="1AKE">1AKE</a> (hinge motion)
+          </div>
+          <label class="chk"><input id="includeLig" type="checkbox" /> Include ligands (HETATM + CONECT)</label>
+          <label class="field">
+            <span class="lbl">Ligand MOL2 file (optional — overrides HETATM)</span>
+            <input id="mol2File" type="file" accept=".mol2" />
+          </label>
+          <div id="mol2Info" class="summary" style="display:none;margin:2px 0 6px;padding:2px 8px;border:1px solid #2a3040;border-radius:4px;"></div>
+          <div id="structSummary" class="summary"></div>
+        </div>
+      </details>
+
+      <details open class="panel">
+        <summary>2&nbsp;&mdash;&nbsp;Selection (C&alpha; beads)</summary>
+        <div class="panel-body">
+          <label class="field">
+            <span class="lbl">Chains (comma separated, blank = all)</span>
+            <input id="chainsInput" type="text" placeholder="e.g. A,B" />
+          </label>
+          <div class="row">
+            <label class="field half">
+              <span class="lbl">Residue from</span>
+              <input id="resFrom" type="number" placeholder="min" />
+            </label>
+            <label class="field half">
+              <span class="lbl">Residue to</span>
+              <input id="resTo" type="number" placeholder="max" />
+            </label>
+          </div>
+          <button id="buildBtn" class="btn primary">Build CG System</button>
+          <div id="selSummary" class="summary"></div>
+        </div>
+      </details>
+
+      <details open class="panel">
+        <summary>3&nbsp;&mdash;&nbsp;Force Field &amp; Integrator</summary>
+        <div class="panel-body">
+          <label class="field">
+            <span class="lbl">ENM cutoff R<sub>c</sub>: <b id="v_rc">10.0</b> &Aring;</span>
+            <input id="rc" type="range" min="7" max="15" step="0.5" value="10" />
+          </label>
+          <label class="field">
+            <span class="lbl">Spring strength &gamma;: <b id="v_gamma">2.0</b> kcal/mol/&Aring;&sup2;</span>
+            <input id="gamma" type="range" min="0.1" max="5" step="0.1" value="2" />
+          </label>
+          <label class="field">
+            <span class="lbl">Temperature T: <b id="v_temp">300</b> K</span>
+            <input id="temp" type="range" min="50" max="600" step="5" value="300" />
+          </label>
+          <label class="field">
+            <span class="lbl">Friction &zeta;: <b id="v_fric">8.0</b> ps<sup>&minus;1</sup></span>
+            <input id="fric" type="range" min="0.5" max="50" step="0.5" value="8" />
+          </label>
+          <label class="field">
+            <span class="lbl">Bead mass: <b id="v_mass">110</b> Da</span>
+            <input id="mass" type="range" min="50" max="200" step="5" value="110" />
+          </label>
+          <label class="field">
+            <span class="lbl">Motion gain (view): <b id="v_motionGain">1.3</b></span>
+            <input id="motionGain" type="range" min="1" max="5" step="0.1" value="1.3" />
+          </label>
+          <label class="chk"><input id="bindPot" type="checkbox" checked /> Binding potentials (LJ, electrostatics, H-bond, desolvation)</label>
+          <label class="chk"><input id="holoSprings" type="checkbox" checked /> Holo contacts (native pose springs)</label>
+          <label class="chk"><input id="funnelToggle" type="checkbox" /> Funnel bias (well-tempered metadynamics → PMF)</label>
+          <div class="row"><button id="pmfReset" class="btn">Reset PMF</button></div>
+
+          <details class="panel">
+            <summary style="font-size:12.5px; padding:6px 10px;">ML tier</summary>
+            <div style="padding:8px 10px;">
+              <label class="chk"><input id="nnContacts" type="checkbox" /> NN contact map (ESM prior)</label>
+              <label class="chk"><input id="poseScore" type="checkbox" /> NN pose score (MLP)</label>
+              <label class="field">
+                <span class="lbl">contacts.json</span>
+                <input id="contactsFile" type="file" accept=".json" />
+              </label>
+              <label class="field">
+                <span class="lbl">scorer weights (JSON)</span>
+                <input id="scorerFile" type="file" accept=".json" />
+              </label>
+              <div id="nnInfo" class="summary">No contact map loaded</div>
+            </div>
+          </details>
+
+          <div class="note">
+            Timestep &Delta;t auto-set from fastest bond &amp; &zeta;. Implicit solvent: non-native
+            C&alpha;&hellip;C&alpha; excluded-volume (12-6) repulsion. Units: &Aring;, ps, kcal/mol, Da.
+            Protein&ndash;ligand binding adds a cross 12-6 LJ, distance-screened electrostatics, H-bonds and an EEF1-style desolvation (burial) term; holo contacts encode the observed bound pose.
+          </div>
+        </div>
+      </details>
+
+      <details open class="panel">
+        <summary>4&nbsp;&mdash;&nbsp;Recording</summary>
+        <div class="panel-body">
+          <div class="row">
+            <label class="field half">
+              <span class="lbl">Frame stride (ps)</span>
+              <input id="stridePs" type="number" min="0.1" step="0.5" value="2" />
+            </label>
+            <label class="field half">
+              <span class="lbl">Max frames (0 = &infin;)</span>
+              <input id="maxFrames" type="number" min="0" step="10" value="500" />
+            </label>
+          </div>
+          <label>Format:
+            <select id="exportFmt">
+              <option value="xyz">XYZ (multi-frame)</option>
+              <option value="pdb">PDB (multi-MODEL)</option>
+            </select>
+          </label>
+          <div class="row btns">
+            <button id="recBtn" class="btn warn">&#9679; Rec</button>
+            <button id="recStopBtn" class="btn">Stop</button>
+            <button id="dlBtn" class="btn" disabled>Download</button>
+          </div>
+          <div id="recStatus" class="summary">0 frames &middot; 0.00 ns recorded</div>
+        </div>
+      </details>
+
+      <details open class="panel">
+        <summary>5&nbsp;&mdash;&nbsp;Binding PMF</summary>
+        <div class="panel-body">
+          <canvas id="pmfPlot" style="width:100%;height:150px;background:#0a0c10;border:1px solid #2a3040;border-radius:6px;"></canvas>
+          <div class="note">PMF reconstructed from well-tempered metadynamics on the ligand&harr;pocket COM distance when the funnel is on. Free energy &#916;G &asymp; &minus;V<sub>bias</sub> difference (bound vs far); shown in the HUD.</div>
+        </div>
+      </details>
+
+      <details open class="panel">
+        <summary>6&nbsp;&mdash;&nbsp;Analysis</summary>
+        <div class="panel-body">
+          <div class="row btns">
+            <button id="anaBtn" type="button" class="btn primary">Analyze recorded trajectory</button>
+            <button id="anaPmfBtn" type="button" class="btn">Export PMF (CSV)</button>
+          </div>
+          <pre id="analysisOut" class="summary" style="white-space:pre-wrap;margin-top:8px;">No analysis yet &mdash; record a trajectory (panel 4), then click Analyze.</pre>
+          <div class="note">
+            B-factor correlation (simulated &lt;&gt; experimental), essential dynamics +
+            RMSIP vs the elastic-network modes, ligand occupancy / bound fraction,
+            contact lifetimes and the metadynamics &#916;G. RMSIP may take a few seconds.
+          </div>
+        </div>
+      </details>
+
+    </aside>
+
+    <!-- ======================= RIGHT: VIEWER ======================= -->
+    <section id="viewerCol">
+      <div id="viewerWrap">
+        <canvas id="canvas"></canvas>
+        <div id="toolbar">
+          <button id="playBtn" class="btn primary" disabled>&#9654; Run</button>
+          <button id="resetBtn" class="btn" disabled>&#8634; Reset</button>
+          <label class="chk"><input id="showContacts" type="checkbox" checked /> Contacts</label>
+          <label class="chk"><input id="spheres" type="checkbox" checked /> Spheres</label>
+        </div>
+        <div id="hud">Load a structure to begin &mdash; drag to rotate, wheel to zoom</div>
+      </div>
+      <details class="panel" id="equations">
+        <summary>Energy model</summary>
+        <div class="panel-body eq">
+          <p><b>Total potential</b>: U = &Sigma;<sub>peptide</sub> &frac12;k<sub>b</sub>(r&minus;r<sub>0</sub>)<sup>2</sup>
+             + &Sigma;<sub>angles</sub> &frac12;k<sub>&theta;</sub>(&theta;&minus;&theta;<sub>0</sub>)<sup>2</sup>
+             + &Sigma;<sub>contacts</sub> &frac12;&gamma;H(R<sub>c</sub>&minus;r<sub>0</sub>)(r&minus;r<sub>0</sub>)<sup>2</sup>
+             + &Sigma;<sub>non-native</sub> &epsilon;[(r<sub>e</sub>/r)<sup>12</sup>&minus;2(r<sub>e</sub>/r)<sup>6</sup>+1], r&lt;r<sub>e</sub></p>
+          <p><b>Langevin equation</b>: m&middot;r&#776; = &minus;&nabla;U &minus; m&zeta;r&#775; + &radic;(2m&zeta;k<sub>B</sub>T)&middot;&xi;(t),
+             integrated with the BAOAB scheme (&xi; = unit Gaussian white noise).</p>
+          <p><b>Protein&ndash;ligand binding</b>: U = &Sigma; 4&epsilon;[(&sigma;/r)&sup1;&sup2;&minus;(&sigma;/r)&sup6;] (cross LJ, &epsilon;/&sigma; from residue&times;element tables)
+             + &Sigma; 332&middot;q&sub1;q&sub2;/(&epsilon;<sub>r</sub>&middot;r), &epsilon;<sub>r</sub> = 4+76&middot;tanh(r/8) (screened electrostatics)
+             + &Sigma; &minus;&epsilon;<sub>HB</sub>&middot;exp(&minus;(r&minus;3.2)&sup2;/2&middot;0.6&sup2;) (H-bonds, polar donor/acceptor)
+             + &Sigma; &Delta;G<sub>t</sub>&middot;(1&minus;e<sup>&minus;n/3</sup>) (EEF1-lite desolvation, n = protein density)
+             + &Sigma; &frac12;&gamma;<sub>lig</sub>(r&minus;r<sub>0</sub>)&sup2; (holo pose springs, r<sub>0</sub> &le; 6 &Aring;)</p>
+        </div>
+      </details>
+    </section>
+  </div>
+
+  <script type="module" src="src/main.js?v=8"></script>
+  <script>
+    // ES modules are blocked on file:// — surface a clear error instead of a dead UI.
+    if (location.protocol === "file:") {
+      document.getElementById("hud").textContent =
+        "⚠ ES modules cannot load from file:// —  serve this folder over HTTP, e.g.  " +
+        "python3 -m http.server 8000  then open http://localhost:8000";
+      document.getElementById("hud").style.color = "#ff8080";
+    }
+  </script>
+</body>
+</html>
