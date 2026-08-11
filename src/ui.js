@@ -100,10 +100,14 @@ export function updateSelSummary() {
       if (ff.nHolo > 0) ligSummary += ` · ${ff.nHolo} holo contacts`;
     }
     const nMetals = (state.parsedHeavy?.atoms ?? []).filter((a) => a.isMetal).length;
+    let nnSummary = "";
+    if (ff.springScaleActive) {
+      nnSummary = ` · NN map active (${state.contactsFn || "contacts.json"})`;
+    }
     ui.selSummary.textContent =
       `${ff.n} heavy atoms · ${ff.nProt} protein · ${nMetals} metal ion(s)` +
       ` · ${ff.bonds.length / 3} bonds · ${ff.angles.length / 4} angles` +
-      ` · ${ff.coord.length / 3} metal coord.${ligSummary}`;
+      ` · ${ff.coord.length / 3} metal coord.${ligSummary}${nnSummary}`;
     return;
   }
   const nat = state.ff.springs.length / 3;

@@ -46,6 +46,7 @@ import {
   KB_KCAL, KCONV,
 } from "./ff-params.js?v=10";
 import { improperAngle } from "./ligand.js?v=10";
+import { springForces } from "./ff-harmonic.js?v=10";
 
 // Electrostatics: screened Coulomb prefactor (kcal/mol/Å per e²) and the
 // Debye screening length (Å). The product q_i·q_j·K_ELEC / (ε(r)·r) with a
@@ -397,6 +398,30 @@ export class HeavyForceField {
     this.n = atoms.length;
     this.nProt = atoms.filter((a) => a.isProtein).length;
     this.nLigAtoms = this.n - this.nProt;
+    this.gamma = par.gamma ?? 1.0;   // ENM stiffness — used by the ML contact prior
+
+    // Residue → Cα atom map (protein residues in atom order, 0-based) — the
+    // target of the ML contact prior springs (CG's ENM analog). Contacts from
+    // contacts.json index residues over the sequence, exactly like the Cα
+    // beads in CG mode. A residue missing its CA (or with no protein atoms at
+    // all) yields undefined → such contact pairs are skipped at apply time.
+    this._resCa = [];
+    const caIdx = new Map();
+    for (let i = 0; i < this.n; i++) {
+      const a = atoms[i];
+      if (a.isProtein && a.atomName === "CA" && !caIdx.has(a.chain + "|" + a.resSeq)) {
+        caIdx.set(a.chain + "|" + a.resSeq, i);
+      }
+    }
+    const seenRes = new Set();
+    for (let i = 0; i < this.n; i++) {
+      const a = atoms[i];
+      if (!a.isProtein) continue;
+      const key = a.chain + "|" + a.resSeq;
+      if (seenRes.has(key)) continue;
+      seenRes.add(key);
+      this._resCa.push(caIdx.get(key));
+    }
 
     // Element → LJ/charge params (protein atoms reuse LIG_ELEMENT since the
     // elements are the same C/N/O/S).
@@ -469,6 +494,8 @@ export class HeavyForceField {
     this.ligandAtoms = null;
     this.springs = new Float64Array(0);
     this.springK = new Float64Array(0);
+    this.springScaleActive = false;
+    this.springU = 0;
     this.nativeContacts = new Float64Array(0);
     this.kBond = 200.0;
     this.kAngle = 40.0;
@@ -495,9 +522,46 @@ export class HeavyForceField {
   /** Attach an optional Funnel instance (interface symmetry with ForceField). */
   setFunnel(fn) { this.funnel = fn; }
 
-  /** CG-only spring-scaling API — no-op in heavy mode (kept for symmetry). */
-  setSpringScale() {}
-  clearSpringScale() {}
+  /**
+   * Apply an ML contact prior (contacts.json): build residue-Cα harmonic
+   * restraint springs at their NATIVE distance for every predicted residue
+   * contact — the ENM analog for a mode that has no base elastic network.
+   * Same semantics as ForceField.setSpringScale: k = gamma·(1 + α·p) for a
+   * contact pair with probability p. Re-applied on every rebuild via
+   * applyMLToFF(), so the restraints survive gamma/rc changes.
+   * @param {Array} contacts  [[i, j, p], ...] residue pairs (0-indexed, in
+   *        protein-residue order — same convention as the Cα beads in CG)
+   *        with p ∈ [0,1]
+   * @param {number} alpha    global scale (k_pair = gamma·(1 + alpha·p))
+   */
+  setSpringScale(contacts, alpha = 1) {
+    const S = [], K = [];
+    for (const [i, j, p] of contacts) {
+      if (p <= 0) continue;
+      const a = this._resCa[i], b = this._resCa[j];
+      if (a === undefined || b === undefined || a === b) continue;
+      const i3 = 3 * a, j3 = 3 * b;
+      const r0 = Math.hypot(
+        this.ref[j3] - this.ref[i3],
+        this.ref[j3 + 1] - this.ref[i3 + 1],
+        this.ref[j3 + 2] - this.ref[i3 + 2],
+      );
+      S.push(a, b, r0);
+      K.push(this.gamma * (1 + alpha * p));
+    }
+    this.springs = new Float64Array(S);
+    this.springK = new Float64Array(K);
+    this.springScaleActive = true;
+  }
+
+  /** Restore no-restraint mode (undo an ML contact-prior scaling). */
+  clearSpringScale() {
+    this.springs = new Float64Array(0);
+    this.springK = new Float64Array(0);
+    this.springScaleActive = false;
+  }
+
+  /** Holo-pose springs are a CG concept — no-op in heavy mode (kept for symmetry). */
   rebuildHoloSprings() {}
 
   /** Total potential energy (kcal/mol) given positions; fills this.forces. */
@@ -526,7 +590,12 @@ export class HeavyForceField {
     this.repU = nb.lj;
     U += nb.lj + nb.elec;
 
-    // 5. Funnel bias (optional)
+    // 5. ML contact prior springs (residue-Cα restraints; ENM analog — only
+    // present when a contacts.json map has been applied)
+    this.springU = this.springs.length ? springForces(this, pos, f) : 0;
+    U += this.springU;
+
+    // 6. Funnel bias (optional)
     if (this.funnel && this.funnelOn) U += this.funnel.addForces(pos, f);
 
     // NaN guard

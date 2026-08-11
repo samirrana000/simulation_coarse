@@ -454,9 +454,13 @@ export function analyzeTrajectory({ frames, times, ref, nProt, n, beads, ff, fun
       trace += s / nF;
     }
     const totVar = pcModes.reduce((a, m) => a + m.eig, 0) / Math.max(1e-30, trace);
-    // softest ENM modes (deflated rigid-body subspace)
-    const enmModes = softEnmModes(ff, ref, nProt, k, dim);
-    const rip = rmsip(pcModes, enmModes, k);
+    // softest ENM modes (deflated rigid-body subspace) — the elastic network
+    // exists only in Cα mode, so skip the comparison when there are no springs
+    let rip = null;
+    if (ff.springs.length > 0) {
+      const enmModes = softEnmModes(ff, ref, nProt, k, dim);
+      rip = rmsip(pcModes, enmModes, k);
+    }
     const var1 = pcModes.length ? pcModes[0].eig / Math.max(1e-30, trace) : 0;
     rmsipRes = {
       k,
@@ -466,7 +470,11 @@ export function analyzeTrajectory({ frames, times, ref, nProt, n, beads, ff, fun
       pcaEigs: pcModes.slice(0, 5).map((m) => m.eig),
     };
     lines.push(`[2] Essential dynamics (k=${k}, protein Cα): mode 1 variance = ${(var1 * 100).toFixed(1)}% · top-${k} = ${(Math.min(1, totVar) * 100).toFixed(1)}%`);
-    lines.push(`    RMSIP(PCA, ENM soft modes) = ${rip.toFixed(3)}  (1 = fully captured, 0 = orthogonal)`);
+    if (rip !== null) {
+      lines.push(`    RMSIP(PCA, ENM soft modes) = ${rip.toFixed(3)}  (1 = fully captured, 0 = orthogonal)`);
+    } else {
+      lines.push("    RMSIP vs ENM skipped (elastic network exists only in Cα mode)");
+    }
   } else {
     lines.push(dim > 720 ? `[2] RMSIP skipped: ${nProt} residues (${dim} dof) exceeds the 720-dim cap` : "[2] RMSIP skipped: need ≥ 3 frames");
   }

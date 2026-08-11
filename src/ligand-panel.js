@@ -70,10 +70,6 @@ function placeAt(clientX, clientY) {
     ui.ligPlaceInfo.textContent = "⚠ Load a structure first (panel 1), then place.";
     return;
   }
-  if (state.heavyMode) {
-    ui.ligPlaceInfo.textContent = "⚠ Placement is coarse-grain only — switch back to Cα mode (panel 2).";
-    return;
-  }
   const mol = parseLibraryLigand(entry);
 
   // ADOPT the library ligand as the system's hypothesis ligand and rebuild so
@@ -87,7 +83,6 @@ function placeAt(clientX, clientY) {
   }
 
   const nProt = state.ff.nProt;
-  const nLig = state.ff.nLigAtoms;
 
   // World-space target from the pick (depth snaps to the bead under the
   // cursor → the click lands on the protein surface, not a random plane).
@@ -97,10 +92,18 @@ function placeAt(clientX, clientY) {
     return;
   }
 
-  // Protein bead positions + per-bead σ for the clash relaxation.
+  // Protein atom positions + per-atom σ for the clash relaxation (same
+  // arithmetic-mean mixing the live FF's LJ uses). CG: per-bead σ from
+  // _protSigma; heavy: element σ from the per-atom table _elem.
+  const protSigma = state.ff._protSigma
+    ?? (() => {
+        const s = new Float64Array(nProt);
+        for (let i = 0; i < nProt; i++) s[i] = state.ff._elem[i].sigma;
+        return s;
+      })();
   const protein = {
     pos: state.integ.pos.subarray(0, 3 * nProt),
-    sigma: state.ff._protSigma,
+    sigma: protSigma,
   };
 
   // Clash-relax a rigid pose of the picked molecule centred on the target.
@@ -111,16 +114,20 @@ function placeAt(clientX, clientY) {
     return;
   }
 
-  // Write the placed pose into the live position buffer (ligand atoms only).
-  // Molecular concatenation order in mol2 = placement order in the FF, so
-  // atom a → global index nProt + a (single molecule, base 0).
-  for (let a = 0; a < nLig; a++) {
-    state.integ.pos[3 * (nProt + a)] = placed.pos[3 * a];
-    state.integ.pos[3 * (nProt + a) + 1] = placed.pos[3 * a + 1];
-    state.integ.pos[3 * (nProt + a) + 2] = placed.pos[3 * a + 2];
-    state.ff.ref[3 * (nProt + a)] = placed.pos[3 * a];
-    state.ff.ref[3 * (nProt + a) + 1] = placed.pos[3 * a + 1];
-    state.ff.ref[3 * (nProt + a) + 2] = placed.pos[3 * a + 2];
+  // Write the placed pose into the live position buffer (the placed ligand's
+  // atoms only). Molecular concatenation order matches FF order: the placed
+  // library ligand is the LAST appended molecule in both modes, so its atoms
+  // are n − nLib..n−1 (CG: exactly nProt..nProt+nLig−1; heavy: appended after
+  // the PDB HETATM cofactors/metals).
+  const nLib = mol.atoms.length;
+  const ligOff = state.ff.n - nLib;
+  for (let a = 0; a < nLib; a++) {
+    state.integ.pos[3 * (ligOff + a)] = placed.pos[3 * a];
+    state.integ.pos[3 * (ligOff + a) + 1] = placed.pos[3 * a + 1];
+    state.integ.pos[3 * (ligOff + a) + 2] = placed.pos[3 * a + 2];
+    state.ff.ref[3 * (ligOff + a)] = placed.pos[3 * a];
+    state.ff.ref[3 * (ligOff + a) + 1] = placed.pos[3 * a + 1];
+    state.ff.ref[3 * (ligOff + a) + 2] = placed.pos[3 * a + 2];
   }
 
   // A placed library ligand is a hypothesis → holo pose springs are OFF so it
