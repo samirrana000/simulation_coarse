@@ -74,48 +74,20 @@
  */
 
 import { buildLigandInternalFF, improperAngle } from "./ligand.js?v=8";
+import {
+  harmonicPairs, springForces, angleForces, ligandBondForces, improperForces,
+} from "./ff-harmonic.js?v=8";
+import { repulsion } from "./ff-repulsion.js?v=8";
+import { binding } from "./ff-binding.js?v=8";
+import {
+  KB_KCAL, KCONV,
+  RES_CLASS, RES_CLASS_OF, LIG_ELEMENT, LIG_ELEMENT_DEFAULT,
+} from "./ff-params.js?v=8";
 
-export const KB_KCAL = 0.0019872041; // Boltzmann constant, kcal mol^-1 K^-1
-
-/**
- * Unit-conversion constant between (kcal/mol, Å) and mechanical (Da, Å, ps)
- * units used by the integrator:
- *     1 kcal/mol            = 418.4 Da·Å²/ps²
- *     a[Å/ps²]              = KCONV · F[kcal/mol/Å] / m[Da]
- *     k_B in mech. units    = KB_KCAL · KCONV = 0.8314 Da·Å²/(ps²·K)
- * (derivation: 1 kcal/mol·Å = 6.9477e-11 N ≙ 418.4 Da·Å/ps² since 1 N =
- * 6.022e15 Da·Å/ps².)
- */
-export const KCONV = 418.4;
-
-// Residue class → protein-bead LJ parameters (σ Å, ε kcal/mol, charge e)
-const RES_CLASS = {
-  H:  { sigma: 4.0, eps: 0.15, q: 0 },  // hydrophobic
-  A:  { sigma: 4.1, eps: 0.18, q: 0 },  // aromatic
-  P:  { sigma: 3.8, eps: 0.12, q: 0 },  // polar (H-bond capable)
-  Cp: { sigma: 3.6, eps: 0.10, q: 0 },  // positively charged (H-bond capable)
-  Cn: { sigma: 3.6, eps: 0.10, q: 0 },  // negatively charged (H-bond capable)
-};
-const RES_CLASS_OF = {
-  ALA: "H", VAL: "H", LEU: "H", ILE: "H", PRO: "H", MET: "H", GLY: "H", CYS: "H",
-  PHE: "A", TRP: "A", TYR: "A", HIS: "A",
-  SER: "P", THR: "P", ASN: "P", GLN: "P",
-  LYS: "Cp", ARG: "Cp",
-  ASP: "Cn", GLU: "Cn",
-};
-// Ligand element → LJ params (σ Å, ε kcal/mol), partial charge (e), H-bond flag, ΔG desolvation (kcal/mol)
-const LIG_ELEMENT = {
-  C:  { sigma: 3.4, eps: 0.12, q: 0.0,  hb: false, dG: -0.55 },
-  N:  { sigma: 3.2, eps: 0.15, q: -0.30, hb: true,  dG: -0.35 },
-  O:  { sigma: 3.0, eps: 0.16, q: -0.50, hb: true,  dG: -0.30 },
-  S:  { sigma: 3.6, eps: 0.18, q: 0.0,  hb: false, dG: -0.45 },
-  F:  { sigma: 2.9, eps: 0.10, q: -0.20, hb: true,  dG: -0.25 },
-  CL: { sigma: 3.5, eps: 0.18, q: 0.0,  hb: false, dG: -0.40 },
-  BR: { sigma: 3.6, eps: 0.20, q: 0.0,  hb: false, dG: -0.45 },
-  I:  { sigma: 3.8, eps: 0.22, q: 0.0,  hb: false, dG: -0.50 },
-  P:  { sigma: 3.5, eps: 0.14, q: 0.40, hb: false, dG: -0.35 },
-};
-const LIG_ELEMENT_DEFAULT = { sigma: 3.4, eps: 0.12, q: 0.0, hb: false, dG: -0.30 };
+// constants are re-exported so integrator.js / funnel.js / the test suite can
+// keep importing them from "./forcefield.js" — their source of truth is now
+// ff-params.js (item 5 modularization; values unchanged).
+export { KB_KCAL, KCONV };
 
 export class ForceField {
   /**
@@ -324,8 +296,7 @@ export class ForceField {
     // torsion term they are legitimately free. Only ring 1-4 pairs were
     // already covered by the improper exclusions above; this walk covers every
     // 1-4 pair in any molecule (incl. poly-atomic buffers like HEPES).
-    if (this.ligandBonds.length) {
-      const adjLig = new Map();
+    if (this.ligandBonds.length) {      const adjLig = new Map();
       for (let a = 0; a < this.ligandBonds.length; a += 3) {
         const i = this.ligandBonds[a], j = this.ligandBonds[a + 1];
         if (!adjLig.has(i)) adjLig.set(i, []);
@@ -347,18 +318,58 @@ export class ForceField {
       }
     }
 
+    // Per-particle repulsive σ: protein beads use the Cα size; ligand atoms use
+    // their element's LJ σ (binding tables) so intra-ligand excluded volume is
+    // not over-estimated — a folded 15-atom co-solute must not sit at 10 kcal.
+    // Allocated here (before the native-contact scan, which reads the table).
+    this._repSigma = new Float64Array(this.n);
+    for (let i = 0; i < this.nProt; i++) this._repSigma[i] = this.sigmaRep;
+    for (let a = 0; a < this.nLigAtoms; a++) this._repSigma[this.nProt + a] = this._ligSigma[a];
+
+    // ---- Gö-like native contacts (ligand 1-5+ pairs) -----------------------
+    // Folded ligands (sugars, inhibitors, buffers) place non-bonded 1-5+
+    // pairs at 2.9–4.0 Å — inside their own LJ repulsion range r_e. Without
+    // treatment the grid sees a huge native strain (PDBBind probes: U(native)
+    // up to ~745 kcal/mol, max|F| ~140 kcal/mol/Å) that launches the light
+    // united atoms as projectiles and blasts the protein. Standard CG fix:
+    // every non-excluded pair whose NATIVE distance lies inside its own
+    // repulsion range is excluded from the grid and gets a soft Gö-like
+    // harmonic contact spring (k = 1.0 kcal/mol/Å², [i,j,r0] packing like
+    // holoSprings) that preserves the native distance while still resisting
+    // compression. Applied to ANY particle type (L–L, P–P, P–L) — a genuine
+    // native clash is a modeling problem regardless of chemistry.
+    this.nativeContacts = new Float64Array(0);
+    {
+      const nx = [];
+      for (let i = 0; i < this.n; i++) {
+        for (let j = i + 1; j < this.n; j++) {
+          // Intra-molecule scan only: cross protein–ligand pairs never reach
+          // the grid repulsion (they are either holo-spring pinned — excluded
+          // from binding AND grid — or evaluated by the binding pass with
+          // attractive wells), so adding a Gö-like spring there would double-
+          // count the interaction.
+          if ((i < this.nProt) !== (j < this.nProt)) continue;
+          if (this._excluded.has(this._pairKey(i, j))) continue;
+          const r0 = this._dist(this.ref, i, j);
+          const s = 0.5 * (this._repSigma[i] + this._repSigma[j]);
+          const re = Math.cbrt(2) * s;
+          if (r0 < re) nx.push(i, j, r0);
+        }
+      }
+      if (nx.length) {
+        this.nativeContacts = new Float64Array(nx);
+        for (let k = 0; k < nx.length; k += 3) {
+          this._excluded.add(this._pairKey(nx[k], nx[k + 1]));
+        }
+      }
+    }
+
     // Scratch / grid buffers (spatial hash with numeric keys — GC-free)
     this.forces = new Float64Array(this.n * 3);
     this.rcRep = Math.cbrt(2) * this.sigmaRep; // r_e = 2^(1/6) σ ≈ 5.6 Å
     this._cell = this.rcRep;                    // cell size ≥ repulsive range
     this._grid = new Map();                     // hashCellKey -> bead index list
     this._gridB = new Map();                    // protein-only grid for binding pass
-    // Per-particle repulsive σ: protein beads use the Cα size; ligand atoms use
-    // their element's LJ σ (binding tables) so intra-ligand excluded volume is
-    // not over-estimated — a folded 15-atom co-solute must not sit at 10 kcal.
-    this._repSigma = new Float64Array(this.n);
-    for (let i = 0; i < this.nProt; i++) this._repSigma[i] = this.sigmaRep;
-    for (let a = 0; a < this.nLigAtoms; a++) this._repSigma[this.nProt + a] = this._ligSigma[a];
     this.energy = 0; // last computed potential energy (kcal/mol)
     this.bindingU = 0;   // protein–ligand nonbonded energy (last compute)
     this.desolvU = 0;    // EEF1-lite burial/desolvation energy (last compute)
@@ -408,6 +419,26 @@ export class ForceField {
     U += this._harmonicPairs(pos, f, this.bonds, 3, this.kBond);
     U += this._springForces(pos, f);
     if (this.holoSprings.length) U += this._harmonicPairs(pos, f, this.holoSprings, 3, this.holoGamma);
+    if (this.nativeContacts.length) U += this._harmonicPairs(pos, f, this.nativeContacts, 3, 1.0);
+    // One-sided compression floor on holo-pinned pairs — keeps the funnel or
+    // desolvation from ever squeezing the ligand through a pocket wall
+    // (holo pairs are excluded from both grid repulsion and the binding pass,
+    // so without this term nothing resists r < r_min).
+    if (this.holoSprings.length) {
+      const HS = this.holoSprings, RMIN = 2.6, KF = 8.0;
+      for (let a = 0; a < HS.length; a += 3) {
+        const i = 3 * HS[a], j = 3 * HS[a + 1];
+        const dx = pos[j] - pos[i], dy = pos[j + 1] - pos[i + 1], dz = pos[j + 2] - pos[i + 2];
+        const r = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-12;
+        if (r >= RMIN) continue;
+        const dr = r - RMIN;                      // < 0
+        U += 0.5 * KF * dr * dr;
+        const s = (KF * dr) / r;                  // dU/dr ÷ r (dr<0 ⇒ repulsive)
+        const fx = s * dx, fy = s * dy, fz = s * dz;
+        f[i] += fx; f[i + 1] += fy; f[i + 2] += fz;
+        f[j] -= fx; f[j + 1] -= fy; f[j + 2] -= fz;
+      }
+    }
 
     // --- 2. Angle bending ---------------------------------------------------
     U += this._angleForces(pos, f);
@@ -419,11 +450,34 @@ export class ForceField {
     U += this._repulsion(pos, f);
 
     // --- 5. Protein–ligand binding (cross LJ, electrostatics, H-bonds) -------
+    // (physical documentation lives on the _binding wrapper below; the
+    //  kernel itself is in ff-binding.js)
     U += this._binding(pos, f);
 
     // --- 5c. Optional funnel + well-tempered metadynamics bias (off by default)
     if (this.funnel && this.funnelOn) U += this.funnel.addForces(pos, f);
 
+    // --- 6. NaN/∞ guard ------------------------------------------------------
+    // A non-finite coordinate or force kills every downstream pair test and
+    // (worse) makes the spatial-hash Map grow unboundedly via garbage cell
+    // keys. Detect here (zero cost in the normal case: a single isFinite on
+    // the accumulated energy plus a fused isfinite-OR loop on the force
+    // buffer), sanitize the force buffer, and leave this.energy = NaN so the
+    // app can auto-pause on the next frame.
+    if (!Number.isFinite(U)) {
+      let bad = 0;
+      for (let i = 0; i < f.length; i++) {
+        if (!Number.isFinite(f[i])) { f[i] = 0; bad++; }
+      }
+      this.nanStrikes = (this.nanStrikes ?? 0) + 1;
+      if (bad === 0) {
+        // energy NaN but forces finite — scan positions for the culprit
+        for (let i = 0; i < pos.length && bad < 4; i++) {
+          if (!Number.isFinite(pos[i])) bad++;
+        }
+      }
+      U = NaN;
+    }
     this.energy = U;
     return U;
   }
@@ -431,46 +485,11 @@ export class ForceField {
   /** Attach an optional Funnel instance (constructed by main.js, not imported here). */
   setFunnel(fn) { this.funnel = fn; }
 
-  /** Σ ½ k (r−r0)² over a flat pair list; returns energy, accumulates forces. */
-  _harmonicPairs(pos, f, list, stride, k) {
-    let U = 0;
-    for (let a = 0; a < list.length; a += stride) {
-      const i = 3 * list[a], j = 3 * list[a + 1], r0 = list[a + 2];
-      const dx = pos[j] - pos[i], dy = pos[j + 1] - pos[i + 1], dz = pos[j + 2] - pos[i + 2];
-      const r = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-12;
-      const dr = r - r0;
-      U += 0.5 * k * dr * dr;
-      // Force on j: −∂U/∂r_j = −k·dr·(r̂);  on i the opposite
-      const s = (k * dr) / r;
-      const fx = s * dx, fy = s * dy, fz = s * dz;
-      f[i] += fx; f[i + 1] += fy; f[i + 2] += fz;
-      f[j] -= fx; f[j + 1] -= fy; f[j + 2] -= fz;
-    }
-    return U;
-  }
+  /** Σ ½ k (r−r0)² over a flat pair list; kernel lives in ff-harmonic.js. */
+  _harmonicPairs(pos, f, list, stride, k) { return harmonicPairs(pos, f, list, stride, k); }
 
-  /**
-   * Σ ½ k_s (r−r0)² for the ENM springs, with a per-spring k from this.springK.
-   * Lets an ML contact prior stiffen/weaken individual residue pairs without
-   * rebuilding the whole pair list (e.g. map a model's contact probability
-   * onto the ENM stiffness of that pair).
-   */
-  _springForces(pos, f) {
-    const S = this.springs, K = this.springK;
-    let U = 0;
-    for (let k = 0, s = 0; k < S.length; k += 3, s++) {
-      const i = 3 * S[k], j = 3 * S[k + 1], r0 = S[k + 2], kk = K[s];
-      const dx = pos[j] - pos[i], dy = pos[j + 1] - pos[i + 1], dz = pos[j + 2] - pos[i + 2];
-      const r = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-12;
-      const dr = r - r0;
-      U += 0.5 * kk * dr * dr;
-      const sc = (kk * dr) / r;
-      const fx = sc * dx, fy = sc * dy, fz = sc * dz;
-      f[i] += fx; f[i + 1] += fy; f[i + 2] += fz;
-      f[j] -= fx; f[j + 1] -= fy; f[j + 2] -= fz;
-    }
-    return U;
-  }
+  /** ENM spring forces with per-spring k — kernel in ff-harmonic.js. */
+  _springForces(pos, f) { return springForces(this, pos, f); }
 
   /**
    * Apply an ML contact prior to the ENM spring constants.
@@ -500,50 +519,8 @@ export class ForceField {
     this.springScaleActive = false;
   }
 
-  /**
-   * U_θ = ½ kθ (θ−θ0)²; forces via finite-chain-rule on cosθ.
-   * Shares one kernel between the protein backbone angles and the ligand
-   * angle set (the latter is stiffer: k = 40 kcal/mol/rad², see ligand.js).
-   */
-  _angleForces(pos, f, list = this.angles, k = this.kAngle) {
-    let U = 0;
-    const A = list;
-    for (let a = 0; a < A.length; a += 4) {
-      const i = 3 * A[a], j = 3 * A[a + 1], kk = 3 * A[a + 2], th0 = A[a + 3];
-      // vectors from j
-      const ax = pos[i] - pos[j], ay = pos[i + 1] - pos[j + 1], az = pos[i + 2] - pos[j + 2];
-      const bx = pos[kk] - pos[j], by = pos[kk + 1] - pos[j + 1], bz = pos[kk + 2] - pos[j + 2];
-      const la = Math.hypot(ax, ay, az) || 1e-12;
-      const lb = Math.hypot(bx, by, bz) || 1e-12;
-      let c = (ax * bx + ay * by + az * bz) / (la * lb);
-      c = Math.min(1, Math.max(-1, c));
-      const th = Math.acos(c);
-      const dth = th - th0;
-      U += 0.5 * k * dth * dth;
-
-      // dθ/dc = −1/sinθ; guard against linear geometry
-      const sinTh = Math.sqrt(Math.max(1e-12, 1 - c * c));
-      const pref = (k * dth) / sinTh; // −dU/dθ · dθ/dc → pref = kθ·Δθ / sinθ
-
-      // ∂c/∂r_i etc. (standard 3-body angle gradient; Allen & Tildesley App.)
-      const ga = 1 / la, gb = 1 / lb;
-      const axy = ax * ga, ayy = ay * ga, azy = az * ga; // unit a
-      const bxy = bx * gb, byy = by * gb, bzy = bz * gb; // unit b
-      // force on i:  pref * ∂c/∂r_i = pref * (b̂ − c·â)/la
-      let fix = pref * (bxy - c * axy) * ga;
-      let fiy = pref * (byy - c * ayy) * ga;
-      let fiz = pref * (bzy - c * azy) * ga;
-      // force on k:  pref * (â − c·b̂)/lb
-      let fkx = pref * (axy - c * bxy) * gb;
-      let fky = pref * (ayy - c * byy) * gb;
-      let fkz = pref * (azy - c * bzy) * gb;
-
-      f[i] += fix; f[i + 1] += fiy; f[i + 2] += fiz;
-      f[kk] += fkx; f[kk + 1] += fky; f[kk + 2] += fkz;
-      f[j] -= fix + fkx; f[j + 1] -= fiy + fky; f[j + 2] -= fiz + fkz; // Newton's 3rd law
-    }
-    return U;
-  }
+  /** U_θ = ½ kθ (θ−θ0)² — angle-bending kernel lives in ff-harmonic.js. */
+  _angleForces(pos, f, list = this.angles, k = this.kAngle) { return angleForces(this, pos, f, list, k); }
 
   /**
    * Ligand united-atom internal energy (bonds, angles, improper planarity).
@@ -558,65 +535,11 @@ export class ForceField {
     return U;
   }
 
-  /**
-   * Ligand bonds U = Σ ½ k (r−r0)². The list stores [i,j,r0] only — the force
-   * constant is recovered from r0: aromatic ring bonds are clamped into the
-   * resonance window r0 ≤ 1.44 Å ⇒ k = 200 kcal/mol/Å², all others (measured
-   * r0 ≈ 1.5 Å) ⇒ k = 300 (see constants in ligand.js). Same harmonic kernel
-   * as the protein bonds, but with per-bond k.
-   */
-  _ligandBondForces(pos, f) {
-    let U = 0;
-    const B = this.ligandBonds;
-    for (let a = 0; a < B.length; a += 3) {
-      const i = 3 * B[a], j = 3 * B[a + 1], r0 = B[a + 2];
-      const k = r0 <= 1.44 ? 200 : 300;
-      const dx = pos[j] - pos[i], dy = pos[j + 1] - pos[i + 1], dz = pos[j + 2] - pos[i + 2];
-      const r = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-12;
-      const dr = r - r0;
-      U += 0.5 * k * dr * dr;
-      // Force on j: −∂U/∂r_j = −k·dr·(r̂);  on i the opposite
-      const s = (k * dr) / r;
-      const fx = s * dx, fy = s * dy, fz = s * dz;
-      f[i] += fx; f[i + 1] += fy; f[i + 2] += fz;
-      f[j] -= fx; f[j + 1] -= fy; f[j + 2] -= fz;
-    }
-    return U;
-  }
+  /** Ligand bonds U = Σ ½ k (r−r0)² — kernel in ff-harmonic.js. */
+  _ligandBondForces(pos, f) { return ligandBondForces(this, pos, f); }
 
-  /**
-   * Improper (out-of-plane) term U = Σ ½ k (φ−φ0)² with k = 20 kcal/mol/rad²
-   * for [i, j, k, l, φ0] (central atom j, planar φ0 = 0). Forces are taken by
-   * central finite differences of φ (step h = 1e-5 Å) because φ is defined
-   * through an absolute atan2 in ligand.improperAngle, whose analytic sign is
-   * easy to get wrong; FD on the same function is self-consistent by
-   * construction (verified against total-U finite differences in the tests).
-   */
-  _improperForces(pos, f, list) {
-    const k = 20;
-    const h = 1e-5;
-    let U = 0;
-    for (let a = 0; a < list.length; a += 5) {
-      const i = list[a], j = list[a + 1], kk = list[a + 2], l = list[a + 3], phi0 = list[a + 4];
-      const phi = improperAngle(pos, i, j, kk, l);
-      U += 0.5 * k * (phi - phi0) * (phi - phi0);
-      // −dU/dx_m = −k·(φ−φ0)·dφ/dx_m ; pos is restored after each sweep
-      const pref = -k * (phi - phi0);
-      for (const m of [i, j, kk, l]) {
-        const c = 3 * m;
-        for (let ax = 0; ax < 3; ax++) {
-          const ci = c + ax, save = pos[ci];
-          pos[ci] = save + h;
-          const phiP = improperAngle(pos, i, j, kk, l);
-          pos[ci] = save - h;
-          const phiM = improperAngle(pos, i, j, kk, l);
-          pos[ci] = save;
-          f[ci] += pref * (phiP - phiM) / (2 * h);
-        }
-      }
-    }
-    return U;
-  }
+  /** Improper (out-of-plane) term — FD kernel lives in ff-harmonic.js. */
+  _improperForces(pos, f, list) { return improperForces(pos, f, list); }
 
   /**
    * Protein–ligand binding potential — pair pass over every protein bead
@@ -667,233 +590,20 @@ export class ForceField {
    *   Pass 2 — burial fraction/energy per ligand atom, then desolvation forces
    *            over the recorded pairs.
    */
-  _binding(pos, f) {
-    this.bindingU = 0;
-    this.desolvU = 0;
-    if (!this.bindOn || this.nLigAtoms === 0) return 0;
+  _binding(pos, f) { return binding(this, pos, f); }
 
-    const nProt = this.nProt;
-    const rc = this.bindRcut, rsw = 0.85 * rc;
-    const rc2 = rc * rc, invDelta = 1 / (rc - rsw);
-    const cell = rc;                  // cell = cutoff ⇒ 27-cell scan is complete
-    const grid = this._gridB;
-
-    // EEF1-lite constants: contact distance r0, Gaussian width σ, and the
-    // density→burial scale nScale (n_a ≈ nScale ≈ 3 ⇒ ~63% buried).
-    const R0 = 4.5, SIG = 1.8, NS = 3.0;
-    const inv2sig2 = 1 / (2 * SIG * SIG); // 1/(2σ²) for g(r)
-    const invSig2 = 1 / (SIG * SIG);      // 1/σ²   for dg/dr
-
-    // Per-atom occupancy density + burial-derivative scratch (GC-free)
-    const dens = this._dens, dBdn = this._dBdn;
-    dens.fill(0);
-
-    // Reused flat pair records for Pass 2 (a, j, r); capped at nProt·nLigAtoms.
-    let bpN = 0;
-    const bpA = this._bpA, bpJ = this._bpJ, bpR = this._bpR;
-
-    // rebuild the protein-only grid in place (GC-free, like _repulsion)
-    for (const arr of grid.values()) arr.length = 0;
-    for (let i = 0; i < nProt; i++) {
-      const key = this._cellKey(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2], cell);
-      let arr = grid.get(key);
-      if (!arr) grid.set(key, (arr = []));
-      arr.push(i);
-    }
-
-    // =============================================================
-    // PASS 1 — pair terms (LJ / electrostatics / H-bond) + density
-    // =============================================================
-    let U = 0;
-    const EPSHB = 0.8, HB_R0 = 3.2, HB_W = 0.6, ELC = 332.0637;
-    const w2 = HB_W * HB_W;
-
-    for (let a = 0; a < this.nLigAtoms; a++) {
-      const la = nProt + a, lx = 3 * la;
-      const laX = pos[lx], laY = pos[lx + 1], laZ = pos[lx + 2];
-      const ligSig = this._ligSigma[a], ligEps = this._ligEps[a];
-      const ligQ = this._ligQ[a], ligHB = this._ligHB[a];
-      const ckey = this._cellKey(laX, laY, laZ, cell);
-      const cx = this._decodeX(ckey), cy = this._decodeY(ckey), cz = this._decodeZ(ckey);
-
-      // 27 neighbouring cells (directed protein→ligand, no double counting)
-      for (let ox = -1; ox <= 1; ox++)
-        for (let oy = -1; oy <= 1; oy++)
-          for (let oz = -1; oz <= 1; oz++) {
-            const arr = grid.get(this._encodeCell(cx + ox, cy + oy, cz + oz));
-            if (!arr) continue;
-            for (let bi = 0; bi < arr.length; bi++) {
-              const i = arr[bi], ix = 3 * i;
-              const dx = pos[ix] - laX, dy = pos[ix + 1] - laY, dz = pos[ix + 2] - laZ;
-              const r2 = dx * dx + dy * dy + dz * dz;
-              if (r2 >= rc2 || r2 < 1e-10) continue;
-              const r = Math.sqrt(r2);
-
-              // Holo contact springs already govern this native pair — skip it
-              // so the binding pair pass does not double-count the contact.
-              const pk = this._pairKey(i, la);
-              if (this._excluded.has(pk)) continue;
-
-              // --- EEF1-lite occupancy density + pair record for Pass 2 ------
-              // g(r) feeds the soft count dens[a]; the (a, j, r) triple lets
-              // Pass 2 add the desolvation force without re-scanning the grid.
-              const gr = Math.exp(-((r - R0) * (r - R0)) * inv2sig2);
-              dens[a] += gr;
-              bpA[bpN] = a; bpJ[bpN] = i; bpR[bpN] = r; bpN++;
-
-              // smooth switch + its r-derivative
-              let sw, dsw;
-              if (r <= rsw) { sw = 1; dsw = 0; }
-              else {
-                const t = (r - rsw) * invDelta, t2 = t * t;
-                sw = 1 - t2 * t * (10 - 15 * t + 6 * t2);
-                dsw = -(30 * invDelta) * t2 * (1 - t) * (1 - t);
-              }
-
-              let dUdr = 0;   // total dU/dr of this pair (all cross terms)
-
-              // --- cross LJ 12-6 (attractive well) ---------------------------
-              const s = 0.5 * (this._protSigma[i] + ligSig);
-              const e = Math.sqrt(this._protEps[i] * ligEps);
-              const s6 = Math.pow(s / r, 6), s12 = s6 * s6;
-              const phi = s12 - s6;                       // φ = (σ/r)¹² − (σ/r)⁶
-              const dphi = (6 * s6 - 12 * s12) / r;       // dφ/dr
-              U += 4 * e * phi * sw;
-              dUdr += 4 * e * (dphi * sw + phi * dsw);
-
-              // --- screened electrostatics ----------------------------------
-              const q1 = this._protQ[i];
-              if (q1 !== 0 && ligQ !== 0) {
-                const ch = Math.cosh(r / 8);
-                const epsr = 4 + 76 * Math.tanh(r / 8);
-                const epsrP = 9.5 / (ch * ch);            // dεr/dr = 9.5·sech²(r/8)
-                const g = 1 / (epsr * r);                 // g = 1/(εr·r)
-                const gp = -(epsr + r * epsrP) / (epsr * epsr * r * r); // dg/dr
-                const A = ELC * q1 * ligQ;
-                U += A * g * sw;
-                dUdr += A * (gp * sw + g * dsw);
-              }
-
-              // --- H-bond (donor/acceptor flags both set) -------------------
-              if (this._protHB[i] && ligHB) {
-                const g = Math.exp(-((r - HB_R0) * (r - HB_R0)) / (2 * w2));
-                const gp = -g * (r - HB_R0) / w2;         // dg/dr
-                const B = -EPSHB;                          // U = −epsHB·g·sw
-                U += B * g * sw;
-                dUdr += B * (gp * sw + g * dsw);
-              }
-
-              // force on protein i = −(dU/dr)·(dx/r); on the ligand, opposite
-              const F = -dUdr / r;
-              const fX = F * dx, fY = F * dy, fZ = F * dz;
-              f[ix] += fX; f[ix + 1] += fY; f[ix + 2] += fZ;
-              f[lx] -= fX; f[lx + 1] -= fY; f[lx + 2] -= fZ;
-            }
-          }
-    }
-
-    // =============================================================
-    // PASS 2 — EEF1-lite burial: burial fraction, energy, forces
-    // =============================================================
-    // B_a = 1 − exp(−n_a/3); U_desolv = Σ_a ΔG_a·B_a. dB/dn is cached per atom
-    // so every pair of atom a reuses the same factor (B depends on total n_a).
-    let Udesolv = 0;
-    for (let a = 0; a < this.nLigAtoms; a++) {
-      const n = dens[a];
-      const e = Math.exp(-n / NS);           // exp(−n_a/3)
-      dBdn[a] = e / NS;                      // dB/dn = exp(−n_a/3)/3
-      Udesolv += this._ligdG[a] * (1 - e);   // ΔG_a·B_a
-    }
-
-    // Chain rule dU_desolv/dr = ΔG_a·(dB/dn)·(dg/dr); force on protein j is
-    // −(dU/dr)·(dx/r) with dx = pos_j − pos_la — same convention as Pass 1.
-    for (let k = 0; k < bpN; k++) {
-      const a = bpA[k], j = bpJ[k], r = bpR[k];
-      const g = Math.exp(-((r - R0) * (r - R0)) * inv2sig2);
-      const dgdr = -g * (r - R0) * invSig2;              // dg/dr
-      const dUdr = this._ligdG[a] * dBdn[a] * dgdr;      // dU_desolv/dr
-      const Fs = -dUdr / r;                              // −(dU/dr)/r, vector factor
-      const la = nProt + a, lx = 3 * la, jx = 3 * j;
-      const dx = pos[jx] - pos[lx], dy = pos[jx + 1] - pos[lx + 1], dz = pos[jx + 2] - pos[lx + 2];
-      f[jx] += Fs * dx; f[jx + 1] += Fs * dy; f[jx + 2] += Fs * dz;
-      f[lx] -= Fs * dx; f[lx + 1] -= Fs * dy; f[lx + 2] -= Fs * dz;
-    }
-
-    this.bindingU = U + Udesolv;
-    this.desolvU = Udesolv;
-    return U + Udesolv;
-  }
-
-  /**
-   * Repulsive-only 12-6 LJ for all non-bonded/non-contact pairs (implicit
-   * solvent: beads cannot overlap). Spatial hash grid with numeric keys.
-   *   U_rep(r) = ε[(r_e/r)¹² − 2(r_e/r)⁶ + 1],   r < r_e = 2^{1/6}σ
-   *   F(r)     = 24ε[2(σ/r)¹²·σ? − (σ/r)⁶]/r² — see algebra in code body.
-   */
-  _repulsion(pos, f) {
-    const n = this.n, cell = this._cell, rc = this.rcRep, eps = this.epsRep;
-    const grid = this._grid, sig = this._repSigma;
-    // clear lists in place (avoid GC churn)
-    for (const arr of grid.values()) arr.length = 0;
-
-    // insert beads into grid cells
-    for (let i = 0; i < n; i++) {
-      const key = this._cellKey(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2], cell);
-      let arr = grid.get(key);
-      if (!arr) grid.set(key, (arr = []));
-      arr.push(i);
-    }
-
-    let U = 0;
-    // iterate over cells; for each, self-pairs handled separately
-    for (const [key, arr] of grid) {
-      const cx = this._decodeX(key), cy = this._decodeY(key), cz = this._decodeZ(key);
-      // visit 14 of 27 neighbours (half-shell) to count each pair once
-      for (let ox = -1; ox <= 1; ox++)
-        for (let oy = -1; oy <= 1; oy++)
-          for (let oz = -1; oz <= 1; oz++) {
-            if (ox < 0 || (ox === 0 && oy < 0) || (ox === 0 && oy === 0 && oz < 0)) continue;
-            const same = ox === 0 && oy === 0 && oz === 0;
-            const nbr = same ? arr : grid.get(this._encodeCell(cx + ox, cy + oy, cz + oz));
-            if (!nbr) continue;
-            for (let ai = 0; ai < arr.length; ai++) {
-              const i = arr[ai], ix = 3 * i;
-              for (let bi = same ? ai + 1 : 0; bi < nbr.length; bi++) {
-                const j = nbr[bi];
-                const pk = this._pairKey(i, j);
-                if ((i < this.nProt) !== (j < this.nProt)) continue;
-                if (this._excluded.has(pk)) continue;
-                const jx = 3 * j;
-                const dx = pos[jx] - pos[ix], dy = pos[jx + 1] - pos[ix + 1], dz = pos[jx + 2] - pos[ix + 2];
-                const r2 = dx * dx + dy * dy + dz * dz;
-                // per-pair σ = arithmetic mean of the two bead sizes; its own
-                // r_e = 2^(1/6)σ per pair (keeps U(contact edge) = 0 exactly)
-                const s = 0.5 * (sig[i] + sig[j]);
-                const re = rc * (s / this.sigmaRep);
-                const re2 = re * re;
-                if (r2 >= re2 || r2 < 1e-10) continue;
-                const r = Math.sqrt(r2);
-                const sr = s / r;
-                const sr2 = sr * sr;
-                const sr6 = sr2 * sr2 * sr2;              // (σ/r)^6
-                const uLJ = sr6 * sr6 - sr6;              // [(σ/r)¹² − (σ/r)⁶]
-                // energy: ε·(4·uLJ + 1)   (shifted so U(rcRep) = 0 exactly)
-                U += eps * (4 * uLJ + 1);
-                // −dU/dr = 24ε[2(σ/r)¹² − (σ/r)⁶]/r ; vector form divides by r²
-                const fm = (24 * eps * (2 * sr6 * sr6 - sr6)) / r2;
-                // i feels −∇_i U → away from j (repulsive out of overlap)
-                f[ix] -= fm * dx; f[ix + 1] -= fm * dy; f[ix + 2] -= fm * dz;
-                f[jx] += fm * dx; f[jx + 1] += fm * dy; f[jx + 2] += fm * dz;
-              }
-            }
-          }
-    }
-    return U;
-  }
+  /** Repulsive-only 12-6 LJ excluded-volume pass — kernel in ff-repulsion.js. */
+  _repulsion(pos, f) { return repulsion(this, pos, f); }
 
   /* --- numeric spatial-hash cell keys (no string allocs) -------------- */
   _encodeCell(cx, cy, cz) { return ((cx + 2048) * 4096 + (cy + 2048)) * 4096 + (cz + 2048); }
   _cellKey(x, y, z, cell) {
+    // Non-finite coordinates must never reach the grid: Math.floor(NaN) is
+    // NaN and the Map would grow unboundedly with a fresh garbage key on
+    // every compute call (the 1HVR hang). Route everything non-finite to a
+    // single sentinel cell at the grid corner — the pair distance tests will
+    // then reject those particles (r2 is NaN, comparisons false).
+    if (!Number.isFinite(x + y + z)) return 0;
     return this._encodeCell(Math.floor(x / cell), Math.floor(y / cell), Math.floor(z / cell));
   }
   _decodeX(k) { return Math.floor(k / (4096 * 4096)) - 2048; }

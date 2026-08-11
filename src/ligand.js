@@ -215,7 +215,20 @@ export function buildLigandInternalFF(ligands, nProt) {
       let o = adj[x].find((nb) => nb !== p && nb !== q);
       if (o === undefined) o = adj[p].find((nb) => nb !== x);
       if (o === undefined) continue;
-      impropers.push(nProt + base + p, nProt + base + x, nProt + base + q, nProt + base + o, 0);
+      // Pin at the NATIVE improper angle, not 0: the |atan2| measure equals 0
+      // or π for a planar 4-atom set depending on which side of the central
+      // bond the fourth atom sits on (cis vs trans — both perfectly flat in
+      // fused aromatics like the indole of 1BMA/0QH, where φ0 = 0 produced
+      // ≈ 98 kcal/mol of false strain per restraint). Bond/angle terms above
+      // already use the native reference for the same reason; only out-of-
+      // plane motion is penalized.
+      // Build via a scratch coordinate array (atoms are objects here).
+      const scr = new Float64Array(nMol * 3);
+      for (let a = 0; a < nMol; a++) {
+        scr[3 * a] = mol.atoms[a].x; scr[3 * a + 1] = mol.atoms[a].y; scr[3 * a + 2] = mol.atoms[a].z;
+      }
+      const phi0 = improperAngle(scr, p, x, q, o);
+      impropers.push(nProt + base + p, nProt + base + x, nProt + base + q, nProt + base + o, phi0);
     }
   }
 

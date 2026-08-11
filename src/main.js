@@ -7,6 +7,10 @@
  *   integrator.js — BAOAB Langevin dynamics
  *   viewer.js     — 60 fps Canvas rendering
  *   recorder.js   — trajectory capture & download
+ *   ui.js         — DOM handles + shared state/viewer/recorder singletons
+ *   ml-tier.js    — NN contact map + pose scorer panel
+ *   pmf-panel.js  — funnel PMF plot + reset
+ *   analysis-panel.js — trajectory analysis report + PMF CSV
  *
  * Main loop: requestAnimationFrame drives the render; each frame advances the
  * simulation by ~1 ps of simulation time (auto-budgeted by CPU speed so we
@@ -18,65 +22,15 @@ import { ForceField } from "./forcefield.js?v=8";
 import { Funnel } from "./funnel.js?v=8";
 import { LangevinIntegrator } from "./integrator.js?v=8";
 import { fetchPdb, parseCa, parseLigands, parseMol2, selectSystem, summarizeStructure } from "./pdb.js?v=8";
-import { Recorder, downloadText } from "./recorder.js?v=8";
-import { PoseScorer, POSE_FEATURE_N } from "./scorer.js?v=8";
-import { Viewer } from "./viewer.js?v=8";
-import { analyzeTrajectory, pmfCsv } from "./analysis.js?v=8";
+import { downloadText } from "./recorder.js?v=8";
+import { PoseScorer } from "./scorer.js?v=8";
+import { ui, state, viewer, recorder, initParamReadouts, updateSelSummary, updateRecStatus } from "./ui.js?v=8";
+import { applyMLToFF } from "./ml-tier.js?v=8";
+import { updatePMFPlot } from "./pmf-panel.js?v=8";
+import "./analysis-panel.js?v=8";  // side-effect: registers panel-6 listeners
 
-/* ------------------------------------------------------------------ */
-/*  DOM handles                                                        */
-/* ------------------------------------------------------------------ */
-const $ = (id) => document.getElementById(id);
-const ui = {
-  pdbId: $("pdbId"), fetchBtn: $("fetchBtn"), fileInput: $("fileInput"),
-  structSummary: $("structSummary"), includeLig: $("includeLig"),
-  mol2File: $("mol2File"), mol2Info: $("mol2Info"),
-  chainsInput: $("chainsInput"), resFrom: $("resFrom"), resTo: $("resTo"),
-  buildBtn: $("buildBtn"), selSummary: $("selSummary"),
-  rc: $("rc"), gamma: $("gamma"), temp: $("temp"), fric: $("fric"), mass: $("mass"),
-  motionGain: $("motionGain"), v_motionGain: $("v_motionGain"),
-  stridePs: $("stridePs"), maxFrames: $("maxFrames"), exportFmt: $("exportFmt"),
-  recBtn: $("recBtn"), recStopBtn: $("recStopBtn"), dlBtn: $("dlBtn"), recStatus: $("recStatus"),
-  playBtn: $("playBtn"), resetBtn: $("resetBtn"),
-  showContacts: $("showContacts"), spheres: $("spheres"),
-  bindPot: $("bindPot"), holoSprings: $("holoSprings"),
-  funnelToggle: $("funnelToggle"), pmfReset: $("pmfReset"), pmfPlot: $("pmfPlot"),
-  nnContacts: $("nnContacts"), poseScore: $("poseScore"),
-  contactsFile: $("contactsFile"), scorerFile: $("scorerFile"), nnInfo: $("nnInfo"),
-  anaBtn: $("anaBtn"), anaPmfBtn: $("anaPmfBtn"), analysisOut: $("analysisOut"),
-  hud: $("hud"), canvas: $("canvas"),
-};
-// slider live readouts
-[["rc"], ["gamma"], ["temp", "v_temp"], ["fric", "v_fric"], ["mass", "v_mass"]].forEach(([k, labelId]) => {
-  const el = ui[k];
-  const lbl = $(labelId || `v_${k}`);
-  if (el && lbl) el.addEventListener("input", () => { lbl.textContent = el.value; onParamChange(); });
-});
-
-/* ------------------------------------------------------------------ */
-/*  Application state                                                  */
-/* ------------------------------------------------------------------ */
-const state = {
-  pdbText: null,       // raw structure text
-  parsed: null,        // parseCa() output
-  sel: null,           // selectSystem() output
-  ff: null,            // ForceField
-  funnel: null,        // Funnel (binding bias + WTM PMF)
-  ligands: [],
-  mol2Ligands: null,   // parseMol2() output — when set, replaces HETATM ligands
-  mol2Fn: null,        // filename of the loaded MOL2 (for status lines)
-  integ: null,         // LangevinIntegrator
-  running: false,
-  simSpeedPsPerFrame: 1.0, // ~1 ps/frame at 60 fps → 1 ns per ~17 s wall time
-  fpsEMA: 60,
-  contacts: null,      // parsed contacts.json (array of [i,j,p])
-  contactsFn: null,    // filename of loaded contacts
-  mlAlpha: 1,          // NN contact map stiffness scale
-  scorer: null,       // PoseScorer instance
-};
-
-const viewer = new Viewer(ui.canvas);
-const recorder = new Recorder();
+// physics-slider live readouts (rc/gamma/temp/fric/mass) → hot param reload
+initParamReadouts(() => onParamChange());
 
 // View-only control — must NOT trigger a force-field rebuild.
 ui.motionGain.addEventListener("input", () => {
@@ -167,61 +121,6 @@ ui.mol2File.addEventListener("change", async () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  ML tier: NN contact map (ESM prior) + NN pose scorer               */
-/* ------------------------------------------------------------------ */
-// contacts.json loader (output of ml/export_esm_contacts.py)
-ui.contactsFile.addEventListener("change", async () => {
-  const f = ui.contactsFile.files[0];
-  if (!f) return;
-  try {
-    const d = JSON.parse(await f.text());
-    if (!Array.isArray(d.contacts)) throw new Error("contacts.json: missing contacts[]");
-    state.contacts = d.contacts;       // [[i,j,p], ...]
-    state.contactsFn = d.source || f.name;
-    applyMLToFF();
-    ui.nnInfo.textContent = `Loaded ${state.contacts.length} pairs (${state.contactsFn})`;
-  } catch (err) {
-    ui.nnInfo.textContent = "⚠ " + err.message;
-  }
-});
-
-// scorer weights JSON loader (PoseScorer config)
-ui.scorerFile.addEventListener("change", async () => {
-  const f = ui.scorerFile.files[0];
-  if (!f) return;
-  try {
-    const d = JSON.parse(await f.text());
-    state.scorer = new PoseScorer(d);
-    ui.nnInfo.textContent = `Scorer: ${state.scorer.layers.join("→")} (${f.name})`;
-  } catch (err) {
-    ui.nnInfo.textContent = "⚠ " + err.message;
-  }
-});
-
-// toggles
-ui.nnContacts.addEventListener("change", applyMLToFF);
-ui.poseScore.addEventListener("change", () => {
-  // ensure a default scorer exists; the toggle just turns the readout on
-  if (!state.scorer) state.scorer = PoseScorer.docked();
-});
-
-/**
- * Apply the current ML contact prior to the ENM springs (if loaded + enabled)
- * and (re)create the default pose scorer when the toggle is on. Called after
- * every force-field rebuild so the scaling survives gamma/rc changes.
- */
-function applyMLToFF() {
-  if (!state.ff) return;
-  if (ui.nnContacts.checked && state.contacts) {
-    state.ff.setSpringScale(state.contacts, state.mlAlpha);
-  } else {
-    state.ff.clearSpringScale();
-  }
-  if (ui.poseScore.checked && !state.scorer) state.scorer = PoseScorer.docked();
-  updateSelSummary();
-}
-
-/* ------------------------------------------------------------------ */
 /*  System construction (selection + force field + integrator)         */
 /* ------------------------------------------------------------------ */
 function parseParamChainIds() {
@@ -276,33 +175,12 @@ function buildSystem() {
   ui.playBtn.disabled = false;
   ui.resetBtn.disabled = false;
   state._prevPos = null;   // position buffer length may change on rebuild
-}
-function updateSelSummary() {
-  if (!state.ff) return;
-  const nat = state.ff.springs.length / 3;
-  let ligSummary = "";
-  if (state.ff.nLigAtoms > 0) {
-    ligSummary = ` · ${state.ff.nLigAtoms} ligand atom(s) in ${state.ligands.length} molecule(s)`;
-    if (state.mol2Ligands && state.mol2Ligands.length) ligSummary += ` (MOL2: ${state.mol2Fn})`;
-    if (state.ff.nHolo > 0) ligSummary += ` · ${state.ff.nHolo} holo contacts`;
-  }
-  let nnSummary = "";
-  if (state.ff.springScaleActive) {
-    nnSummary = ` · NN map active (${state.contactsFn || "contacts.json"})`;
-  }
-  ui.selSummary.textContent =
-    `${state.sel.beads.length} Cα beads · ${state.sel.nChains} chain(s) · ` +
-    `${state.ff.bonds.length / 3} bonds · ${state.ff.angles.length / 4} angles · ` +
-    `${nat} elastic contacts (Rc=${Number(ui.rc.value)} Å)${ligSummary}${nnSummary}`;
+  state.nanWarning = false;
 }
 ui.buildBtn.addEventListener("click", buildSystem);
 ui.includeLig.addEventListener("change", buildSystem);
 ui.bindPot.addEventListener("change", () => onParamChange(true));
 ui.holoSprings.addEventListener("change", () => onParamChange(true));
-ui.funnelToggle.addEventListener("change", () => {
-  if (state.ff) state.ff.funnelOn = ui.funnelToggle.checked;
-});
-ui.pmfReset.addEventListener("click", () => { if (state.funnel) state.funnel.reset(); });
 
 /* ------------------------------------------------------------------ */
 /*  Physics parameter hot-reload                                       */
@@ -326,6 +204,7 @@ function onParamChange(rebuildContacts = true) {
     state.integ.vel.set(keepVel);
     state.integ.time = keepTime;
     state._prevPos = null;
+    state.nanWarning = false;
     state.integ.setTemperature(Number(ui.temp.value));
     state.integ.setFriction(Number(ui.fric.value));
     if (state.ff.nLigAtoms > 0) {
@@ -352,6 +231,7 @@ ui.playBtn.addEventListener("click", () => {
 ui.resetBtn.addEventListener("click", () => {
   if (!state.integ) return;
   state.integ.reset();
+  state.nanWarning = false;
 });
 
 ui.showContacts.addEventListener("change", () => (viewer.showContacts = ui.showContacts.checked));
@@ -380,50 +260,6 @@ ui.dlBtn.addEventListener("click", () => {
     ui.recStatus.textContent = "⚠ " + err.message;
   }
 });
-function updateRecStatus() {
-  ui.recStatus.textContent =
-    `${recorder.count} frames · ${recorder.spanNs.toFixed(3)} ns recorded` +
-    (recorder.recording ? " ●" : "");
-  ui.dlBtn.disabled = recorder.count === 0;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Analysis (panel 6)                                                 */
-/* ------------------------------------------------------------------ */
-ui.anaBtn.addEventListener("click", () => {
-  if (recorder.count === 0) {
-    ui.analysisOut.textContent = "⚠ Nothing recorded yet — press ● Rec, run the sim, then Stop.";
-    return;
-  }
-  ui.analysisOut.textContent = "Analyzing… (RMSIP may take a few seconds)";
-  // run off the animation frame so the status text paints first
-  setTimeout(() => {
-    try {
-      const rep = analyzeTrajectory({
-        frames: recorder.frames,
-        times: recorder.times,
-        ref: state.ff.ref,
-        nProt: state.ff.nProt,
-        n: state.ff.n,
-        beads: state.sel.beads,
-        ff: state.ff,
-        funnel: state.funnel,
-      });
-      ui.analysisOut.textContent = rep.lines.join("\n");
-    } catch (err) {
-      ui.analysisOut.textContent = "⚠ " + err.message;
-    }
-  }, 20);
-});
-
-ui.anaPmfBtn.addEventListener("click", () => {
-  if (!state.funnel) { ui.analysisOut.textContent = "⚠ No active funnel (load a ligand + build the system)."; return; }
-  try {
-    downloadText(pmfCsv(state.funnel), `pmf_${(state.contactsFn || "enm").replace(/\W+/g, "_")}.csv`);
-  } catch (err) {
-    ui.analysisOut.textContent = "⚠ " + err.message;
-  }
-});
 
 /* ------------------------------------------------------------------ */
 /*  Main loop — physics & render, decoupled from display refresh       */
@@ -441,6 +277,15 @@ function tick(now) {
     // time-slices so slow machines degrade sim speed, not fps.
     const steps = Math.max(1, Math.round(state.simSpeedPsPerFrame / state.integ.dt));
     state.integ.advance(steps, 11); // ≤11 ms physics budget per frame
+
+    // Non-finite energy ⇒ the system blew past every FF guard (native clash,
+    // corrupt input, …). Auto-pause instead of integrating garbage further;
+    // the HUD warning below tells the user to reset or rebuild the system.
+    if (!Number.isFinite(state.ff.energy)) {
+      state.running = false;
+      ui.playBtn.textContent = "▶ Run";
+      state.nanWarning = true;
+    }
 
     const captured = recorder.maybeCapture(state.integ.pos, state.integ.time);
     if (captured || recorder.recording || recorder.count > 0) updateRecStatus();
@@ -502,8 +347,11 @@ function tick(now) {
       }
     }
     ui.hud.textContent =
+      (state.nanWarning
+        ? `⚠ NON-FINITE ENERGY — simulation auto-paused. Reset (⟲) to recover; the input structure may contain clashes.  ·  `
+        : "") +
       `t = ${integ.time.toFixed(1)} ps (${(integ.time / 1000).toFixed(3)} ns)  ·  ` +
-      `U = ${ff.energy.toFixed(1)} kcal/mol  ·  ` +
+      `U = ${Number.isFinite(ff.energy) ? ff.energy.toFixed(1) : "NaN"} kcal/mol  ·  ` +
       (ff.nLigAtoms > 0 ? `U_bind = ${ff.bindingU.toFixed(2)} kcal/mol  ·  ` : '') +
       extra +
       `RMSD = ${ff.rmsd(integ.pos).toFixed(2)} Å  ·  ` +
@@ -516,47 +364,3 @@ function tick(now) {
   }
 }
 requestAnimationFrame(tick);
-
-/* ------------------------------------------------------------------ */
-/*  Binding PMF plot (well-tempered metadynamics reconstruction)        */
-/* ------------------------------------------------------------------ */
-function updatePMFPlot() {
-  const cvEl = ui.pmfPlot;
-  if (!cvEl || !state.funnel || !state.funnel.active || cvEl.width === 0) return;
-  const { r, pmf } = state.funnel.getPMF();
-  if (!r.length) return;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const w = cvEl.clientWidth, h = cvEl.clientHeight;
-  if (w === 0) return;
-  if (cvEl.width !== Math.round(w*dpr) || cvEl.height !== Math.round(h*dpr)) { cvEl.width = Math.round(w*dpr); cvEl.height = Math.round(h*dpr); }
-  const ctx = cvEl.getContext("2d");
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  ctx.clearRect(0,0,w,h);
-  // bounds
-  let pmin = Infinity, pmax = -Infinity;
-  for (let k = 0; k < pmf.length; k++) { pmin = Math.min(pmin, pmf[k]); pmax = Math.max(pmax, pmf[k]); }
-  if (!Number.isFinite(pmin) || pmax - pmin < 1e-6) return;
-  const pad = { l: 26, r: 8, t: 10, b: 20 };
-  const pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
-  const X = (x) => pad.l + (x / r[r.length-1]) * pw;
-  const Y = (y) => pad.t + (1 - (y - pmin) / (pmax - pmin)) * ph;
-  // grid lines + axes
-  ctx.strokeStyle = "#2a3040"; ctx.lineWidth = 1;
-  for (let g = 0; g <= 4; g++) {
-    const y = pad.t + (g/4)*ph;
-    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w-pad.r, y); ctx.stroke();
-  }
-  ctx.strokeStyle = "#8a93a8"; ctx.fillStyle = "#8a93a8"; ctx.font = "9px sans-serif";
-  ctx.beginPath(); ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, pad.t+ph); ctx.lineTo(w-pad.r, pad.t+ph); ctx.stroke();
-  ctx.fillText("ΔG", 4, pad.t+8); ctx.fillText("0", 4, pad.t+ph);
-  // curve
-  ctx.beginPath(); ctx.strokeStyle = "#ffb050"; ctx.lineWidth = 1.5;
-  for (let k = 0; k < pmf.length; k++) { const x = X(r[k]), y = Y(pmf[k]); k === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y); }
-  ctx.stroke();
-  // current CV marker
-  if (state.funnel && state.funnel.active && Number.isFinite(state.funnel.lastCV)) {
-    const cx0 = X(Math.min(Math.max(state.funnel.lastCV, r[0]), r[r.length-1]));
-    ctx.fillStyle = "#6cc4ff";
-    ctx.beginPath(); ctx.arc(cx0, Y(Math.max(pmin, Math.min(pmax, 0))), 3, 0, 6.2832); ctx.fill();
-  }
-}

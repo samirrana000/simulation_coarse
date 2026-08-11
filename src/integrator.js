@@ -186,7 +186,7 @@ export class LangevinIntegrator {
     const h = dt * 0.5;
 
     // B: half kick with current force — a = KCONV·F/m per coordinate
-    for (let i = 0; i < this.n3; i++) vel[i] += (KCONV * h * this.invMass[i]) * F[i];
+    this._kick(F, h);
     // A: half drift
     for (let i = 0; i < this.n3; i++) pos[i] += h * vel[i];
 
@@ -202,12 +202,42 @@ export class LangevinIntegrator {
     // A: half drift
     for (let i = 0; i < this.n3; i++) pos[i] += h * vel[i];
 
-    // new force at x(t+dt), then final B half kick
+    // new force at x(t+dt), then final B half kick (same |Δv| cap + NaN guard)
     ff.compute(pos);
-    for (let i = 0; i < this.n3; i++) vel[i] += (KCONV * h * this.invMass[i]) * F[i];
+    this._kick(F, h);
 
     this.time += dt;
     this.steps++;
+  }
+
+  /**
+   * BAOAB "B" half kick: v += h·KCONV·F/m per coordinate, with two guards:
+   *   1. a non-finite force component contributes zero kick (NaN never
+   *      propagates into velocities) — the app-side energy guard will
+   *      auto-pause the run;
+   *   2. per-particle |Δv⃗| is capped at 2 Å/ps per half-kick. That is ~16×
+   *      the RMS thermal velocity of a 12 Da united atom at 300 K, so the cap
+   *      never engages during normal dynamics, but it severs the "bullet"
+   *      path (force spike on a light particle → projectile → protein blast)
+   *      that a native clash would otherwise trigger between force-field
+   *      guard fixes.
+   */
+  _kick(F, h) {
+    const DVMAX = 2.0;                    // Å/ps, per-particle vector clamp
+    const { vel, invMass } = this;
+    for (let p = 0; p < this.n3; p += 3) {
+      const im = KCONV * h * invMass[p];  // invMass is per-particle-constant
+      let dvx = im * F[p], dvy = im * F[p + 1], dvz = im * F[p + 2];
+      if (!Number.isFinite(dvx)) dvx = 0;
+      if (!Number.isFinite(dvy)) dvy = 0;
+      if (!Number.isFinite(dvz)) dvz = 0;
+      const m2 = dvx * dvx + dvy * dvy + dvz * dvz;
+      if (m2 > DVMAX * DVMAX) {
+        const sc = DVMAX / Math.sqrt(m2);
+        dvx *= sc; dvy *= sc; dvz *= sc;
+      }
+      vel[p] += dvx; vel[p + 1] += dvy; vel[p + 2] += dvz;
+    }
   }
 
   /**
