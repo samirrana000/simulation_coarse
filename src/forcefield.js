@@ -73,16 +73,16 @@
  * accumulated in a preallocated flat array — zero allocations per step.
  */
 
-import { buildLigandInternalFF, improperAngle } from "./ligand.js?v=9";
+import { buildLigandInternalFF, improperAngle } from "./ligand.js?v=10";
 import {
   harmonicPairs, springForces, angleForces, ligandBondForces, improperForces,
-} from "./ff-harmonic.js?v=9";
-import { repulsion } from "./ff-repulsion.js?v=9";
-import { binding } from "./ff-binding.js?v=9";
+} from "./ff-harmonic.js?v=10";
+import { repulsion } from "./ff-repulsion.js?v=10";
+import { binding } from "./ff-binding.js?v=10";
 import {
   KB_KCAL, KCONV,
   RES_CLASS, RES_CLASS_OF, LIG_ELEMENT, LIG_ELEMENT_DEFAULT,
-} from "./ff-params.js?v=9";
+} from "./ff-params.js?v=10";
 
 // constants are re-exported so integrator.js / funnel.js / the test suite can
 // keep importing them from "./forcefield.js" — their source of truth is now

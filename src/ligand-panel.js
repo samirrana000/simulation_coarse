@@ -23,10 +23,10 @@
  * from ui.js.
  */
 
-import { LIGAND_LIBRARY } from "./ligandLib.js?v=9";
-import { parseLibraryLigand, placeLigand } from "./placement.js?v=9";
-import { ui, state, viewer } from "./ui.js?v=9";
-import { buildSystem } from "./main.js?v=9";
+import { LIGAND_LIBRARY } from "./ligandLib.js?v=10";
+import { parseLibraryLigand, placeLigand } from "./placement.js?v=10";
+import { ui, state, viewer } from "./ui.js?v=10";
+import { buildSystem } from "./main.js?v=10";
 
 /* ------------------------------------------------------------------ */
 /*  Library selector (filterable)                                      */
@@ -68,6 +68,10 @@ function placeAt(clientX, clientY) {
   const entry = selectedEntry();
   if (!entry || !state.parsed) {
     ui.ligPlaceInfo.textContent = "⚠ Load a structure first (panel 1), then place.";
+    return;
+  }
+  if (state.heavyMode) {
+    ui.ligPlaceInfo.textContent = "⚠ Placement is coarse-grain only — switch back to Cα mode (panel 2).";
     return;
   }
   const mol = parseLibraryLigand(entry);

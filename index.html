@@ -47,8 +47,15 @@
       </details>
 
       <details open class="panel">
-        <summary>2&nbsp;&mdash;&nbsp;Selection (C&alpha; beads)</summary>
+        <summary>2&nbsp;&mdash;&nbsp;Selection (C&alpha; beads / heavy atoms)</summary>
         <div class="panel-body">
+          <label class="field">
+            <span class="lbl">Model</span>
+            <select id="modelMode">
+              <option value="cg" selected>C&alpha; elastic network (coarse)</option>
+              <option value="heavy">All-atom heavy mode (covalent + metals)</option>
+            </select>
+          </label>
           <label class="field">
             <span class="lbl">Chains (comma separated, blank = all)</span>
             <input id="chainsInput" type="text" placeholder="e.g. A,B" />
@@ -63,7 +70,7 @@
               <input id="resTo" type="number" placeholder="max" />
             </label>
           </div>
-          <button id="buildBtn" class="btn primary">Build CG System</button>
+          <button id="buildBtn" class="btn primary">Build System</button>
           <div id="selSummary" class="summary"></div>
         </div>
       </details>
@@ -229,7 +236,7 @@
     </section>
   </div>
 
-  <script type="module" src="src/main.js?v=9"></script>
+  <script type="module" src="src/main.js?v=10"></script>
   <script>
     // ES modules are blocked on file:// — surface a clear error instead of a dead UI.
     if (location.protocol === "file:") {

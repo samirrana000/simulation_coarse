@@ -35,7 +35,7 @@
  * A module with no ligand atoms degrades to a safe no-op (active === false).
  */
 
-import { KB_KCAL } from "./forcefield.js?v=9";
+import { KB_KCAL } from "./forcefield.js?v=10";
 
 export class Funnel {
   /**

@@ -28,7 +28,7 @@
  * → global index nProt + k, where nProt counts the preceding protein beads).
  */
 
-import { unitedAtomMass } from "./pdb.js?v=9";
+import { unitedAtomMass } from "./pdb.js?v=10";
 
 /* Force constants: kcal/mol/Å² (bonds) and kcal/mol/rad² (angles/impropers) */
 const KB_AROMATIC = 200;

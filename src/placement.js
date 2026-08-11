@@ -44,8 +44,8 @@
  * Pure math module: no DOM/browser imports.
  */
 
-import { parseMol2 } from "./mol2.js?v=9";
-import { LIG_ELEMENT, LIG_ELEMENT_DEFAULT } from "./ff-params.js?v=9";
+import { parseMol2 } from "./mol2.js?v=10";
+import { LIG_ELEMENT, LIG_ELEMENT_DEFAULT } from "./ff-params.js?v=10";
 
 // ============================================================================
 // Deterministic RNG (mulberry32) — reproducible placement for tests

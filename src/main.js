@@ -18,17 +18,18 @@
  * nothing here is keyframe animation.
  */
 
-import { ForceField } from "./forcefield.js?v=9";
-import { Funnel } from "./funnel.js?v=9";
-import { LangevinIntegrator } from "./integrator.js?v=9";
-import { fetchPdb, parseCa, parseLigands, parseMol2, selectSystem, summarizeStructure } from "./pdb.js?v=9";
-import { downloadText } from "./recorder.js?v=9";
-import { PoseScorer } from "./scorer.js?v=9";
-import { ui, state, viewer, recorder, initParamReadouts, updateSelSummary, updateRecStatus } from "./ui.js?v=9";
-import { applyMLToFF } from "./ml-tier.js?v=9";
-import { updatePMFPlot } from "./pmf-panel.js?v=9";
-import "./analysis-panel.js?v=9";  // side-effect: registers panel-6 listeners
-import "./ligand-panel.js?v=9";   // side-effect: registers library+placement panel
+import { ForceField } from "./forcefield.js?v=10";
+import { Funnel } from "./funnel.js?v=10";
+import { LangevinIntegrator } from "./integrator.js?v=10";
+import { fetchPdb, parseCa, parseLigands, parseMol2, selectSystem, summarizeStructure } from "./pdb.js?v=10";
+import { downloadText } from "./recorder.js?v=10";
+import { PoseScorer } from "./scorer.js?v=10";
+import { ui, state, viewer, recorder, initParamReadouts, updateSelSummary, updateRecStatus } from "./ui.js?v=10";
+import { applyMLToFF } from "./ml-tier.js?v=10";
+import { updatePMFPlot } from "./pmf-panel.js?v=10";
+import "./analysis-panel.js?v=10";  // side-effect: registers panel-6 listeners
+import "./ligand-panel.js?v=10";   // side-effect: registers library+placement panel
+import { parseHeavy, HeavyForceField } from "./heavy.js?v=10";
 
 // physics-slider live readouts (rc/gamma/temp/fric/mass) → hot param reload
 initParamReadouts(() => onParamChange());
@@ -45,6 +46,7 @@ ui.motionGain.addEventListener("input", () => {
 async function loadStructure(text, sourceLabel) {
   state.pdbText = text;
   state.parsed = parseCa(text);
+  state.parsedHeavy = parseHeavy(text);
   state.libraryLigand = null;  // a new structure clears any placed-library ligand
   ui.structSummary.textContent = `${sourceLabel}\n` + summarizeStructure(state.parsed);
   // Default selection = everything
@@ -132,13 +134,36 @@ function parseParamChainIds() {
     .map((s) => (s === "_" ? "_" : s));
 }
 
+/**
+ * Filter parseHeavy() output by chain / residue range (mirrors selectSystem).
+ * Returns a { atoms, beads, segments } object shaped for buildSystem: `beads`
+ * carries the heavy atoms (with element/isProtein/isMetal) so the viewer can
+ * element-color them, and `segments` is empty because heavy mode has no Cα
+ * backbone trace.
+ */
+export function selectHeavy(parsedHeavy, { chains = null, resFrom = null, resTo = null } = {}) {
+  const atoms = parsedHeavy.atoms.filter((a) => {
+    if (chains && !chains.includes(a.chain)) return false;
+    if (resFrom !== null && a.resSeq < resFrom) return false;
+    if (resTo !== null && a.resSeq > resTo) return false;
+    return true;
+  });
+  const beads = atoms.map((a) => ({ ...a, x: a.x, y: a.y, z: a.z }));
+  return { atoms, beads, segments: [], heavy: true };
+}
+
 export function buildSystem() {
   if (!state.parsed) return;
+  state.heavyMode = ui.modelMode?.value === "heavy";
   try {
     const chains = parseParamChainIds();
     const resFrom = ui.resFrom.value === "" ? null : Number(ui.resFrom.value);
     const resTo = ui.resTo.value === "" ? null : Number(ui.resTo.value);
-    state.sel = selectSystem(state.parsed, { chains, resFrom, resTo });
+    if (state.heavyMode) {
+      state.sel = selectHeavy(state.parsedHeavy, { chains, resFrom, resTo });
+    } else {
+      state.sel = selectSystem(state.parsed, { chains, resFrom, resTo });
+    }
   } catch (err) {
     ui.selSummary.textContent = "⚠ " + err.message;
     ui.hud.textContent = "⚠ " + err.message;
@@ -146,20 +171,26 @@ export function buildSystem() {
   }
 
   const par = { rc: Number(ui.rc.value), gamma: Number(ui.gamma.value), binding: { on: ui.bindPot.checked, holo: ui.holoSprings.checked } };
-  state.ligands = [];
-  if (state.libraryLigand) {
-    // Library ligand (placed via ligand-panel.js) takes priority over any
-    // MOL2/HETATM ligand — it is the hypothesis being tested.
-    state.ligands = [state.libraryLigand];
-  } else if (state.mol2Ligands && state.mol2Ligands.length) {
-    // MOL2 ligand(s) supplied as a separate file — they replace any HETATM
-    // ligands from the PDB (e.g. protein-only PDB + benzene.mol2).
-    state.ligands = state.mol2Ligands;
-  } else if (ui.includeLig.checked && state.pdbText) {
-    try { state.ligands = parseLigands(state.pdbText); }
-    catch (err) { /* ligand parsing must not break system build */ }
+  if (state.heavyMode) {
+    // All-atom heavy mode: covalent topology + metal coordination, no ENM.
+    state.ligands = [];
+    state.ff = new HeavyForceField({ atoms: state.sel.atoms }, par, []);
+  } else {
+    state.ligands = [];
+    if (state.libraryLigand) {
+      // Library ligand (placed via ligand-panel.js) takes priority over any
+      // MOL2/HETATM ligand — it is the hypothesis being tested.
+      state.ligands = [state.libraryLigand];
+    } else if (state.mol2Ligands && state.mol2Ligands.length) {
+      // MOL2 ligand(s) supplied as a separate file — they replace any HETATM
+      // ligands from the PDB (e.g. protein-only PDB + benzene.mol2).
+      state.ligands = state.mol2Ligands;
+    } else if (ui.includeLig.checked && state.pdbText) {
+      try { state.ligands = parseLigands(state.pdbText); }
+      catch (err) { /* ligand parsing must not break system build */ }
+    }
+    state.ff = new ForceField(state.sel, par, state.ligands);
   }
-  state.ff = new ForceField(state.sel, par, state.ligands);
   state.integ = new LangevinIntegrator(state.ff.ref, state.ff, Number(ui.mass.value));
   if (state.ff.nLigAtoms > 0) {
     state.funnel = new Funnel({ nProt: state.ff.nProt, n: state.ff.n, ref: state.ff.ref });
@@ -184,6 +215,7 @@ export function buildSystem() {
   state.nanWarning = false;
 }
 ui.buildBtn.addEventListener("click", buildSystem);
+ui.modelMode.addEventListener("change", buildSystem);
 ui.includeLig.addEventListener("change", buildSystem);
 ui.bindPot.addEventListener("change", () => onParamChange(true));
 ui.holoSprings.addEventListener("change", () => onParamChange(true));
@@ -204,7 +236,11 @@ function onParamChange(rebuildContacts = true) {
     const keepPos = Float64Array.from(integ.pos);
     const keepVel = Float64Array.from(integ.vel);
     const keepTime = integ.time;
-    state.ff = new ForceField(state.sel, par, state.ligands);
+    if (state.heavyMode) {
+      state.ff = new HeavyForceField({ atoms: state.sel.atoms }, par, []);
+    } else {
+      state.ff = new ForceField(state.sel, par, state.ligands);
+    }
     state.integ = new LangevinIntegrator(state.ff.ref, state.ff, Number(ui.mass.value));
     state.integ.pos.set(keepPos);
     state.integ.vel.set(keepVel);

@@ -9,8 +9,8 @@
  * handles.
  */
 
-import { Viewer } from "./viewer.js?v=9";
-import { Recorder } from "./recorder.js?v=9";
+import { Viewer } from "./viewer.js?v=10";
+import { Recorder } from "./recorder.js?v=10";
 
 /* ------------------------------------------------------------------ */
 /*  DOM handles                                                        */
@@ -21,7 +21,7 @@ export const ui = {
   structSummary: $("structSummary"), includeLig: $("includeLig"),
   mol2File: $("mol2File"), mol2Info: $("mol2Info"),
   chainsInput: $("chainsInput"), resFrom: $("resFrom"), resTo: $("resTo"),
-  buildBtn: $("buildBtn"), selSummary: $("selSummary"),
+  modelMode: $("modelMode"), buildBtn: $("buildBtn"), selSummary: $("selSummary"),
   ligFilter: $("ligFilter"), ligSelect: $("ligSelect"),
   placeBtn: $("placeBtn"), cancelPlace: $("cancelPlace"), ligPlaceInfo: $("ligPlaceInfo"),
   rc: $("rc"), gamma: $("gamma"), temp: $("temp"), fric: $("fric"), mass: $("mass"),
@@ -50,6 +50,8 @@ export const state = {
   ligands: [],
   mol2Ligands: null,   // parseMol2() output — when set, replaces HETATM ligands
   mol2Fn: null,        // filename of the loaded MOL2 (for status lines)
+  heavyMode: false,    // true = all-atom heavy mode (parseHeavy + HeavyForceField)
+  parsedHeavy: null,   // parseHeavy() output (heavy mode only)
   libraryLigand: null, // parsed library molecule (ligand-panel.js) — prioritized
                        // over mol2Ligands/HETATM when set; reset on new structure
   integ: null,         // LangevinIntegrator
@@ -64,6 +66,11 @@ export const state = {
 
 export const viewer = new Viewer(ui.canvas);
 export const recorder = new Recorder();
+
+// Expose the shared singletons on window for browser/integration tests. This is
+// a no-op in production (nothing reads them) and keeps the Puppeteer harness
+// from reaching into module internals.
+if (typeof window !== "undefined") { window.__state = state; window.__viewer = viewer; }
 
 /**
  * Slider live readouts. `onHotParam` is injected by main.js (the hot-reload
@@ -84,6 +91,21 @@ export function initParamReadouts(onHotParam) {
 /** Selection/force-field summary line (panel 2) — reads `state` + `ui`. */
 export function updateSelSummary() {
   if (!state.ff) return;
+  if (state.heavyMode) {
+    // All-atom heavy mode: report heavy-atom counts and topology directly.
+    const ff = state.ff;
+    let ligSummary = "";
+    if (ff.nLigAtoms > 0) {
+      ligSummary = ` · ${ff.nLigAtoms} HETATM atom(s)`;
+      if (ff.nHolo > 0) ligSummary += ` · ${ff.nHolo} holo contacts`;
+    }
+    const nMetals = (state.parsedHeavy?.atoms ?? []).filter((a) => a.isMetal).length;
+    ui.selSummary.textContent =
+      `${ff.n} heavy atoms · ${ff.nProt} protein · ${nMetals} metal ion(s)` +
+      ` · ${ff.bonds.length / 3} bonds · ${ff.angles.length / 4} angles` +
+      ` · ${ff.coord.length / 3} metal coord.${ligSummary}`;
+    return;
+  }
   const nat = state.ff.springs.length / 3;
   let ligSummary = "";
   if (state.ff.nLigAtoms > 0) {

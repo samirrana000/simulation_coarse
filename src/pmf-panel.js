@@ -4,7 +4,7 @@
  * changed — `ui` / `state` now come from ui.js).
  */
 
-import { ui, state } from "./ui.js?v=9";
+import { ui, state } from "./ui.js?v=10";
 
 // funnel toggle + PMF reset — these listeners belong with the PMF panel
 ui.funnelToggle.addEventListener("change", () => {

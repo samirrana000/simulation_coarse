@@ -49,3 +49,46 @@ export const LIG_ELEMENT = {
   P:  { sigma: 3.5, eps: 0.14, q: 0.40, hb: false, dG: -0.35 },
 };
 export const LIG_ELEMENT_DEFAULT = { sigma: 3.4, eps: 0.12, q: 0.0, hb: false, dG: -0.30 };
+
+/**
+ * Metal-ion parameters for the all-atom heavy mode (heavy.js).
+ *   sigma/eps — LJ size & well (Å, kcal/mol) for non-bonded repulsion,
+ *   q         — formal charge (e), used for screened electrostatics,
+ *   coordR    — metal–donor coordination distance (Å) used to build the
+ *               coordination springs (heavy.js detects donors within coordR of
+ *               the ion), and
+ *   coordN    — target coordination number (how many donor springs to build;
+ *               capped by however many donors are actually within coordR).
+ * Metals are treated as explicit +2/+1 ions that coordinate N/O/S donors
+ * (histidine N, carboxylate O, thiolate S, backbone carbonyl O) rather than
+ * forming covalent bonds.
+ */
+export const METAL_ELEMENT = {
+  ZN: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.30, coordN: 4 },
+  FE: { sigma: 1.50, eps: 0.05, q: 2.0, coordR: 2.20, coordN: 6 },
+  MG: { sigma: 1.30, eps: 0.05, q: 2.0, coordR: 2.15, coordN: 6 },
+  CA: { sigma: 1.70, eps: 0.05, q: 2.0, coordR: 2.45, coordN: 6 },
+  CU: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.20, coordN: 4 },
+  MN: { sigma: 1.45, eps: 0.05, q: 2.0, coordR: 2.25, coordN: 6 },
+  NI: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.15, coordN: 6 },
+  CO: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.15, coordN: 6 },
+  NA: { sigma: 1.70, eps: 0.05, q: 1.0, coordR: 2.50, coordN: 6 },
+  K:  { sigma: 2.00, eps: 0.05, q: 1.0, coordR: 2.80, coordN: 6 },
+};
+export const METAL_ELEMENT_DEFAULT = { sigma: 1.50, eps: 0.05, q: 2.0, coordR: 2.30, coordN: 6 };
+
+/**
+ * All-atom (heavy) covalent radii (Å) for the heavy mode bond-building
+ * (heavy.js). A pair of heavy atoms within the SUM of their covalent radii
+ * (× a 1.15 slack factor) is treated as covalently bonded. Solvent/water O
+ * and H are handled by the parser (dropped), so these cover protein heavy
+ * atoms + ligand heavy atoms.
+ */
+export const COVALENT_RADIUS = {
+  C: 0.77, N: 0.75, O: 0.73, S: 1.02, P: 1.06, F: 0.71,
+  CL: 0.99, BR: 1.14, I: 1.33, B: 0.84, SE: 1.20,
+  ZN: 1.22, FE: 1.32, MG: 1.41, CA: 1.76, CU: 1.32, MN: 1.39,
+  NI: 1.24, CO: 1.26, NA: 1.66, K: 2.03,
+};
+/** Slack factor on the covalent-radius sum for bond detection. */
+export const BOND_SLACK = 1.15;

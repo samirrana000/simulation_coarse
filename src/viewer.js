@@ -33,6 +33,10 @@ const ELEMENT_COLOR = {
   C: [180, 180, 180], N: [90, 130, 235], O: [235, 70, 70], S: [200, 180, 60],
   P: [200, 120, 40], F: [120, 210, 120], CL: [60, 200, 120], BR: [160, 80, 40],
   I: [140, 60, 160],
+  // metal ions (heavy mode) — CPK-inspired
+  ZN: [125, 128, 176], FE: [200, 120, 60], MG: [138, 255, 138], CA: [61, 89, 171],
+  CU: [200, 130, 80], MN: [156, 122, 199], NI: [80, 160, 180], CO: [240, 140, 160],
+  NA: [102, 102, 255], K: [143, 64, 212],
 };
 const ELEMENT_COLOR_DEFAULT = [230, 160, 200];
 
@@ -79,25 +83,33 @@ export class Viewer {
     const { beads, segments } = sel;
     this.n = ff.n;
     this.nProt = ff.nProt;
+    this.heavy = !!sel.heavy;   // all-atom heavy mode: element colors + small beads everywhere
     this.ligandBonds = ff.ligandBonds && ff.ligandBonds.length ? ff.ligandBonds : null;
     this.holoIdx = ff.holoSprings && ff.holoSprings.length ? Uint32Array.from(ff.holoSprings.filter((_, k) => k % 3 !== 2)) : null;
     this.segments = segments;
     this._mean = null; // new structure ⇒ reset the motion-magnification mean
 
-    // per-bead colors by chain (protein, indices 0..nProt-1)
-    const chainIdx = new Map();
-    let ci = 0;
+    // heavy mode: protein heavy atoms are colored by element (not chain)
     this.colors = new Array(this.n);
-    beads.forEach((b, i) => {
-      if (!chainIdx.has(b.chain)) chainIdx.set(b.chain, ci++ % CHAIN_PALETTE.length);
-      this.colors[i] = CHAIN_PALETTE[chainIdx.get(b.chain)];
-    });
+    if (this.heavy) {
+      for (let i = 0; i < this.n; i++) {
+        this.colors[i] = ELEMENT_COLOR[beads[i].element] || ELEMENT_COLOR_DEFAULT;
+      }
+    } else {
+      // per-bead colors by chain (protein, indices 0..nProt-1)
+      const chainIdx = new Map();
+      let ci = 0;
+      beads.forEach((b, i) => {
+        if (!chainIdx.has(b.chain)) chainIdx.set(b.chain, ci++ % CHAIN_PALETTE.length);
+        this.colors[i] = CHAIN_PALETTE[chainIdx.get(b.chain)];
+      });
 
-    // ligand atoms colored by element (indices nProt..n-1)
-    if (ff.ligandAtoms) {
-      for (let i = this.nProt; i < this.n; i++) {
-        const la = ff.ligandAtoms[i - this.nProt];
-        this.colors[i] = ELEMENT_COLOR[la.element] || ELEMENT_COLOR_DEFAULT;
+      // ligand atoms colored by element (indices nProt..n-1)
+      if (ff.ligandAtoms) {
+        for (let i = this.nProt; i < this.n; i++) {
+          const la = ff.ligandAtoms[i - this.nProt];
+          this.colors[i] = ELEMENT_COLOR[la.element] || ELEMENT_COLOR_DEFAULT;
+        }
       }
     }
 
@@ -374,7 +386,7 @@ export class Viewer {
     const baseR = this.drawSpheres ? 4.0 * this.dpr * Math.sqrt(this.zoom) : 1.8 * this.dpr;
     for (const i of order) {
       const depth = Math.max(0.25, Math.min(1, 1 - pz[i] / (this.radius * 2.2)));
-      const rScale = i >= this.nProt ? 0.62 : 1.0;
+      const rScale = (this.heavy || i >= this.nProt) ? 0.62 : 1.0;
       const r = rScale * baseR * Math.max(0.5, fov / (fov + pz[i]));
       const [cr, cg, cb] = this.colors[i];
       const rr = Math.round(cr * depth + 20), gg = Math.round(cg * depth + 20), bb = Math.round(cb * depth + 20);

@@ -4,9 +4,9 @@
  * changed — `ui` / `state` / `recorder` now come from ui.js).
  */
 
-import { analyzeTrajectory, pmfCsv } from "./analysis.js?v=9";
-import { downloadText } from "./recorder.js?v=9";
-import { ui, state, recorder } from "./ui.js?v=9";
+import { analyzeTrajectory, pmfCsv } from "./analysis.js?v=10";
+import { downloadText } from "./recorder.js?v=10";
+import { ui, state, recorder } from "./ui.js?v=10";
 
 ui.anaBtn.addEventListener("click", () => {
   if (recorder.count === 0) {
