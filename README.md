@@ -7,10 +7,14 @@ build step and no backend. Built around the classic T4 lysozyme L99A + benzene
 system (PDB **4W52**) as a working binding demo.
 
 - One bead per residue at Cα, plus explicit heavy atoms for ligands
+- **All-atom heavy mode** (panel 2): full PDB structures with covalent
+  topology, metal coordination, and element-wise LJ + screened Coulomb
 - Langevin dynamics integrated with the BAOAB scheme
-- Elastic network model (ENM) + backbone bonds/angles
+- Elastic network model (ENM) + backbone bonds/angles (Cα mode)
 - Protein–ligand binding potentials: cross 12-6 LJ, screened electrostatics,
   H-bonds, EEF1-style desolvation, and native "holo" pose springs
+- **Ligand library + viewer placement** (panel 3): pick a molecule, click the
+  viewer, and it is dropped rigidly clash-free at the protein surface
 - Funnel bias + well-tempered metadynamics to reconstruct the **binding PMF**
 - Optional ML tier: an ESM contact-prior (from Python) and an MLP pose scorer
 - Post-run **analysis**: B-factor correlation, essential dynamics + RMSIP,
@@ -61,8 +65,9 @@ Other built-in examples: `1UBQ` (apo monomer), `1CRN`, `4HHB` (multi-subunit),
 | Panel | What it controls |
 |-------|------------------|
 | **1 — Structure** | Fetch a PDB by ID or load a file; toggle HETATM/CONECT ligand parsing; optional separate **MOL2 ligand file** (overrides HETATM) |
-| **2 — Selection** | Restrict to chains and residue ranges; builds the Cα system |
+| **2 — Selection** | Restrict to chains and residue ranges; builds the system. **Model** toggle chooses Cα elastic network vs **all-atom heavy mode** |
 | **3 — Force Field & Integrator** | ENM cutoff `Rc`, spring strength `γ`, temperature, friction `ζ`, bead mass; toggles for binding potentials, holo contacts, funnel bias; the collapsed **ML tier** sub-panel; motion-gain is view-only |
+| **Ligand Library & Placement** | Pick a built-in molecule (benzene, phenol, indole, caffeine, …), filter, and **Place on viewer** to drop it clash-free at the protein surface |
 | **4 — Recording** | Capture a trajectory (frame stride in ps, max frames); export as multi-frame XYZ or PDB |
 | **5 — Binding PMF** | Live well-tempered metadynamics PMF reconstruction; **Reset PMF** |
 | **6 — Analysis** | Run the post-hoc analysis on the recorded frames; export the PMF as CSV |
@@ -118,6 +123,54 @@ separate `.mol2` file) with automatic gap-filling for heavy atoms closer than
 1.8 Å.
 The funnel bias is exactly flat inside the bound state, so the bound equilibrium
 is undisturbed while the ligand is pulled into the pocket from far away.
+
+---
+
+## Heavy mode (all-atom)
+
+Set panel 2's **Model** to *All-atom heavy mode* to switch from the Cα elastic
+network to a full heavy-atom model (`src/heavy.js`). It parses **every** heavy
+atom (protein + HETATM ligands + **metal ions**; water and free ions are
+dropped), builds covalent topology by geometry, adds metal-coordination
+springs, and runs the same BAOAB integrator via a `HeavyForceField` that
+shares `ForceField`'s public interface.
+
+```
+U = Σ 1⁄2·200(r−r0)2            covalent bonds (geometric detection)
+  + Σ 1⁄2·40(θ−θ0)2              angles
+  + Σ 1⁄2·20(φ−φ0)2              improper dihedrals (planarity)
+  + Σ 1⁄2·2(φ−φ0)2               proper dihedrals
+  + Σ 1⁄2·40(r−r0)2              metal coordination (N/O/S donors → M)
+  + Σ 4ε[(σ/r)12−(σ/r)6]         LJ (geometric mixing)
+  + Σ 332·qi qj e^(−r/6)/r2      screened Coulomb (ε(r)=r, neutralized)
+```
+
+Bonds are detected when two heavy atoms sit within `1.15 × (covalent radii)`
+(with a 2.2 Å hard cap); angles/impropers/propers follow from the bond graph.
+Non-bonded 1-2/1-3 pairs are excluded and 1-4 pairs scaled 0.5. A smooth
+AMBER-style switching cutoff (6→8 Å) bounds the O(n2) pair scan. Metal ions
+(the `METAL_ELEMENT` table: Zn, Fe, Mg, Ca, Cu, Mn, Ni, Co, Na, K) never form
+covalent bonds — instead each metal collects up to `coordN` nearby N/O/S donors
+within `coordR` and holds them with k=40 springs, so the ion keeps its
+coordination geometry while still feeling LJ. Charges are mean-neutralized so
+the net charge is zero and electrostatics is a local dipole/quadrupole term.
+
+The viewer element-colors heavy atoms (metals get CPK-inspired colors) and
+draws the full covalent bond graph. Heavy mode is intentionally
+parameter-light and geometry-driven — a structural/visual exploration layer,
+not production MD.
+
+---
+
+## Ligand library & placement
+
+Panel 3 ships a built-in **ligand library** (`src/ligandLib.js`): benzene,
+phenol, toluene, chlorobenzene, indole, imidazole, acetate, ethanolamine,
+DMSO, and caffeine as inline MOL2. Filter the list, pick one, click **Place on
+viewer**, then click anywhere on the protein — the ligand is added to the
+system and lowered onto the protein surface with a rigid clash-relaxation so
+the final pose is clash-free (holo pose springs are OFF for placed poses, since
+they are hypotheses rather than the crystallographic pose).
 
 ---
 
@@ -205,13 +258,23 @@ src/
   main.js           orchestration: wiring, main loop, HUD, ML tier
   pdb.js            PDB parsing (Cα beads, ligands/HETATM, B-factors) + MOL2 ligands
   forcefield.js     the CG energy function (ENM, binding, desolvation, springs)
+  heavy.js          all-atom heavy mode (parseHeavy + HeavyForceField + metals)
   ligand.js         ligand internal geometry (bonds/angles/ring planarity)
+  ligandLib.js      built-in ligand library (10 molecules as inline MOL2)
+  ligand-panel.js   library selector + viewer placement flow
+  placement.js      rigid clash-free placement (placement.js)
   integrator.js     BAOAB Langevin integrator
   funnel.js         funnel bias + well-tempered metadynamics → PMF/ΔG
   scorer.js         MLP pose scorer
   analysis.js       post-run analysis (B-factors, RMSIP, occupancy, lifetimes, PMF)
   recorder.js       trajectory capture + XYZ/PDB export
-  viewer.js         Canvas rendering
+  viewer.js         Canvas rendering (Cα beads + heavy atoms, picking)
+  ff-params.js      element/LJ/charge tables + metal & covalent-radius tables
+  ff-harmonic.js    harmonic kernels (bonds/angles/springs)
+  ff-repulsion.js   excluded-volume repulsion
+  ff-binding.js     protein–ligand binding potentials
+  ml-tier.js        NN contact prior + MLP pose scorer wiring
+  pmf-panel.js / analysis-panel.js   panel 5 / 6 side-effect modules
 ml/export_esm_contacts.py   Python contact-prior exporter (ESM or heuristic)
 data/4W52_contacts.json     ready-made contact prior for the demo
 ```
@@ -220,7 +283,7 @@ data/4W52_contacts.json     ready-made contact prior for the demo
 
 ## Development notes
 
-- ES modules are cache-busted with a query suffix (`?v=8`); bump it after
+- ES modules are cache-busted with a query suffix (`?v=10`); bump it after
   editing any module so browsers fetch fresh code.
 - Modules import each other with that suffix; Node strips the query string on
   `file://` URLs, so the modules also run under plain Node for unit tests.
