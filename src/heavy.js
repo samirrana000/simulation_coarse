@@ -481,6 +481,7 @@ export class HeavyForceField {
     this.funnelOn = false;
 
     this.bindingU = 0;
+    this.desolvU = 0;
     this.repU = 0;
     this.bondU = 0;
     this.angleU = 0;
@@ -544,7 +545,8 @@ export class HeavyForceField {
    *  ε(r) = r. O(n²) — fine for the sizes heavy mode targets. */
   _nonBonded(pos, f) {
     const n = this.n;
-    let lj = 0, elec = 0;
+    const nProt = this.nProt;
+    let lj = 0, elec = 0, bindLJ = 0, bindElec = 0;
     for (let i = 0; i < n - 1; i++) {
       const xi = 3 * i;
       const ei = this._elem[i];
@@ -571,7 +573,7 @@ export class HeavyForceField {
         const ljF = 4 * eps * (12 * sr6 * sr6 - 6 * sr6) / r;
 
         // Screened Coulomb with distance-dependent dielectric ε(r) = r:
-        //   U = q_i q_j K_ELEC exp(−r/λ) / r²
+        //   U = q_i q_j K_ELEC exp(−r/λ) / r2
         let ee = 0, ef = 0;
         if (qi !== 0 && ej.q !== 0) {
           const qq = qi * ej.q;
@@ -592,6 +594,13 @@ export class HeavyForceField {
         const totF = s14 * (-S * ljF + S * ef + dS * (ljE + ee));
         lj += s14 * S * ljE;
         elec += s14 * S * ee;
+        // Protein–ligand cross term (i < nProt ≤ j): the bindingU the HUD's
+        // U_bind readout and the NN pose scorer consume (mirrors ForceField's
+        // protein–ligand nonbonded energy).
+        if (i < nProt && j >= nProt) {
+          bindLJ += s14 * S * ljE;
+          bindElec += s14 * S * ee;
+        }
 
         // F_i = −dU/dx_i = (totF)·(dx/r)  (dx = x_j − x_i ⇒ r̂ from i to j)
         const fx = totF * dx / r, fy = totF * dy / r, fz = totF * dz / r;
@@ -599,6 +608,7 @@ export class HeavyForceField {
         f[xj] -= fx; f[xj + 1] -= fy; f[xj + 2] -= fz;
       }
     }
+    this.bindingU = bindLJ + bindElec;
     return { lj, elec };
   }
 

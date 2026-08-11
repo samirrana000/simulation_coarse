@@ -152,6 +152,47 @@ export function selectHeavy(parsedHeavy, { chains = null, resFrom = null, resTo 
   return { atoms, beads, segments: [], heavy: true };
 }
 
+/**
+ * Append resolved EXTERNAL ligand molecules (library / MOL2 shape) onto a
+ * heavy-mode selection as non-protein heavy atoms matching the parseHeavy()
+ * field contract.
+ *
+ * Note: parseHeavy() already includes PDB HETATM cofactors/metals in
+ * state.sel.atoms (it drops only water), so appending parseLigands() HETATM
+ * again would double-count them. Only a separate library / MOL2 ligand needs
+ * to be merged — it is added alongside the PDB cofactors, mirroring the CG
+ * priority (library > MOL2 > PDB HETATM, the latter already present).
+ *
+ * @param {object} sel     heavy selection { atoms, beads, segments, heavy }
+ * @param {Array|null} molecules  library/MOL2 molecules (or null)
+ * @returns {object} a new selection with the ligand atoms/beads appended, or
+ *                   the original sel unchanged when molecules is empty
+ */
+export function appendHeavyLigands(sel, molecules) {
+  if (!molecules || molecules.length === 0) return sel;
+  const atoms = sel.atoms.slice();
+  const beads = sel.beads.slice();
+  let resSeq = 1;
+  for (const mol of molecules) {
+    const resName = (mol.resName || "LIG").slice(0, 3).toUpperCase();
+    const chain = mol.chain || "L";
+    for (const at of mol.atoms) {
+      const atom = {
+        x: at.x, y: at.y, z: at.z,
+        element: at.element,
+        resName, chain, resSeq,
+        atomName: at.element,
+        serial: at.serial ?? 0,
+        isProtein: false, isMetal: false, isLigand: true,
+      };
+      atoms.push(atom);
+      beads.push({ ...atom });
+    }
+    resSeq++;
+  }
+  return { atoms, beads, segments: sel.segments, heavy: true };
+}
+
 export function buildSystem() {
   if (!state.parsed) return;
   state.heavyMode = ui.modelMode?.value === "heavy";
@@ -173,7 +214,19 @@ export function buildSystem() {
   const par = { rc: Number(ui.rc.value), gamma: Number(ui.gamma.value), binding: { on: ui.bindPot.checked, holo: ui.holoSprings.checked } };
   if (state.heavyMode) {
     // All-atom heavy mode: covalent topology + metal coordination, no ENM.
+    // parseHeavy() already includes PDB HETATM cofactors/metals in
+    // state.sel.atoms, so only an external library / MOL2 ligand is merged
+    // (CG priority: library > MOL2 > PDB HETATM, the HETATM already present).
     state.ligands = [];
+    let external = null;
+    if (state.libraryLigand) {
+      external = [state.libraryLigand];
+      state.ligands = external;
+    } else if (state.mol2Ligands && state.mol2Ligands.length) {
+      external = state.mol2Ligands;
+      state.ligands = external;
+    }
+    state.sel = appendHeavyLigands(state.sel, external);
     state.ff = new HeavyForceField({ atoms: state.sel.atoms }, par, []);
   } else {
     state.ligands = [];
