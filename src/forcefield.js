@@ -73,16 +73,16 @@
  * accumulated in a preallocated flat array — zero allocations per step.
  */
 
-import { buildLigandInternalFF, improperAngle } from "./ligand.js?v=8";
+import { buildLigandInternalFF, improperAngle } from "./ligand.js?v=9";
 import {
   harmonicPairs, springForces, angleForces, ligandBondForces, improperForces,
-} from "./ff-harmonic.js?v=8";
-import { repulsion } from "./ff-repulsion.js?v=8";
-import { binding } from "./ff-binding.js?v=8";
+} from "./ff-harmonic.js?v=9";
+import { repulsion } from "./ff-repulsion.js?v=9";
+import { binding } from "./ff-binding.js?v=9";
 import {
   KB_KCAL, KCONV,
   RES_CLASS, RES_CLASS_OF, LIG_ELEMENT, LIG_ELEMENT_DEFAULT,
-} from "./ff-params.js?v=8";
+} from "./ff-params.js?v=9";
 
 // constants are re-exported so integrator.js / funnel.js / the test suite can
 // keep importing them from "./forcefield.js" — their source of truth is now
@@ -242,17 +242,8 @@ export class ForceField {
     // pocket while still allowing fluctuation. Gated by par.binding.holo
     // (default true); no-op when no ligands are present.
     this.holoSprings = new Float64Array(0);
-    if (this.holoOn && this.nLigAtoms > 0) {
-      const hs = [];
-      for (let i = 0; i < this.nProt; i++) {
-        for (let la = this.nProt; la < this.n; la++) {
-          const r0 = this._dist(this.ref, i, la);
-          if (r0 <= 6.0) hs.push(i, la, r0);
-        }
-      }
-      this.holoSprings = new Float64Array(hs);
-      this.nHolo = this.nLigAtoms > 0 ? hs.length / 3 : 0;
-    }
+    this.nHolo = 0;
+    this.rebuildHoloSprings();
 
     // ---- repulsive-pair bookkeeping ---------------------------------------
     // Non-repulsive pairs (bonded 1-2, 1-3 and ENM springs) are excluded to
@@ -485,7 +476,43 @@ export class ForceField {
   /** Attach an optional Funnel instance (constructed by main.js, not imported here). */
   setFunnel(fn) { this.funnel = fn; }
 
-  /** Σ ½ k (r−r0)² over a flat pair list; kernel lives in ff-harmonic.js. */
+  /**
+   * Rebuild the holo (native-pose) protein–ligand springs from the CURRENT
+   * reference coordinates. In the constructor this derives the initial holo
+   * springs from the native reference; after a placement it is called with
+   * holoOn=false to clear them (a placed library ligand is a hypothesis, not
+   * a known crystallographic pose, so it is not pinned). Also keeps the
+   * non-repulsive exclusion set in sync with whatever holo pairs exist.
+   * No-op when holo springs are off or there are no ligand atoms.
+   */
+  rebuildHoloSprings() {
+    // remove the old holo pairs from the non-repulsive exclusion set
+    // (guarded: the constructor calls this before _excluded is created)
+    if (this._excluded) {
+      for (let k = 0; k < this.holoSprings.length; k += 3) {
+        this._excluded.delete(this._pairKey(this.holoSprings[k], this.holoSprings[k + 1]));
+      }
+    }
+    this.holoSprings = new Float64Array(0);
+    this.nHolo = 0;
+    if (!this.holoOn || this.nLigAtoms <= 0) return;
+    const hs = [];
+    for (let i = 0; i < this.nProt; i++) {
+      for (let la = this.nProt; la < this.n; la++) {
+        const r0 = this._dist(this.ref, i, la);
+        if (r0 <= 6.0) hs.push(i, la, r0);
+      }
+    }
+    this.holoSprings = new Float64Array(hs);
+    this.nHolo = hs.length / 3;
+    if (this._excluded) {
+      for (let k = 0; k < this.holoSprings.length; k += 3) {
+        this._excluded.add(this._pairKey(this.holoSprings[k], this.holoSprings[k + 1]));
+      }
+    }
+  }
+
+  /** Σ 1⁄2 k (r−r0)2 over a flat pair list; kernel lives in ff-harmonic.js. */
   _harmonicPairs(pos, f, list, stride, k) { return harmonicPairs(pos, f, list, stride, k); }
 
   /** ENM spring forces with per-spring k — kernel in ff-harmonic.js. */

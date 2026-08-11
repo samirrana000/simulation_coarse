@@ -37,7 +37,7 @@
  * with k_B = KB_KCAL kcal/mol/K (equipartition: ½m⟨v²⟩KCONV = ½k_BT per dof).
  */
 
-import { KB_KCAL, KCONV } from "./forcefield.js?v=8";
+import { KB_KCAL, KCONV } from "./forcefield.js?v=9";
 
 export class LangevinIntegrator {
   /**

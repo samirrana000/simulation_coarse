@@ -69,6 +69,25 @@
       </details>
 
       <details open class="panel">
+        <summary>Ligand Library &amp; Placement</summary>
+        <div class="panel-body">
+          <label class="field">
+            <span class="lbl">Filter</span>
+            <input id="ligFilter" type="text" placeholder="e.g. benzene, ring, alcohol" />
+          </label>
+          <label class="field">
+            <span class="lbl">Library ligand</span>
+            <select id="ligSelect"></select>
+          </label>
+          <div class="row btns">
+            <button id="placeBtn" class="btn primary">Place on viewer</button>
+            <button id="cancelPlace" class="btn" disabled>Cancel</button>
+          </div>
+          <div id="ligPlaceInfo" class="summary">Pick a ligand, then click <b>Place on viewer</b> and click the viewer to drop it (clash-free). Holo pose springs are OFF for placed poses.</div>
+        </div>
+      </details>
+
+      <details open class="panel">
         <summary>3&nbsp;&mdash;&nbsp;Force Field &amp; Integrator</summary>
         <div class="panel-body">
           <label class="field">
@@ -210,7 +229,7 @@
     </section>
   </div>
 
-  <script type="module" src="src/main.js?v=8"></script>
+  <script type="module" src="src/main.js?v=9"></script>
   <script>
     // ES modules are blocked on file:// — surface a clear error instead of a dead UI.
     if (location.protocol === "file:") {

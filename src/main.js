@@ -18,16 +18,17 @@
  * nothing here is keyframe animation.
  */
 
-import { ForceField } from "./forcefield.js?v=8";
-import { Funnel } from "./funnel.js?v=8";
-import { LangevinIntegrator } from "./integrator.js?v=8";
-import { fetchPdb, parseCa, parseLigands, parseMol2, selectSystem, summarizeStructure } from "./pdb.js?v=8";
-import { downloadText } from "./recorder.js?v=8";
-import { PoseScorer } from "./scorer.js?v=8";
-import { ui, state, viewer, recorder, initParamReadouts, updateSelSummary, updateRecStatus } from "./ui.js?v=8";
-import { applyMLToFF } from "./ml-tier.js?v=8";
-import { updatePMFPlot } from "./pmf-panel.js?v=8";
-import "./analysis-panel.js?v=8";  // side-effect: registers panel-6 listeners
+import { ForceField } from "./forcefield.js?v=9";
+import { Funnel } from "./funnel.js?v=9";
+import { LangevinIntegrator } from "./integrator.js?v=9";
+import { fetchPdb, parseCa, parseLigands, parseMol2, selectSystem, summarizeStructure } from "./pdb.js?v=9";
+import { downloadText } from "./recorder.js?v=9";
+import { PoseScorer } from "./scorer.js?v=9";
+import { ui, state, viewer, recorder, initParamReadouts, updateSelSummary, updateRecStatus } from "./ui.js?v=9";
+import { applyMLToFF } from "./ml-tier.js?v=9";
+import { updatePMFPlot } from "./pmf-panel.js?v=9";
+import "./analysis-panel.js?v=9";  // side-effect: registers panel-6 listeners
+import "./ligand-panel.js?v=9";   // side-effect: registers library+placement panel
 
 // physics-slider live readouts (rc/gamma/temp/fric/mass) → hot param reload
 initParamReadouts(() => onParamChange());
@@ -44,6 +45,7 @@ ui.motionGain.addEventListener("input", () => {
 async function loadStructure(text, sourceLabel) {
   state.pdbText = text;
   state.parsed = parseCa(text);
+  state.libraryLigand = null;  // a new structure clears any placed-library ligand
   ui.structSummary.textContent = `${sourceLabel}\n` + summarizeStructure(state.parsed);
   // Default selection = everything
   ui.chainsInput.value = "";
@@ -130,7 +132,7 @@ function parseParamChainIds() {
     .map((s) => (s === "_" ? "_" : s));
 }
 
-function buildSystem() {
+export function buildSystem() {
   if (!state.parsed) return;
   try {
     const chains = parseParamChainIds();
@@ -145,7 +147,11 @@ function buildSystem() {
 
   const par = { rc: Number(ui.rc.value), gamma: Number(ui.gamma.value), binding: { on: ui.bindPot.checked, holo: ui.holoSprings.checked } };
   state.ligands = [];
-  if (state.mol2Ligands && state.mol2Ligands.length) {
+  if (state.libraryLigand) {
+    // Library ligand (placed via ligand-panel.js) takes priority over any
+    // MOL2/HETATM ligand — it is the hypothesis being tested.
+    state.ligands = [state.libraryLigand];
+  } else if (state.mol2Ligands && state.mol2Ligands.length) {
     // MOL2 ligand(s) supplied as a separate file — they replace any HETATM
     // ligands from the PDB (e.g. protein-only PDB + benzene.mol2).
     state.ligands = state.mol2Ligands;

@@ -9,7 +9,7 @@
  * ff._angleForces / ff._ligandBondForces etc.) is untouched.
  */
 
-import { improperAngle } from "./ligand.js?v=8";
+import { improperAngle } from "./ligand.js?v=9";
 
 /** Σ ½ k (r−r0)² over a flat pair list; returns energy, accumulates forces. */
 export function harmonicPairs(pos, f, list, stride, k) {

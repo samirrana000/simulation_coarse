@@ -9,8 +9,8 @@
  * handles.
  */
 
-import { Viewer } from "./viewer.js?v=8";
-import { Recorder } from "./recorder.js?v=8";
+import { Viewer } from "./viewer.js?v=9";
+import { Recorder } from "./recorder.js?v=9";
 
 /* ------------------------------------------------------------------ */
 /*  DOM handles                                                        */
@@ -22,6 +22,8 @@ export const ui = {
   mol2File: $("mol2File"), mol2Info: $("mol2Info"),
   chainsInput: $("chainsInput"), resFrom: $("resFrom"), resTo: $("resTo"),
   buildBtn: $("buildBtn"), selSummary: $("selSummary"),
+  ligFilter: $("ligFilter"), ligSelect: $("ligSelect"),
+  placeBtn: $("placeBtn"), cancelPlace: $("cancelPlace"), ligPlaceInfo: $("ligPlaceInfo"),
   rc: $("rc"), gamma: $("gamma"), temp: $("temp"), fric: $("fric"), mass: $("mass"),
   motionGain: $("motionGain"), v_motionGain: $("v_motionGain"),
   stridePs: $("stridePs"), maxFrames: $("maxFrames"), exportFmt: $("exportFmt"),
@@ -48,6 +50,8 @@ export const state = {
   ligands: [],
   mol2Ligands: null,   // parseMol2() output — when set, replaces HETATM ligands
   mol2Fn: null,        // filename of the loaded MOL2 (for status lines)
+  libraryLigand: null, // parsed library molecule (ligand-panel.js) — prioritized
+                       // over mol2Ligands/HETATM when set; reset on new structure
   integ: null,         // LangevinIntegrator
   running: false,
   simSpeedPsPerFrame: 1.0, // ~1 ps/frame at 60 fps → 1 ns per ~17 s wall time

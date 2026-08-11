@@ -10,6 +10,12 @@
  * (chain-based palette). Canvas 2D `arc()` with a radial gradient fake-shading
  * keeps it fast; bead sort every frame gives correct painter's-algorithm
  * depth ordering.
+ *
+ * Picking: unproject()/pickDepth()/screenToWorld() invert the geometric
+ * projection (pan → perspective divide → rotateX/rotateY → center) so a
+ * cursor position maps back to a world point (Å) for ligand placement.
+ * The render-only motion magnification is NOT inverted — picking always
+ * targets the true, un-amplified world frame.
  */
 
 const CHAIN_PALETTE = [
@@ -156,10 +162,100 @@ export class Viewer {
     this.dpr = dpr;
   }
 
+  /* ------------------------------ picking ------------------------------ */
+
+  /**
+   * Invert the geometric projection: screen (CSS px) → world (Å).
+   * `depth` is the camera-space z2 of the plane to intersect
+   * (default 0 = plane through the model center). The render-only motion
+   * magnification is NOT inverted — picking targets the true world frame.
+   * @returns {[number,number,number]|null} world point, or null if no system.
+   */
+  unproject(clientX, clientY, depth = 0) {
+    if (this.n === 0) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    const W = this.canvas.width, H = this.canvas.height;
+    // CSS px → device px via the rect/buffer ratio (robust to CSS transforms;
+    // equals this.dpr for the standard 1:1 layout).
+    const kx = W / rect.width, ky = H / rect.height;
+    const pxdev = (clientX - rect.left) * kx;
+    const pydev = (clientY - rect.top) * ky;
+
+    const scale = (Math.min(W, H) * 0.45 * this.zoom) / this.radius;
+    const fov = this.radius * 4;
+    const z2 = depth;
+    const persp = fov / (fov + z2);
+    const x1 = (pxdev - W / 2 - this.panX) / (scale * persp);
+    const y1 = -(pydev - H / 2 - this.panY) / (scale * persp);
+
+    // forward: rotateY(rotY) then rotateX(rotX); inverse: rotateX(-rotX) then rotateY(-rotY)
+    const sx = Math.sin(this.rotX), cxx = Math.cos(this.rotX);
+    const sy = Math.sin(this.rotY), cyy = Math.cos(this.rotY);
+    const y0 = cxx * y1 + sx * z2;
+    const z1 = -sx * y1 + cxx * z2;
+    const x0 = cyy * x1 - sy * z1;
+    const z0 = sy * x1 + cyy * z1;
+
+    const [cx, cy, cz] = this.center;
+    return [x0 + cx, y0 + cy, z0 + cz];
+  }
+
+  /**
+   * Camera-space depth (z2) of the bead nearest the cursor within 12 device
+   * px, preferring the nearest bead along z among candidates. Returns 0 when
+   * nothing is under the cursor. `pos` defaults to the last rendered
+   * (un-amplified) position buffer.
+   */
+  pickDepth(clientX, clientY, pos = this._lastPos) {
+    if (this.n === 0 || !pos) return 0;
+    const rect = this.canvas.getBoundingClientRect();
+    const W = this.canvas.width, H = this.canvas.height;
+    const kx = W / rect.width, ky = H / rect.height;
+    const mx = (clientX - rect.left) * kx;
+    const my = (clientY - rect.top) * ky;
+
+    const scale = (Math.min(W, H) * 0.45 * this.zoom) / this.radius;
+    const fov = this.radius * 4;
+    const [cx, cy, cz] = this.center;
+    const sx = Math.sin(this.rotX), cxx = Math.cos(this.rotX);
+    const sy = Math.sin(this.rotY), cyy = Math.cos(this.rotY);
+
+    const tol = 12, tol2 = tol * tol; // device px
+    let best = null, bestD2 = Infinity;
+    for (let i = 0; i < this.n; i++) {
+      const x0 = pos[3 * i] - cx, y0 = pos[3 * i + 1] - cy, z0 = pos[3 * i + 2] - cz;
+      const x1 = cyy * x0 + sy * z0;
+      const z1 = -sy * x0 + cyy * z0;
+      const y1 = cxx * y0 - sx * z1;
+      const z2 = sx * y0 + cxx * z1;
+      const persp = fov / (fov + z2);
+      const px = W / 2 + x1 * scale * persp + this.panX;
+      const py = H / 2 - y1 * scale * persp + this.panY;
+      const dx = px - mx, dy = py - my;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > tol2) continue;
+      if (!best || z2 < best.z2 || (z2 === best.z2 && d2 < bestD2)) {
+        best = { z2 }; bestD2 = d2;
+      }
+    }
+    return best ? best.z2 : 0;
+  }
+
+  /**
+   * screen → world convenience: unproject() at the bead-picked depth when
+   * opts.snapToBead (and positions are available), else at opts.depth ?? 0.
+   */
+  screenToWorld(clientX, clientY, opts = {}) {
+    const depth = opts.snapToBead ? this.pickDepth(clientX, clientY, opts.pos)
+                                  : (opts.depth ?? 0);
+    return this.unproject(clientX, clientY, depth);
+  }
+
   /* ------------------------------ render ------------------------------ */
 
   /** Draw one frame; pos = Float64Array(3n) current bead coordinates. */
   render(pos) {
+    if (pos) this._lastPos = pos;   // kept for pickDepth()/screenToWorld()
     const ctx = this.ctx;
     // Keep the backing buffer in sync with the CSS size every frame (covers
     // late layout, panel toggles and pinch-zoom without a resize event).

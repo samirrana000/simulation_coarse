@@ -19,7 +19,7 @@
  * No external units conversion happens here: coordinates stay in Ångström.
  */
 
-import { parseMol2, mol2Element } from "./mol2.js?v=8";
+import { parseMol2, mol2Element } from "./mol2.js?v=9";
 export { parseMol2, mol2Element };
 
 const RCSB_URL = (id) => `https://files.rcsb.org/download/${id}.pdb`;

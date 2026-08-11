@@ -4,8 +4,8 @@
  * the local `state`/`ui` handles changed — those now come from ui.js).
  */
 
-import { PoseScorer } from "./scorer.js?v=8";
-import { ui, state, updateSelSummary } from "./ui.js?v=8";
+import { PoseScorer } from "./scorer.js?v=9";
+import { ui, state, updateSelSummary } from "./ui.js?v=9";
 
 // contacts.json loader (output of ml/export_esm_contacts.py)
 ui.contactsFile.addEventListener("change", async () => {
