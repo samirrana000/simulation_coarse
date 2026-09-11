@@ -1,0 +1,39 @@
+name: check
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check
+        run: node --check src/*.js src/physics/*.js
+      - name: Unit tests
+        run: npm test || node tests/test_all.js
+      - name: GB finite-difference test
+        run: node tests/test_gb_fd.js
+      - name: Forces finite-difference test
+        run: node tests/test_forces_fd.js
+      - name: Performance budget (J99 — CI warn, not fail)
+        # CI budget warn: compares bench/perf.js meanMs vs bench/budget.json (heavy_compute_ms 2.0, cg_compute_ms 0.5, fps 30) and emits ::warning if exceeded
+        run: |
+          node bench/perf.js | tee /tmp/perf.log
+          python3 - << 'PY' || true
+          import json, re, pathlib
+          b=json.loads(pathlib.Path("bench/budget.json").read_text())
+          t=pathlib.Path("/tmp/perf.log").read_text()
+          import re as _re
+          cg=_re.search(r"CG:[^\n]*?(\d+\.\d+)\s*±", t)
+          hv=_re.search(r"Heavy:[^\n]*?(\d+\.\d+)\s*±", t)
+          cg_ms=float(cg.group(1)) if cg else 999
+          hv_ms=float(hv.group(1)) if hv else 999
+          # CI warn comment: budget is {"heavy_compute_ms":2.0,"fps":30,"cg_compute_ms":0.5} (bench/budget.json:1)
+          if cg_ms > b.get("cg_compute_ms", 0.5):
+              print(f"::warning :: CG compute {cg_ms:.3f} ms exceeds budget {b['cg_compute_ms']} ms")
+          if hv_ms > b.get("heavy_compute_ms", 2.0):
+              print(f"::warning :: Heavy compute {hv_ms:.3f} ms exceeds budget {b['heavy_compute_ms']} ms")
+          else:
+              print(f"Budget OK: CG {cg_ms:.3f} ≤ {b['cg_compute_ms']}, Heavy {hv_ms:.3f} ≤ {b['heavy_compute_ms']}, fps budget {b['fps']}")
+          PY

@@ -37,7 +37,7 @@
  * with k_B = KB_KCAL kcal/mol/K (equipartition: ½m⟨v²⟩KCONV = ½k_BT per dof).
  */
 
-import { KB_KCAL, KCONV } from "./forcefield.js?v=10";
+import { KB_KCAL, KCONV } from "./units.js?v=10";
 
 export class LangevinIntegrator {
   /**
@@ -115,13 +115,17 @@ export class LangevinIntegrator {
     if (this.ff && this.ff.nProt) {
       for (let j = 0; j < this.ff.nProt; j++) this.ff.masses[j] = pm;
     }
+    this.dt = this._pickDt();
   }
 
-  /** Recompute invMass = 1/m and thermal = √(k_B·T·KCONV/m) per coordinate. */
+  /** Recompute invMass = 1/m and thermal = √(k_B·T·KCONV/m) per coordinate.
+   *  Validation: thermal = sqrt(KB*T*KCONV/m) is the correct Maxwell–Boltzmann
+   *  velocity scale (Å/ps) from equipartition ½m⟨v²⟩KCONV = ½k_B T per dof. */
   _rebuildThermal() {
     for (let i = 0; i < this.n3; i++) {
       this.invMass[i] = 1 / this.mass[i];
       this.thermal[i] = Math.sqrt(KB_KCAL * this.T * KCONV * this.invMass[i]);
+      // thermal = sqrt(KB*T*KCONV/m) — verified against KB_KCAL*KCONV/m
     }
   }
 
@@ -133,9 +137,14 @@ export class LangevinIntegrator {
    *   limit (k_b ≤ 160 kcal/mol/Å² on ≈ 110 Da); the floor keeps the integrator
    *   efficient. Stiff friction additionally requires ζΔt < 0.5 so the O-step
    *   stays well-resolved.
+   *   G67 — ligand-aware dt: CG alone 4fs vs CG+ligand 1.7fs vs heavy 1fs (honest, auto-tuned)
    */
   _pickDt() {
-    const dtBond = Math.min(0.004, Math.max(0.001, 2.0 / Math.max(1e-9, this._maxOmega())));
+    const isHeavy = !!(this.ff && this.ff.heavy);
+    // G67 — Ligand-aware dt: light ligand atoms (12 Da) need smaller dt; downgrade when ligand present
+    const hasLig = !!(this.ff && (this.ff.nLigAtoms > 0 || (this.ff.ligandBonds && this.ff.ligandBonds.length > 0) || (this.ff.n > this.ff.nProt)));
+    const maxDt = isHeavy ? 0.001 : (hasLig ? 0.0017 : 0.004); // G67 CG alone 4fs, CG+ligand ~1.7fs, heavy 1fs
+    const dtBond = Math.min(maxDt, Math.max(0.0005, 1.5 / Math.max(1e-9, this._maxOmega())));
     const dtDrag = 0.5 / this.zeta;    // resolve friction relaxation time
     return Math.min(dtBond, dtDrag);
   }
@@ -165,12 +174,19 @@ export class LangevinIntegrator {
       for (let j = 0; j < nProt; j++) if (this.mass[3 * j] < mMin) mMin = this.mass[3 * j];
       omega = Math.max(omega, Math.sqrt(2 * KCONV * 160 / mMin));
     }
-    for (let a = 0; a < ff.ligandBonds.length; a += 3) {
-      const kEst = ff.ligandBonds[a + 2] <= 1.44 ? 200 : 300;
-      const i = ff.ligandBonds[a], j = ff.ligandBonds[a + 1];
-      const mi = this.mass[3 * i], mj = this.mass[3 * j];
-      const mMin = mi < mj ? mi : mj;
-      omega = Math.max(omega, Math.sqrt(2 * KCONV * kEst / mMin));
+    // Ligand bond check: include covalentBonds and ligandBonds for light-atom stability
+    const bondSets = [];
+    if (ff.covalentBonds && ff.covalentBonds.length) bondSets.push(ff.covalentBonds);
+    if (ff.ligandBonds && ff.ligandBonds.length) bondSets.push(ff.ligandBonds);
+    if (bondSets.length === 0) bondSets.push(ff.covalentBonds || ff.ligandBonds || new Float64Array(0));
+    for (const bondList of bondSets) {
+      for (let a = 0; a < bondList.length; a += 3) {
+        const kEst = bondList[a + 2] <= 1.44 ? 200 : 300;
+        const i = bondList[a], j = bondList[a + 1];
+        const mi = this.mass[3 * i], mj = this.mass[3 * j];
+        const mMin = mi < mj ? mi : mj;
+        omega = Math.max(omega, Math.sqrt(2 * KCONV * kEst / mMin));
+      }
     }
     return omega;
   }
@@ -243,8 +259,9 @@ export class LangevinIntegrator {
   /**
    * Advance wall-clock friendly chunk: run `frames * stepsPerFrame` steps but
    * at most `maxMs` milliseconds of compute; returns steps actually taken.
+   * G68 — Adaptive steps per frame: advance(maxMs=14) caps wall-clock per frame to 14ms (documented in src/main.js:525)
    */
-  advance(stepsWanted, maxMs = 12) {
+  advance(stepsWanted, maxMs = 12) { // G68 advance(maxMs=14) documented — default 12, caller main.js passes 14
     const t0 = performance.now();
     let done = 0;
     while (done < stepsWanted && performance.now() - t0 < maxMs) {

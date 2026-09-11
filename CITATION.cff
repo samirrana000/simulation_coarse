@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+title: simulation_coarse — Client-Side Multi-Scale Biomolecular Dynamics and Free Energy Landscapes
+abstract: >-
+  Browser-native coarse-grained Cα ENM and all-atom heavy-atom MD with HCT
+  GB/SA, BAOAB Langevin, well-tempered funnel metadynamics, and a 4-state
+  Markovian Chemical Network (TPT). Zero-install, WebGPU/Web-Worker accelerated.
+version: v1.0-jpcb
+date-released: 2026-09-01
+license: MIT
+type: software
+authors:
+  - given-names: Samir
+    family-names: Rana
+    affiliation: Laboratory of Computational Biophysics and Molecular Engineering
+    email: samirrana@simulation-coarse.org
+    orcid: https://orcid.org/0000-0000-0000-0000
+repository-code: https://github.com/samirr/simulation_coarse
+url: https://github.com/samirr/simulation_coarse
+keywords:
+  - coarse-grained
+  - elastic network model
+  - Generalized Born
+  - metadynamics
+  - chemical master equation
+  - WebGPU
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.XXXXXXX
+    description: Zenodo archive for tag v1.0-jpcb (placeholder — replace XXXXXXX on deposition)
+  - type: url
+    value: https://doi.org/10.5281/zenodo.XXXXXXX
+    description: Zenodo DOI placeholder for supplement
+message: >-
+  If you use this software, please cite both the JPCB manuscript and the
+  archived code version v1.0-jpcb via its Zenodo DOI (10.5281/zenodo.XXXXXXX).
+  See docs/CITATION.md for BibTeX and manuscript citation.

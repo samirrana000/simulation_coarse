@@ -19,6 +19,21 @@ system (PDB **4W52**) as a working binding demo.
 - Optional ML tier: an ESM contact-prior (from Python) and an MLP pose scorer
 - Post-run **analysis**: B-factor correlation, essential dynamics + RMSIP,
   ligand occupancy, contact lifetimes, PMF export
+- **Phase 1 — Physics rigor (opt-in):** AMBER ff14SB-style bonds/angles/Fourier dihedrals (`src/physics/forcefield/amber14sb.js`), Tirion distance-weighted ANM + SS dihedrals (`tirion_anm.js`), GB-OBC II + HCT Born radii (`src/physics/solvation/gb_obc2.js`), analytical LCPO SASA (`lcpo_sasa.js`), implicit membrane slab (`membrane_slab.js`)
+- **Phase 2 — Chemistry (opt-in):** heuristic pKa/tautomer assigner HIE/HID/HIP, ASH/GLH, CYX (`src/chem/protonation.js`), GAFF2-lite typer + Gasteiger/BCC-lite charges (`src/chem/gaff2_mapper.js`), chirality/planarity checks (`src/chem/stereo.js`), metal coordination polyhedra (`src/chem/metals.js`)
+- **Phase 3 — Compute:** WGSL cell-list + tiled nonbonded kernels (`src/compute/wgsl/`), `webgpu_backend.js` orchestrator (GPU→worker→CPU fallback), r-RESPA multi-timestep integrator (`src/physics/integrators/respa.js`, 1 fs inner / 2–4 fs outer)
+- **Phase 4 — Workflows:** alanine scanning ΔΔG (`src/analysis/alanine_scanning.js`), DCCM + heatmap (`src/analysis/dccm.js`), cryptic-pocket MetaD + volume tracking (`src/analysis/cryptic_pockets.js`), SMD pulling + Jarzynski ΔF (`src/analysis/unbinding_smd.js`)
+- **Phase 5 — Anti-slop cockpit:** Load → Build → Run → Record visible by default, everything else collapsed; top status bar, metrics HUD, bottom dock with timeline/CV strips, keyboard `[Space]/[R]/[M]/[1-7]`; see `WHAT_CHANGED.md`
+
+## When to use / when not to use
+
+> **Trust boundary:** `simulation_coarse` is a browser-based educational / hypothesis tool, **NOT** a replacement for rigorous MD or free-energy perturbation (FEP). Numbers labeled `ΔG`, `K_D`, or `k_on/k_off` are qualitative — do not report them as binding affinities.
+
+- **Use it for:** interactive teaching, rapid pocket exploration and clash-free ligand placement, illustrative PMF sketches, and offline browser demos.
+- **Do NOT use it for:** production FEP/TI, quantitative `K_D`/`ΔG`, membrane or nucleic-acid systems, QM/MM, or PME electrostatics.
+- **Long-range electrostatics:** cutoff 8.5 Å, no PME — not for highly charged systems (5% convergence test, see docs/LIMITATIONS.md).
+
+See **[docs/APPLICABILITY.md](docs/APPLICABILITY.md)** for the full critical comparison vs **GROMACS, AMBER, OpenMM, NAMD, Rosetta, Mol*, NGL** (Accuracy / Speed / Use case / Install) and the explicit **“What we will NOT do”** scope. See also **[docs/LIMITATIONS.md](docs/LIMITATIONS.md)** and **[docs/CHARGES.md](docs/CHARGES.md)** (AMBER ff14SB approximate).
 
 ---
 
@@ -247,6 +262,20 @@ Run on the recorded trajectory (need ≥ 2 frames — press **● Rec**, run, **
 
 ---
 
+## Limitations
+
+> **Honest scope:** This browser model is not production MD — see the explicit list in **[docs/LIMITATIONS.md](docs/LIMITATIONS.md)** for full detail.
+
+- **GB cutoff, no PME** — 6.5→8.5 Å switching, no PME (`src/heavy.js:32`); not for highly charged systems.
+- **1D funnel CV only** — PMF along `r = |COM_lig − COM_pocket|` (`src/funnel.js:165`); orthogonal barriers invisible.
+- **4-state kinetics toy** — Bulk/Encounter/Intermediate/Bound Kramers network (`src/physics/network.js:13`); illustrative, not a converged MSM. **4-state toy, not full MSM; use PyEMMA for production** — see `docs/NETWORK.md` (`src/physics/network.js:13`).
+- **Canvas2D vs WebGL** — 2-D Canvas painter's sort (`src/viewer.js:481`), no depth buffer; see `docs/VIEWER.md` and `src/viewer-gl.js`.
+- **No membrane / nucleic acids / QM** — protein-only force fields; use GROMACS/CHARMM/NAMD/QM-MM for those.
+
+For the comparative table vs GROMACS/AMBER/OpenMM see **[docs/APPLICABILITY.md](docs/APPLICABILITY.md)**. For performance vs GROMACS see **[bench/vs_gromacs.md](bench/vs_gromacs.md)**. Full limitations also in **[docs/LIMITATIONS.md](docs/LIMITATIONS.md)**.
+
+---
+
 ## Project layout
 
 ```
@@ -275,8 +304,16 @@ src/
   ff-binding.js     protein–ligand binding potentials
   ml-tier.js        NN contact prior + MLP pose scorer wiring
   pmf-panel.js / analysis-panel.js   panel 5 / 6 side-effect modules
+  physics/forcefield/amber14sb.js + tirion_anm.js   Phase-1 tables & CG ANM
+  physics/solvation/gb_obc2.js + lcpo_sasa.js + membrane_slab.js
+  physics/integrators/respa.js   r-RESPA stepper
+  chem/protonation.js + gaff2_mapper.js + stereo.js + metals.js
+  compute/wgsl/cell_list.wgsl + nonbonded_forces.wgsl + webgpu_backend.js
+  analysis/alanine_scanning.js + dccm.js + cryptic_pockets.js + unbinding_smd.js
 ml/export_esm_contacts.py   Python contact-prior exporter (ESM or heuristic)
 data/4W52_contacts.json     ready-made contact prior for the demo
+docs/PHYSICS_RIGOR.md + CHEMISTRY.md + GPU_RESPA.md + WORKFLOWS.md + UI_COCKPIT.md
+  Phase 1–5 subsystem docs (see docs/)
 ```
 
 ---

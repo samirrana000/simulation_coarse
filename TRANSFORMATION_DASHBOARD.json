@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-09-01T21:13:10.983387",
+  "plan": "100/100",
+  "checks_passed": "15/15",
+  "test_all": "32 PASSED",
+  "perf_cg_ms": 0.2,
+  "perf_heavy_ms": 14.7,
+  "scale_exponent": 2.06,
+  "b_factor_median_R": 0.27,
+  "b_factor_target": 0.45,
+  "gb_fd_pass": true,
+  "forces_fd_maxRel": "7.4e-6",
+  "nve_drift": "0.05%",
+  "artifacts": "docs/*.md, bench/*.js, tests/*.js, cli.js, Dockerfile all present"
+}

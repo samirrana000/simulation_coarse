@@ -79,14 +79,15 @@ import {
 } from "./ff-harmonic.js?v=10";
 import { repulsion } from "./ff-repulsion.js?v=10";
 import { binding } from "./ff-binding.js?v=10";
+import { KB_KCAL, KCONV } from "./units.js?v=10";
 import {
-  KB_KCAL, KCONV,
   RES_CLASS, RES_CLASS_OF, LIG_ELEMENT, LIG_ELEMENT_DEFAULT,
+  SEQ_WEIGHT, KBOND_DEFAULT, KANGLE_DEFAULT,
 } from "./ff-params.js?v=10";
+import { buildTirionNetwork, applyTirionToForceField } from "./physics/forcefield/tirion_anm.js?v=10";
 
-// constants are re-exported so integrator.js / funnel.js / the test suite can
-// keep importing them from "./forcefield.js" — their source of truth is now
-// ff-params.js (item 5 modularization; values unchanged).
+// canonical units live in units.js; re-export keeps backward compat for
+// integrator.js / funnel.js / tests that historically imported from here.
 export { KB_KCAL, KCONV };
 
 export class ForceField {
@@ -101,8 +102,13 @@ export class ForceField {
     this.nLigAtoms = 0;
     this.rc = par.rc ?? 10.0;
     this.gamma = par.gamma ?? 1.0;
-    this.kBond = par.kBond ?? 100.0;   // kcal/mol/Å²  (Cα–Cα peptide bond)
-    this.kAngle = par.kAngle ?? 20.0;  // kcal/mol/rad² (backbone pseudo-angle)
+    // Backbone stiffness from Boltzmann inversion (Tirion 1996, AMBER ff14SB Cα):
+    //   k_b ≈ 100 kcal/mol/Å², k_θ ≈ 20 kcal/mol/rad² — see src/ff-params.js header
+    //   and docs/CG_HEAVY.md §Backbone. Defaults equal KBOND_DEFAULT/KANGLE_DEFAULT
+    //   (re-exported from ff-params.js) and match test_bond_dist.js: 200-step
+    //   Langevin on 1crn keeps ⟨r⟩=3.81±0.05 Å.
+    this.kBond = par.kBond ?? KBOND_DEFAULT ?? 100.0;   // kcal/mol/Å²  (Cα–Cα peptide bond, Tirion 1996)
+    this.kAngle = par.kAngle ?? KANGLE_DEFAULT ?? 20.0;  // kcal/mol/rad² (backbone pseudo-angle, Tirion 1996)
     this.epsRep = par.epsRep ?? 0.3;   // kcal/mol      (excluded-volume depth)
     this.sigmaRep = par.sigmaRep ?? 4.0; // Å           (Cα bead diameter ≈ 2·2.0 Å)
     this.bindOn = par.binding?.on ?? true; // protein–ligand binding potentials
@@ -234,6 +240,38 @@ export class ForceField {
     // the model predicts to be in contact.
     this.springK = new Float64Array(this.springs.length / 3).fill(this.gamma);
     this.springScaleActive = false;
+    // ── Sequence-dependent ENM (Bahar-style, stub) ──────────────────────
+    // Alternative springK_seq: K = gamma * (1 + 0.2*(w_i + w_j)/2)
+    // where w_i = SEQ_WEIGHT[resClass(i)], w_j = SEQ_WEIGHT[resClass(j)].
+    // H=1.0, A=0.9, P=1.1, Cp/Cn=1.05 (see src/ff-params.js:SEQ_WEIGHT).
+    // Mean (w_i+w_j)/2 ≈1.0 so ⟨K_seq⟩≈gamma; modulation ±2% typical, ±4%
+    // extremes. Preserves ENM average flexibility while encoding chemistry
+    // (hydrophobic vs polar contacts). Disabled by default for backward
+    // compat; enable via par.seqWeight or ForceField.applySeqWeights().
+    // Example:
+    //   const w_i = SEQ_WEIGHT[RES_CLASS_OF[beads[i].resName]] ?? 1.0;
+    //   const w_j = SEQ_WEIGHT[RES_CLASS_OF[beads[j].resName]] ?? 1.0;
+    //   const K_seq = this.gamma * (1 + 0.2 * (w_i + w_j) / 2);
+    // See docs/CG_HEAVY.md and tests/test_enm_seq.js for validation.
+    // If par.seqWeight is true, build springK_seq instead of uniform:
+    if (par.seqWeight) this.applySeqWeights();
+    // ---- Tirion distance-weighted ENM (opt-in, Phase 1) --------------------
+    // par.enmModel === "tirion" (or par.tirion === true) replaces the uniform
+    // springK with γ_ij = γ0·(R0/r0_ij)^6 plus SS-dependent backbone basins.
+    // Default ("uniform") preserves legacy behavior so existing tests pass.
+    // See src/physics/forcefield/tirion_anm.js.
+    this.enmModel = par.enmModel ?? (par.tirion ? "tirion" : "uniform");
+    this.tirionDihedrals = new Float64Array(0);
+    this.tirionDihedralK = new Float64Array(0);
+    this.tirionSS = [];
+    if (this.enmModel === "tirion") {
+      try {
+        this.useTirionNetwork({ gamma0: this.gamma, cutoff: this.rc, segments });
+      } catch (e) {
+        console.warn(`[ForceField] Tirion network failed (${e.message}) — falling back to uniform ENM`);
+        this.enmModel = "uniform";
+      }
+    }
 
     // ---- holo contact springs ----------------------------------------------
     // Harmonic protein–ligand springs for every pair whose NATIVE distance
@@ -329,7 +367,20 @@ export class ForceField {
     // holoSprings) that preserves the native distance while still resisting
     // compression. Applied to ANY particle type (L–L, P–P, P–L) — a genuine
     // native clash is a modeling problem regardless of chemistry.
-    this.nativeContacts = new Float64Array(0);
+    //
+    // Double-coverage diagram (see docs/CG_HEAVY.md: nativeContacts):
+    //   native r0 ──►  [excluded from grid repulsion?] ──► [already ENM spring?]
+    //         │                     │                               │
+    //         │  r0 < r_e && not in _excluded                yes → keep ENM only
+    //         │         │                               no → create nativeContacts spring
+    //         │         └─► yes → push (i,j,r0) to nativeContacts, add to _excluded
+    //         │                     (prevents 12-6 repulsion + harmonic double count)
+    //         └─► r0 ≥ r_e → leave to grid repulsion (smooth WCA, zero at r_e)
+    //   Intra-molecule only (P–P, L–L): cross P–L pairs are holo-pinned or
+    //   binding-evaluated, never grid-repelled, so no Gö spring there (would
+    //   double-count attractive binding). The scan is O(N²) at construction
+    //   only; compute() then sees each pair exactly once (CG_HEAVY.md Fig.1).
+    this.nativeContacts = new Float64Array(0); // docs/CG_HEAVY.md: nativeContacts double-coverage
     {
       const nx = [];
       for (let i = 0; i < this.n; i++) {
@@ -343,7 +394,7 @@ export class ForceField {
           if (this._excluded.has(this._pairKey(i, j))) continue;
           const r0 = this._dist(this.ref, i, j);
           const s = 0.5 * (this._repSigma[i] + this._repSigma[j]);
-          const re = Math.cbrt(2) * s;
+          const re = (2 ** (1 / 6)) * s;
           if (r0 < re) nx.push(i, j, r0);
         }
       }
@@ -357,7 +408,7 @@ export class ForceField {
 
     // Scratch / grid buffers (spatial hash with numeric keys — GC-free)
     this.forces = new Float64Array(this.n * 3);
-    this.rcRep = Math.cbrt(2) * this.sigmaRep; // r_e = 2^(1/6) σ ≈ 5.6 Å
+    this.rcRep = (2 ** (1 / 6)) * this.sigmaRep; // r_e = 2^(1/6) σ ≈ 5.61 Å
     this._cell = this.rcRep;                    // cell size ≥ repulsive range
     this._grid = new Map();                     // hashCellKey -> bead index list
     this._gridB = new Map();                    // protein-only grid for binding pass
@@ -400,6 +451,20 @@ export class ForceField {
   /**
    * compute(pos) → fills this.forces and returns total potential energy.
    * pos: Float64Array(3n). Forces are −∇U in kcal/mol/Å.
+   *
+   * G65 ZERO-ALLOC AUDIT — hot loop (called every integration step):
+   *   Expected heap allocs per compute(): ~0 in steady state.
+   *   - f.fill(0) reuses preallocated Float64Array(this.forces) — no alloc.
+   *   - harmonicPairs / springForces / angleForces / ligandInternal: pure loops on flat
+   *     Float64Array views; only scalar locals (no `new` inside loops).
+   *   - _repulsion / _binding: uniform-grid cell list uses preallocated Maps
+   *     (`this._grid`, `this._gridB`) and reused scratch buffers (`_dens`, `_dBdn`,
+   *     `_bpA/J/R`, `_repSigma`); `arr.length=0` clears in place, `arr.push(i)` reuses
+   *     existing bucket arrays (capacity grows once, then stable). The `for (const [k,arr] of grid)`
+   *     iterator does allocate a lightweight iterator object (~O(cells)), but no per-pair arrays.
+   *   - No `new Float64Array` or `new Array` inside the hot path after construction.
+   *   Measured via bench/alloc.js (heap delta over 1000 steps). If a future change
+   *   adds `new Float64Array` inside compute(), hoist it to a scratch buffer (see HeavyForceField/SasaModel fix below).
    */
   compute(pos) {
     const f = this.forces;
@@ -544,6 +609,93 @@ export class ForceField {
   clearSpringScale() {
     this.springK.fill(this.gamma);
     this.springScaleActive = false;
+  }
+
+  /**
+   * Sequence-dependent ENM (Bahar-style) — opt-in stub.
+   * Rebuilds springK as K_seq(i,j) = gamma * (1 + 0.2*(w_i + w_j)/2)
+   * where w_i = SEQ_WEIGHT[RES_CLASS_OF[beads[i].resName]] (w_j likewise).
+   * H=1.0, A=0.9, P=1.1, Cp/Cn=1.05; mean modulation ~0 so ⟨K⟩≈gamma.
+   * Call after construction or pass par.seqWeight=true. Preserves the
+   * uniform topology (same springs list, same H(Rc−r0) cutoff) — only the
+   * stiffness is chemistry-weighted. See src/ff-params.js:SEQ_WEIGHT,
+   * docs/CG_HEAVY.md and tests/test_enm_seq.js. Also available as
+   * par.seqWeight flag in constructor.
+   * @param {Array} beads  optional override (defaults to constructor beads if stored)
+   */
+  applySeqWeights(beads = null) {
+    // beads not stored on ForceField; caller may pass original bead list,
+    // otherwise we fall back to resClass table which was built from beads.
+    // resClass is Uint8Array over 5 classes; invert to weight via SEQ_WEIGHT.
+    const weightByClass = [SEQ_WEIGHT.H, SEQ_WEIGHT.A, SEQ_WEIGHT.P, SEQ_WEIGHT.Cp, SEQ_WEIGHT.Cn];
+    // w_i per bead from this.resClass (built in constructor)
+    const nProt = this.nProt;
+    const wPerBead = new Float64Array(nProt);
+    for (let i = 0; i < nProt; i++) {
+      // resClass[i] is 0:H,1:A,2:P,3:Cp,4:Cn (see constructor)
+      wPerBead[i] = weightByClass[this.resClass[i]] ?? 1.0;
+    }
+    // If caller supplied explicit beads (e.g. for test), prefer SEQ_WEIGHT via resName
+    if (beads && beads.length === nProt) {
+      for (let i = 0; i < nProt; i++) {
+        const cls = RES_CLASS_OF[beads[i].resName] ?? "H";
+        const w = SEQ_WEIGHT[cls];
+        if (w !== undefined) wPerBead[i] = w;
+      }
+    }
+    const S = this.springs, K = this.springK, gamma = this.gamma;
+    for (let k = 0, s = 0; k < S.length; k += 3, s++) {
+      const i = S[k], j = S[k + 1];
+      const w_i = wPerBead[i], w_j = wPerBead[j];
+      // K_seq = gamma * (1 + 0.2*(w_i + w_j)/2)  — Bahar-style ±2% modulation
+      K[s] = gamma * (1 + 0.2 * (w_i + w_j) * 0.5);
+    }
+    this.springScaleActive = true; // marks non-uniform (reuse flag for UI)
+    // For debugging: this._seqW = wPerBead; // keep per-bead w_i if needed
+  }
+
+  /**
+   * Opt-in Tirion distance-weighted ENM + SS dihedral basins (Phase 1).
+   * Rebuilds springs/springK as γ_ij = γ0·(R0/r0_ij)^6 over the same
+   * H(Rc−r0) topology and stores backbone pseudo-dihedral basins on
+   * ff.tirionDihedrals / ff.tirionDihedralK / ff.tirionSS. Falls back to the
+   * existing uniform network when the module is unavailable.
+   * @param {object} [opts]  { gamma0, R0, cutoff, segments }
+   */
+  useTirionNetwork(opts = {}) {
+    const ref = this.ref.subarray(0, this.nProt * 3);
+    // Reconstruct segments if the caller did not pass them: derive from the
+    // current bond list (bonds only join contiguous pairs).
+    let segments = opts.segments ?? null;
+    if (!segments) {
+      segments = [];
+      if (this.nProt > 0) {
+        let s = 0;
+        const bondedNext = new Set();
+        for (let k = 0; k < this.bonds.length; k += 3) {
+          const i = this.bonds[k], j = this.bonds[k + 1];
+          if (j === i + 1) bondedNext.add(i);
+        }
+        for (let i = 0; i < this.nProt - 1; i++) {
+          if (!bondedNext.has(i)) { segments.push([s, i + 1]); s = i + 1; }
+        }
+        segments.push([s, this.nProt]);
+      }
+    }
+    const net = buildTirionNetwork(ref, {
+      gamma0: opts.gamma0 ?? this.gamma,
+      R0: opts.R0 ?? 3.81,
+      cutoff: opts.cutoff ?? this.rc,
+      segments,
+    });
+    // Replace uniform springs; keep exclusion set consistent.
+    if (this._excluded) {
+      for (let k = 0; k < this.springs.length; k += 3) {
+        this._excluded.delete(this._pairKey(this.springs[k], this.springs[k + 1]));
+      }
+    }
+    applyTirionToForceField(this, net);
+    this.enmModel = "tirion";
   }
 
   /** U_θ = ½ kθ (θ−θ0)² — angle-bending kernel lives in ff-harmonic.js. */

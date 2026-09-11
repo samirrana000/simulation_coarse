@@ -2,13 +2,22 @@
  * analysis-panel.js — panel 6: trajectory analysis report + PMF CSV download
  * (item 5 modularization: moved verbatim from main.js; only the imports
  * changed — `ui` / `state` / `recorder` now come from ui.js).
+ *
+ * Phase 4: opt-in translational workflows (alanine scanning, DCCM heatmap,
+ * SMD unbinding ensemble, cryptic-pocket tracking) as buttons that degrade
+ * gracefully when no system / trajectory / ligand is present. The original
+ * Analyze flow is untouched.
  */
 
 import { analyzeTrajectory, pmfCsv } from "./analysis.js?v=10";
 import { downloadText } from "./recorder.js?v=10";
-import { ui, state, recorder } from "./ui.js?v=10";
+import { ui, state, viewer, recorder } from "./ui.js?v=10";
+import { scanPocket, pocketResidues, formatMutationTable } from "./analysis/alanine_scanning.js?v=10";
+import { computeDCCM, renderDCCMHeatmap, topCorrelations, dccmPick, highlightCorrelatedPair } from "./analysis/dccm.js?v=10";
+import { trackPocketVolume, detectCryptic } from "./analysis/cryptic_pockets.js?v=10";
+import { runPullingEnsemble, jarzynskiFreeEnergy, koffSurrogate } from "./analysis/unbinding_smd.js?v=10";
 
-ui.anaBtn.addEventListener("click", () => {
+if (ui.anaBtn) ui.anaBtn.addEventListener("click", () => {
   if (recorder.count === 0) {
     ui.analysisOut.textContent = "⚠ Nothing recorded yet — press ● Rec, run the sim, then Stop.";
     return;
@@ -34,10 +43,221 @@ ui.anaBtn.addEventListener("click", () => {
   }, 20);
 });
 
-ui.anaPmfBtn.addEventListener("click", () => {
+if (ui.anaPmfBtn) ui.anaPmfBtn.addEventListener("click", () => {
   if (!state.funnel) { ui.analysisOut.textContent = "⚠ No active funnel (load a ligand + build the system)."; return; }
   try {
     downloadText(pmfCsv(state.funnel), `pmf_${(state.contactsFn || "enm").replace(/\W+/g, "_")}.csv`);
+  } catch (err) {
+    ui.analysisOut.textContent = "⚠ " + err.message;
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  Phase 4 — translational workflows (opt-in, gracefully degrading)   */
+/* ------------------------------------------------------------------ */
+
+/** Current live system as a Phase-4 ScanSystem, or null when not built. */
+function currentScanSystem() {
+  if (!state.ff || !state.sel) return null;
+  return {
+    mode: state.heavyMode ? "heavy" : "cg",
+    sel: state.sel,
+    ff: state.ff,
+    par: undefined, // rebuilt from the live ff (parFromCgFF / gamma)
+    ligands: state.ligands ?? [],
+  };
+}
+
+function fmtE(v) {
+  return Number.isFinite(v) ? v.toFixed(2) : "NaN";
+}
+
+function setDccmCaption(txt) {
+  if (ui.dccmCaption) ui.dccmCaption.textContent = txt;
+  else {
+    const el = typeof document !== "undefined" ? document.getElementById("dccmCaption") : null;
+    if (el) el.textContent = txt;
+  }
+}
+
+let _dccmHasData = false;
+let _lastDccmEmpty = 0;
+
+/** Three-state (P2) no-data: actionable empty DCCM with caption + legend key. */
+export function drawDccmEmpty(reason) {
+  _dccmHasData = false;
+  const cv = (ui.dccmCanvas) || (typeof document !== "undefined" ? document.getElementById("dccmCanvas") : null);
+  if (!cv) return;
+  try {
+    const w = cv.clientWidth || 280, h = cv.clientHeight || 180;
+    if (w === 0 || h === 0) return;
+    const dpr = Math.min(2, (typeof window !== "undefined" && window.devicePixelRatio) || 1);
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+      cv.width = Math.round(w * dpr);
+      cv.height = Math.round(h * dpr);
+    }
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#475569";
+    ctx.font = "11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(reason || "Record ≥ 3 frames, then DCCM Heatmap", w / 2, h / 2 - 6);
+    ctx.font = "9.5px sans-serif";
+    ctx.fillStyle = "#334155";
+    ctx.fillText("cross-correlation −1 (blue) … +1 (amber)", w / 2, h / 2 + 10);
+  } catch (_) { /* headless: caption only */ }
+  setDccmCaption("DCCM: record ≥ 3 frames, then compute. Legend −1…+1.");
+}
+
+/** Steady-state (P2): ≤1 Hz empty redraw so the canvas never reads as dead. */
+export function dccmTick(now) {
+  if (_dccmHasData) return;
+  const t = now ?? ((typeof performance !== "undefined" && performance.now()) || Date.now());
+  if (t - _lastDccmEmpty < 1000) return;
+  _lastDccmEmpty = t;
+  drawDccmEmpty();
+}
+
+// Paint the empty state once at startup (no-data, before any trajectory).
+try { drawDccmEmpty(); } catch (_) {}
+
+// ---- Alanine scanning ----------------------------------------------
+if (ui.alaScanBtn) ui.alaScanBtn.addEventListener("click", () => {
+  const sys = currentScanSystem();
+  if (!sys) { ui.analysisOut.textContent = "⚠ Build a system first."; return; }
+  if ((sys.ff.n - (sys.ff.ligandStart ?? sys.ff.nProt)) <= 0) {
+    ui.analysisOut.textContent = "⚠ Ala-scan needs a holo system (load/place a ligand, then Build System).";
+    return;
+  }
+  let ids;
+  const txt = ((ui.alaRes && ui.alaRes.value) || "").trim();
+  try {
+    if (txt) {
+      ids = txt.split(/[,\s;]+/).filter(Boolean).map((s) => (/^-?\d+$/.test(s) && sys.mode === "cg" ? Number(s) : s));
+    } else {
+      ids = pocketResidues(sys, { rCut: 6.0, maxN: 6 }).map((p) => p.resId);
+    }
+  } catch (err) { ui.analysisOut.textContent = "⚠ " + err.message; return; }
+  if (!ids.length) { ui.analysisOut.textContent = "⚠ No pocket residues found (ligand has no protein neighbours ≤ 6 Å)."; return; }
+  ids = ids.slice(0, 8); // UI responsiveness cap; script API has no cap
+  ui.analysisOut.textContent = `Alanine scanning ${ids.length} residue(s)… (short relaxations)`;
+  setTimeout(() => {
+    try {
+      const { rows, wtHolo, wtApo } = scanPocket(sys, ids, { relaxSteps: sys.mode === "heavy" ? 25 : 80 });
+      ui.analysisOut.textContent =
+        `Ala-scan (${sys.mode}): WT holo ${fmtE(wtHolo)} · WT apo ${fmtE(wtApo)} kcal/mol\n` +
+        formatMutationTable(rows);
+    } catch (err) {
+      ui.analysisOut.textContent = "⚠ " + err.message;
+    }
+  }, 20);
+});
+
+// ---- DCCM heatmap ----------------------------------------------------
+if (ui.dccmBtn) ui.dccmBtn.addEventListener("click", () => {
+  const sys = currentScanSystem();
+  if (!sys) { ui.analysisOut.textContent = "⚠ Build a system first."; return; }
+  if (recorder.count < 3) {
+    ui.analysisOut.textContent = "⚠ DCCM needs ≥ 3 recorded frames — press ● Rec, run, then Stop.";
+    return;
+  }
+  ui.analysisOut.textContent = "Computing DCCM…";
+  setTimeout(() => {
+    try {
+      const dcc = computeDCCM(recorder.frames, { nProt: sys.ff.nProt, ref: sys.ff.ref });
+      const cv = ui.dccmCanvas;
+      if (cv) {
+        cv.style.display = "block";
+        renderDCCMHeatmap(cv, dcc.matrix, { n: dcc.n, size: 220 });
+        _dccmHasData = true;
+        setDccmCaption(`DCCM live: ${dcc.n}×${dcc.n} from ${dcc.nFrames} frames — click heatmap for pair. Legend −1…+1.`);
+        if (!cv._dccmClick) {
+          cv._dccmClick = true;
+          cv.addEventListener("click", (e) => {
+            const p = dccmPick(cv, e.clientX, e.clientY);
+            if (p && viewer) {
+              highlightCorrelatedPair(viewer, p.i, p.j);
+              ui.analysisOut.textContent += `\n◉ pair (${p.i}, ${p.j}) C=${dcc.matrix[p.i * dcc.n + p.j].toFixed(2)} highlighted in viewer.`;
+            }
+          });
+        }
+      }
+      const top = topCorrelations(dcc, 6);
+      let meanAbs = 0;
+      for (let i = 0; i < dcc.matrix.length; i++) meanAbs += Math.abs(dcc.matrix[i]);
+      meanAbs /= dcc.matrix.length;
+      ui.analysisOut.textContent =
+        `DCCM: ${dcc.n}×${dcc.n} from ${dcc.nFrames} frames · mean|C| = ${meanAbs.toFixed(3)}\n` +
+        `top pairs: ${top.map((t) => `(${t.i},${t.j}) ${t.c >= 0 ? "+" : ""}${t.c.toFixed(2)}`).join(" · ")}\n` +
+        `click the heatmap to highlight a pair in the viewer.`;
+    } catch (err) {
+      ui.analysisOut.textContent = "⚠ " + err.message;
+    }
+  }, 20);
+});
+
+// ---- SMD unbinding ensemble ------------------------------------------
+if (ui.smdBtn) ui.smdBtn.addEventListener("click", () => {
+  const sys = currentScanSystem();
+  if (!sys) { ui.analysisOut.textContent = "⚠ Build a system first."; return; }
+  if ((sys.ff.n - (sys.ff.ligandStart ?? sys.ff.nProt)) <= 0) {
+    ui.analysisOut.textContent = "⚠ SMD needs a holo system (load/place a ligand, then Build System).";
+    return;
+  }
+  ui.analysisOut.textContent = "SMD: 4 pulls…";
+  setTimeout(() => {
+    try {
+      const pos0 = (state.integ && state.integ.pos.length === sys.ff.n * 3)
+        ? Float64Array.from(state.integ.pos) : sys.ff.ref;
+      const ens = runPullingEnsemble({
+        ff: sys.ff, pos0, nPulls: 4, mode: "velocity", seed: 42,
+        pull: { k: 5.0, v: 4.0, nSteps: 2000, dt: 0.0015, sRupture: 6.0, T: Number(ui.temp?.value || 300) },
+      });
+      const je = jarzynskiFreeEnergy(ens.works, { T: Number(ui.temp?.value || 300) });
+      const koff = koffSurrogate(ens.pulls, je.dF, { T: Number(ui.temp?.value || 300) });
+      ui.analysisOut.textContent =
+        `SMD ×4 (constant-velocity, k=2, v=2 Å/ps):\n` +
+        `works = [${Array.from(ens.works).map(fmtE).join(", ")}] kcal/mol\n` +
+        `Jarzynski ΔF = ${fmtE(je.dF)}${je.se !== null ? ` ± ${je.se.toFixed(2)}` : ""} · ⟨W⟩ = ${fmtE(je.meanWork)} · dissipated = ${fmtE(je.dissipated)}\n` +
+        `rupture ⟨F⟩ = ${fmtE(koff.meanRuptureForce)} kcal/mol/Å · koff-score = ${fmtE(koff.meanScore)} kT (${koff.note})`;
+    } catch (err) {
+      ui.analysisOut.textContent = "⚠ " + err.message;
+    }
+  }, 20);
+});
+
+// ---- Cryptic pockets ---------------------------------------------------
+if (ui.crypticBtn) ui.crypticBtn.addEventListener("click", () => {
+  const sys = currentScanSystem();
+  if (!sys) { ui.analysisOut.textContent = "⚠ Build a system first."; return; }
+  try {
+    // Pocket set: funnel pocket, else protein within 8 Å of the ligand COM.
+    let pocket = (state.funnel && state.funnel.active && state.funnel.pocket)
+      ? [...state.funnel.pocket] : null;
+    if (!pocket) {
+      pocket = pocketResidues(sys, { rCut: 8.0, maxN: 40 }).map((p) =>
+        (sys.mode === "cg" ? p.resId : sys.sel.atoms.findIndex((a) =>
+          a.isProtein && a.atomName === "CA" && `${a.chain}|${a.resSeq}` === p.resId)));
+      pocket = pocket.filter((i) => i >= 0);
+    }
+    if (!pocket.length) { ui.analysisOut.textContent = "⚠ No pocket residues (needs a ligand)."; return; }
+    const frames = recorder.count >= 2 ? recorder.frames
+      : [(state.integ && state.integ.pos.length === sys.ff.n * 3) ? state.integ.pos : sys.ff.ref];
+    const track = trackPocketVolume(frames, { pocketIndices: pocket });
+    const det = detectCryptic(track, {
+      kSigma: 1.5, frames: frames.length >= 2 ? frames : null,
+      pocketIndices: pocket, nProt: sys.ff.nProt,
+    });
+    const vols = Array.from(track.volumes);
+    const topRes = (det.heatmap ? [...det.heatmap.perResidue].sort((a, b) => b.score - a.score).slice(0, 5) : []);
+    ui.analysisOut.textContent =
+      `Cryptic pockets (${pocket.length} residues, ${track.nFrames} frame(s)):\n` +
+      `V range ${fmtE(Math.min(...vols))}–${fmtE(Math.max(...vols))} Å³ · ⟨V⟩ ${fmtE(det.mean)} · open threshold ${fmtE(det.threshold)}\n` +
+      `open ${(det.openFrac * 100).toFixed(1)}% · ${det.events.length} event(s)` +
+      (det.events.length ? `: ${det.events.slice(0, 4).map((e) => `#${e.start}–${e.end} peak ${fmtE(e.peak)}`).join("; ")}` : "") +
+      (topRes.length ? `\nprobe-accessible: ${topRes.map((r) => `#${r.index} ${(r.score * 100).toFixed(0)}%`).join(" · ")}` : "");
   } catch (err) {
     ui.analysisOut.textContent = "⚠ " + err.message;
   }

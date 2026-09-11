@@ -12,15 +12,24 @@
  *   - PDB : MODEL/ENDMDL blocks with one ATOM record per Cα bead using the
  *           original residue names/numbers/chain IDs (re-importable into
  *           PyMOL / VMD / MDAnalysis).
+ *
+ * Provenance (A09): every exported file starts with
+ *   `REMARK simulation_coarse vX, T, gamma, seed, date` from src/version.js
+ *   so trajectories are traceable to code version, temperature, friction,
+ *   random seed and build date. Call `buildFile(fmt, beads, {T, gamma, seed})`
+ *   to embed run-time values; defaults are 300 K, gamma 2.0, seed 0.
  */
 
+import { VERSION, BUILD_DATE } from "./version.js?v=10";
+
 export class Recorder {
+  // G69 — Memory leak guard: maxFrames cap 500 documented; auto-stop when reached to prevent unbounded heap growth
   constructor() {
     this.frames = [];        // Float32Array(3n) clones
     this.times = [];         // ps at each frame
     this.recording = false;
     this.stridePs = 2.0;
-    this.maxFrames = 500;    // 0 = unlimited
+    this.maxFrames = 500;    // 0 = unlimited — G69 cap documented (500 frames ~ few MB; prevents leak)
     this._nextAt = 0;        // simulation time of next capture
   }
 
@@ -45,8 +54,29 @@ export class Recorder {
     return this.times.length > 1 ? (this.times[this.times.length - 1] - this.times[0]) / 1000 : 0;
   }
 
+  // H78 — Trajectory scrubbing: random-access frame retrieval for <input type=range scrub>
+  // UI placeholder: <input type="range" id="scrub" min="0" max="count-1" value="0">
+  // oninput="const f = recorder.getFrame(Number(scrub.value)); viewer.render(f.pos)"
+  /**
+   * Retrieve a single frame by index for scrubbing / seeking.
+   * @param {number} i frame index (0 .. count-1)
+   * @returns {{pos: Float32Array, time: number}|null}
+   */
+  getFrame(i) {
+    if (!Number.isInteger(i) || i < 0 || i >= this.frames.length) return null;
+    return { pos: this.frames[i], time: this.times[i] };
+  }
+
+  /** Alias for scrub UI: total frame count */
+  get numFrames() { return this.frames.length; }
+
   /**
    * Maybe capture a frame.
+   * @param {Float64Array} pos   live positions (copied defensively)
+   * @param {number} timePs      current simulation time
+   */
+  /**
+   * Maybe capture a frame — G69 maxFrames cap guard.
    * @param {Float64Array} pos   live positions (copied defensively)
    * @param {number} timePs      current simulation time
    */
@@ -54,7 +84,7 @@ export class Recorder {
     if (!this.recording) return false;
     if (timePs + 1e-9 < this._nextAt) return false;
     if (this.maxFrames > 0 && this.frames.length >= this.maxFrames) {
-      this.recording = false;      // auto-stop: reached requested length
+      this.recording = false;      // G69 auto-stop: maxFrames cap reached — prevents memory leak
       return false;
     }
     this.frames.push(Float32Array.from(pos));
@@ -70,16 +100,26 @@ export class Recorder {
   /**
    * @param {"xyz"|"pdb"} fmt
    * @param {Array} beads   bead metadata from pdb.selectSystem()
+   * @param {object} [opts] provenance: {T, gamma, seed, date}
    * @returns {string} file contents
    */
-  buildFile(fmt, beads) {
+  buildFile(fmt, beads, opts = {}) {
     if (this.frames.length === 0) throw new Error("No frames recorded yet.");
-    return fmt === "pdb" ? this._toPdb(beads) : this._toXyz(beads);
+    return fmt === "pdb" ? this._toPdb(beads, opts) : this._toXyz(beads, opts);
   }
 
-  _toXyz(beads) {
+  /** Provenance header for exported files (A09). */
+  _provenanceLine(opts = {}) {
+    const T = opts.T ?? opts.temp ?? 300;
+    const gamma = opts.gamma ?? 2;
+    const seed = opts.seed ?? opts.rngSeed ?? 0;
+    const date = opts.date ?? BUILD_DATE;
+    return `REMARK simulation_coarse v${VERSION} T=${T}K gamma=${gamma} seed=${seed} date=${date}`;
+  }
+
+  _toXyz(beads, opts = {}) {
     const n = beads.length;
-    const out = [];
+    const out = [this._provenanceLine(opts)];
     this.frames.forEach((fr, k) => {
       out.push(String(n));
       out.push(`frame ${k}  time = ${this.times[k].toFixed(3)} ps  (CG Cα model)`);
@@ -92,9 +132,9 @@ export class Recorder {
     return out.join("\n") + "\n";
   }
 
-  _toPdb(beads) {
+  _toPdb(beads, opts = {}) {
     const n = beads.length;
-    const out = ["REMARK  CG Cα Langevin trajectory (BAOAB integrator)"];
+    const out = [this._provenanceLine(opts), "REMARK  CG Cα Langevin trajectory (BAOAB integrator)"];
     this.frames.forEach((fr, k) => {
       out.push(`MODEL     ${String(k + 1).padStart(4)}`);
       out.push(`REMARK  time = ${this.times[k].toFixed(3)} ps`);

@@ -1,0 +1,527 @@
+{
+  "meta": {
+    "generated": "2026-08-29",
+    "root": "simulation_coarse",
+    "nodes": 36,
+    "edges": 49
+  },
+  "nodes": {
+    "src/analysis-panel.js": {
+      "loc": 44,
+      "imports": [
+        "./analysis.js?v=10",
+        "./recorder.js?v=10",
+        "./ui.js?v=10"
+      ]
+    },
+    "src/analysis.js": {
+      "loc": 627,
+      "imports": []
+    },
+    "src/ff-binding.js": {
+      "loc": 174,
+      "imports": []
+    },
+    "src/ff-harmonic.js": {
+      "loc": 220,
+      "imports": [
+        "./ligand.js?v=10"
+      ]
+    },
+    "src/ff-params.js": {
+      "loc": 94,
+      "imports": []
+    },
+    "src/ff-repulsion.js": {
+      "loc": 77,
+      "imports": []
+    },
+    "src/force-worker.js": {
+      "loc": 104,
+      "imports": []
+    },
+    "src/forcefield.js": {
+      "loc": 673,
+      "imports": [
+        "./ligand.js?v=10",
+        "./ff-repulsion.js?v=10",
+        "./ff-binding.js?v=10"
+      ]
+    },
+    "src/funnel.js": {
+      "loc": 360,
+      "imports": [
+        "./forcefield.js?v=10"
+      ]
+    },
+    "src/gpu.js": {
+      "loc": 207,
+      "imports": []
+    },
+    "src/heavy.js": {
+      "loc": 809,
+      "imports": [
+        "./ff-harmonic.js?v=10",
+        "./physics/charges.js?v=10",
+        "./physics/gb.js?v=10",
+        "./physics/sasa.js?v=10",
+        "./physics/hbond.js?v=10",
+        "./spatial-grid.js?v=10"
+      ]
+    },
+    "src/integrator.js": {
+      "loc": 313,
+      "imports": [
+        "./forcefield.js?v=10"
+      ]
+    },
+    "src/ligand-panel.js": {
+      "loc": 251,
+      "imports": [
+        "./ligandLib.js?v=10",
+        "./placement.js?v=10",
+        "./ui.js?v=10"
+      ]
+    },
+    "src/ligand.js": {
+      "loc": 293,
+      "imports": [
+        "./pdb.js?v=10"
+      ]
+    },
+    "src/ligandLib.js": {
+      "loc": 256,
+      "imports": []
+    },
+    "src/main.js": {
+      "loc": 622,
+      "imports": [
+        "./forcefield.js?v=10",
+        "./funnel.js?v=10",
+        "./integrator.js?v=10",
+        "./pdb.js?v=10",
+        "./recorder.js?v=10",
+        "./scorer.js?v=10",
+        "./ui.js?v=10",
+        "./ml-tier.js?v=10",
+        "./pmf-panel.js?v=10",
+        "./ligand-panel.js?v=10",
+        "./heavy.js?v=10",
+        "./settings-panel.js?v=10",
+        "./network-panel.js?v=10"
+      ]
+    },
+    "src/ml-tier.js": {
+      "loc": 60,
+      "imports": [
+        "./scorer.js?v=10",
+        "./ui.js?v=10"
+      ]
+    },
+    "src/mol2.js": {
+      "loc": 91,
+      "imports": []
+    },
+    "src/network-panel.js": {
+      "loc": 192,
+      "imports": [
+        "./physics/network.js?v=10",
+        "./ui.js?v=10"
+      ]
+    },
+    "src/pdb.js": {
+      "loc": 295,
+      "imports": [
+        "./pdb.js",
+        "./mol2.js?v=10"
+      ]
+    },
+    "src/physics/charges.js": {
+      "loc": 114,
+      "imports": []
+    },
+    "src/physics/gb.js": {
+      "loc": 168,
+      "imports": [
+        "./charges.js?v=10"
+      ]
+    },
+    "src/physics/hbond.js": {
+      "loc": 89,
+      "imports": []
+    },
+    "src/physics/network.js": {
+      "loc": 328,
+      "imports": [
+        "../ff-params.js?v=10"
+      ]
+    },
+    "src/physics/sasa.js": {
+      "loc": 106,
+      "imports": [
+        "./charges.js?v=10"
+      ]
+    },
+    "src/placement.js": {
+      "loc": 329,
+      "imports": [
+        "./mol2.js?v=10",
+        "./ff-params.js?v=10"
+      ]
+    },
+    "src/pmf-panel.js": {
+      "loc": 148,
+      "imports": [
+        "./ui.js?v=10"
+      ]
+    },
+    "src/recorder.js": {
+      "loc": 138,
+      "imports": []
+    },
+    "src/scorer.js": {
+      "loc": 110,
+      "imports": []
+    },
+    "src/settings-panel.js": {
+      "loc": 137,
+      "imports": [
+        "./ui.js?v=10",
+        "./gpu.js?v=10",
+        "./worker-pool.js?v=10"
+      ]
+    },
+    "src/spatial-grid.js": {
+      "loc": 134,
+      "imports": []
+    },
+    "src/ui.js": {
+      "loc": 126,
+      "imports": [
+        "./viewer.js?v=10",
+        "./recorder.js?v=10"
+      ]
+    },
+    "src/viewer.js": {
+      "loc": 472,
+      "imports": []
+    },
+    "src/worker-pool.js": {
+      "loc": 144,
+      "imports": []
+    },
+    "css/style.css": {
+      "loc": 173,
+      "imports": []
+    },
+    "index.html": {
+      "loc": 360,
+      "imports": []
+    }
+  },
+  "edges": [
+    {
+      "from": "src/analysis-panel.js",
+      "to": "src/analysis.js",
+      "raw": "./analysis.js?v=10"
+    },
+    {
+      "from": "src/analysis-panel.js",
+      "to": "src/recorder.js",
+      "raw": "./recorder.js?v=10"
+    },
+    {
+      "from": "src/analysis-panel.js",
+      "to": "src/ui.js",
+      "raw": "./ui.js?v=10"
+    },
+    {
+      "from": "src/ff-harmonic.js",
+      "to": "src/ligand.js",
+      "raw": "./ligand.js?v=10"
+    },
+    {
+      "from": "src/forcefield.js",
+      "to": "src/ligand.js",
+      "raw": "./ligand.js?v=10"
+    },
+    {
+      "from": "src/forcefield.js",
+      "to": "src/ff-repulsion.js",
+      "raw": "./ff-repulsion.js?v=10"
+    },
+    {
+      "from": "src/forcefield.js",
+      "to": "src/ff-binding.js",
+      "raw": "./ff-binding.js?v=10"
+    },
+    {
+      "from": "src/funnel.js",
+      "to": "src/forcefield.js",
+      "raw": "./forcefield.js?v=10"
+    },
+    {
+      "from": "src/heavy.js",
+      "to": "src/ff-harmonic.js",
+      "raw": "./ff-harmonic.js?v=10"
+    },
+    {
+      "from": "src/heavy.js",
+      "to": "src/physics/charges.js",
+      "raw": "./physics/charges.js?v=10"
+    },
+    {
+      "from": "src/heavy.js",
+      "to": "src/physics/gb.js",
+      "raw": "./physics/gb.js?v=10"
+    },
+    {
+      "from": "src/heavy.js",
+      "to": "src/physics/sasa.js",
+      "raw": "./physics/sasa.js?v=10"
+    },
+    {
+      "from": "src/heavy.js",
+      "to": "src/physics/hbond.js",
+      "raw": "./physics/hbond.js?v=10"
+    },
+    {
+      "from": "src/heavy.js",
+      "to": "src/spatial-grid.js",
+      "raw": "./spatial-grid.js?v=10"
+    },
+    {
+      "from": "src/integrator.js",
+      "to": "src/forcefield.js",
+      "raw": "./forcefield.js?v=10"
+    },
+    {
+      "from": "src/ligand-panel.js",
+      "to": "src/ligandLib.js",
+      "raw": "./ligandLib.js?v=10"
+    },
+    {
+      "from": "src/ligand-panel.js",
+      "to": "src/placement.js",
+      "raw": "./placement.js?v=10"
+    },
+    {
+      "from": "src/ligand-panel.js",
+      "to": "src/ui.js",
+      "raw": "./ui.js?v=10"
+    },
+    {
+      "from": "src/ligand.js",
+      "to": "src/pdb.js",
+      "raw": "./pdb.js?v=10"
+    },
+    {
+      "from": "src/main.js",
+      "to": "src/forcefield.js",
+      "raw": "./forcefield.js?v=10"
+    },
+    {
+      "from": "src/main.js",
+      "to": "src/funnel.js",
+      "raw": "./funnel.js?v=10"
+    },
+    {
+      "from": "src/main.js",
+      "to": "src/integrator.js",
+      "raw": "./integrator.js?v=10"
+    },
+    {
+      "from": "src/main.js",
+      "to": "src/pdb.js",
+      "raw": "./pdb.js?v=10"
+    },
+    {
+      "from": "src/main.js",
+      "to": "src/recorder.js",
+      "raw": "./recorder.js?v=10"
+    },
+    {
+      "from": "src/main.js",
+      "to": "src/scorer.js",
+      "raw": "./scorer.js?v=10"
+    },
+    {
+      "from": "src/main.js",
+      "to": "src/ui.js",
+      "raw": "./ui.js?v=10"
+    },
+    {
+      "from": "src/main.js",
+      "to": "src/ml-tier.js",
+      "raw": "./ml-tier.js?v=10"
+    },
+    {
+      "from": "src/main.js",
+      "to": "src/pmf-panel.js",
+      "raw": "./pmf-panel.js?v=10"
+    },
+    {
+      "from": "src/main.js",
+      "to": "src/ligand-panel.js",
+      "raw": "./ligand-panel.js?v=10"
+    },
+    {
+      "from": "src/main.js",
+      "to": "src/heavy.js",
+      "raw": "./heavy.js?v=10"
+    },
+    {
+      "from": "src/main.js",
+      "to": "src/settings-panel.js",
+      "raw": "./settings-panel.js?v=10"
+    },
+    {
+      "from": "src/main.js",
+      "to": "src/network-panel.js",
+      "raw": "./network-panel.js?v=10"
+    },
+    {
+      "from": "src/ml-tier.js",
+      "to": "src/scorer.js",
+      "raw": "./scorer.js?v=10"
+    },
+    {
+      "from": "src/ml-tier.js",
+      "to": "src/ui.js",
+      "raw": "./ui.js?v=10"
+    },
+    {
+      "from": "src/network-panel.js",
+      "to": "src/physics/network.js",
+      "raw": "./physics/network.js?v=10"
+    },
+    {
+      "from": "src/network-panel.js",
+      "to": "src/ui.js",
+      "raw": "./ui.js?v=10"
+    },
+    {
+      "from": "src/pdb.js",
+      "to": "src/pdb.js",
+      "raw": "./pdb.js"
+    },
+    {
+      "from": "src/pdb.js",
+      "to": "src/mol2.js",
+      "raw": "./mol2.js?v=10"
+    },
+    {
+      "from": "src/physics/gb.js",
+      "to": "src/physics/charges.js",
+      "raw": "./charges.js?v=10"
+    },
+    {
+      "from": "src/physics/network.js",
+      "to": "src/ff-params.js",
+      "raw": "../ff-params.js?v=10"
+    },
+    {
+      "from": "src/physics/sasa.js",
+      "to": "src/physics/charges.js",
+      "raw": "./charges.js?v=10"
+    },
+    {
+      "from": "src/placement.js",
+      "to": "src/mol2.js",
+      "raw": "./mol2.js?v=10"
+    },
+    {
+      "from": "src/placement.js",
+      "to": "src/ff-params.js",
+      "raw": "./ff-params.js?v=10"
+    },
+    {
+      "from": "src/pmf-panel.js",
+      "to": "src/ui.js",
+      "raw": "./ui.js?v=10"
+    },
+    {
+      "from": "src/settings-panel.js",
+      "to": "src/ui.js",
+      "raw": "./ui.js?v=10"
+    },
+    {
+      "from": "src/settings-panel.js",
+      "to": "src/gpu.js",
+      "raw": "./gpu.js?v=10"
+    },
+    {
+      "from": "src/settings-panel.js",
+      "to": "src/worker-pool.js",
+      "raw": "./worker-pool.js?v=10"
+    },
+    {
+      "from": "src/ui.js",
+      "to": "src/viewer.js",
+      "raw": "./viewer.js?v=10"
+    },
+    {
+      "from": "src/ui.js",
+      "to": "src/recorder.js",
+      "raw": "./recorder.js?v=10"
+    }
+  ],
+  "issues": [
+    {
+      "id": "P0-01",
+      "severity": "FATAL",
+      "file": "src/settings-panel.js:73-79",
+      "title": "Missing `}` causes SyntaxError, kills entire ESM graph, blank canvas",
+      "fix": "Add `}` after settingsModal click handler (see report \u00a72.2)"
+    },
+    {
+      "id": "P1-01",
+      "severity": "HIGH",
+      "file": "src/viewer.js:226-234",
+      "title": "_resize dead-code guard + no ResizeObserver \u2192 flex collapse to 0 = fully cutoff",
+      "fix": "Use getBoundingClientRect + ResizeObserver + min-height:240px"
+    },
+    {
+      "id": "P1-02",
+      "severity": "HIGH",
+      "file": "src/viewer.js:272-284, src/main.js:206-282,538-616, src/ui.js:58",
+      "title": "Silent early-return when n==0 / viewer===null \u2192 dark fill only, no warning",
+      "fix": "HUD overlay + console.warn + lazy viewer"
+    },
+    {
+      "id": "P1-03",
+      "severity": "HIGH",
+      "file": "src/viewer.js:150-167,294-314,248",
+      "title": "radius inflated by distant ligand + fov mismatch \u2192 molecule shrinks to dot",
+      "fix": "Unify fov=800, cull persp<=0, ligand-aware center"
+    },
+    {
+      "id": "P2-01",
+      "severity": "HIGH",
+      "file": "src/heavy.js:196-207",
+      "title": "elementFromName('CA') \u2192 'CA' calcium, zero bonds",
+      "fix": "Guard ATOM+CA \u2192 C"
+    },
+    {
+      "id": "P2-02",
+      "severity": "HIGH",
+      "file": "src/integrator.js:229-244, src/forcefield.js:458-471, src/heavy.js:633-639, src/viewer.js:301",
+      "title": "NaN/Infinity pos not sanitized \u2192 center dot / off-screen blank",
+      "fix": "Rollback to ref on !isFinite, handle Infinity in viewer"
+    },
+    {
+      "id": "P2-03",
+      "severity": "MED",
+      "file": "src/worker-pool.js:107, src/gpu.js:52",
+      "title": "Dead worker/GPU paths with transfer/detachment and WGSL overflow hazards",
+      "fix": "Mutex, never transfer live pos.buffer, clamp sr"
+    },
+    {
+      "id": "P3-01",
+      "severity": "MED",
+      "file": "css/style.css:18,23,49,120-121",
+      "title": "100vh+overflow:hidden, fixed 330px sidebar, no breakpoint \u2192 cutoff on narrow/mobile",
+      "fix": "min-height, media query, allow scroll"
+    }
+  ]
+}

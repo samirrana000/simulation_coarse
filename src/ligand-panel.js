@@ -1,38 +1,26 @@
 /**
- * ligand-panel.js — "Ligand Library & Placement" panel (item 2).
+ * ligand-panel.js — "Ligand Placement & Library" panel.
  *
- * Side-effect module (imported once by main.js) that wires the library
- * selector + filter + "Place on viewer" flow:
- *
- *   1. Populates the <select> from LIGAND_LIBRARY (filtered by the search box).
- *   2. "Place on viewer" arms a pick mode: the next click on the canvas drops
- *      the chosen ligand at the clicked world point, clash-relaxed against the
- *      current protein via placement.js.
- *   3. Placing ADD the library ligand to the system: state.libraryLigand is
- *      set (priority over any MOL2/HETATM ligand) and buildSystem() re-runs so
- *      the force field / integrator include it. The placed pose is then
- *      written back into the live position buffer AND the native reference.
- *
- *   A placed library ligand is a hypothesis, not a known crystallographic
- *   pose — so holo pose springs are DISABLED for it (holoOn=false, springs
- *   cleared), letting it diffuse and bind freely under the binding potentials
- *   instead of being pinned to a fixed bound pose.
- *
- * All DOM wiring mirrors the other panel modules (analysis-panel.js,
- * ml-tier.js): pure side-effect registration, imports `ui`/`state`/`viewer`
- * from ui.js.
+ * Provides:
+ *   1. Searchable built-in ligand library (benzene, indole, caffeine, etc.)
+ *   2. Click-to-place on viewer with collision relaxation
+ *   3. Auto-placement into detected binding pockets (clash-free)
+ *   4. Random surface encounter placement
+ *   5. Seamless placement of loaded MOL2 ligands in both Cα and Heavy mode.
  */
 
 import { LIGAND_LIBRARY } from "./ligandLib.js?v=10";
-import { parseLibraryLigand, placeLigand } from "./placement.js?v=10";
+import { parseLibraryLigand, placeLigand, findPocketCenter } from "./placement.js?v=10";
 import { ui, state, viewer } from "./ui.js?v=10";
-import { buildSystem } from "./main.js?v=10";
+
+let _buildSystem = () => {};
 
 /* ------------------------------------------------------------------ */
-/*  Library selector (filterable)                                      */
+/*  Library selector                                                   */
 /* ------------------------------------------------------------------ */
 
 function renderLibraryList() {
+  if (!ui.ligSelect || !ui.ligFilter) return;
   const q = ui.ligFilter.value.trim().toLowerCase();
   const opts = LIGAND_LIBRARY
     .filter((e) => !q || e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q))
@@ -44,81 +32,49 @@ function renderLibraryList() {
   }
 }
 
-/** Currently selected library entry (by final <select> value). */
 function selectedEntry() {
+  if (!ui.ligSelect) return LIGAND_LIBRARY[0];
   return LIGAND_LIBRARY.find((e) => e.id === ui.ligSelect.value) || LIGAND_LIBRARY[0];
 }
-
-ui.ligFilter.addEventListener("input", renderLibraryList);
 
 /* ------------------------------------------------------------------ */
 /*  Placement interaction                                               */
 /* ------------------------------------------------------------------ */
 
 let pickActive = false;
+let pickTarget = "library";
 
-function setPickMode(on) {
-  pickActive = on;
-  ui.cancelPlace.disabled = !on;
-  ui.placeBtn.textContent = on ? "Click the viewer…" : "Place on viewer";
-  viewer.canvas.style.cursor = on ? "crosshair" : "";
+function syncPlaceButtons() {
+  if (ui.placeBtn) {
+    ui.placeBtn.textContent = pickActive && pickTarget === "library" ? "Click the viewer…" : "Place on viewer";
+  }
+  if (ui.placeMol2Btn) {
+    ui.placeMol2Btn.textContent = pickActive && pickTarget === "mol2" ? "Click the viewer…" : "Place loaded MOL2 ligand";
+  }
+  if (ui.cancelPlace) ui.cancelPlace.disabled = !pickActive;
+  if (viewer?.canvas) viewer.canvas.style.cursor = pickActive ? "crosshair" : "";
 }
 
-function placeAt(clientX, clientY) {
-  const entry = selectedEntry();
-  if (!entry || !state.parsed) {
-    ui.ligPlaceInfo.textContent = "⚠ Load a structure first (panel 1), then place.";
-    return;
-  }
-  const mol = parseLibraryLigand(entry);
+function setPickMode(on, target = "library") {
+  pickActive = on;
+  pickTarget = target;
+  syncPlaceButtons();
+}
 
-  // ADOPT the library ligand as the system's hypothesis ligand and rebuild so
-  // the force field / integrator include it (priority over MOL2/HETATM).
-  state.libraryLigand = mol;
-  buildSystem();
-  if (!state.integ || !state.ff) {
-    ui.ligPlaceInfo.textContent = "⚠ Could not build a system with the library ligand.";
-    state.libraryLigand = null;
-    return;
-  }
+export function updateMol2PlaceButton() {
+  if (!ui.placeMol2Btn) return;
+  const ok = !!(state.mol2Ligands && state.mol2Ligands.length === 1);
+  ui.placeMol2Btn.disabled = !ok;
+  syncPlaceButtons();
+}
 
-  const nProt = state.ff.nProt;
-
-  // World-space target from the pick (depth snaps to the bead under the
-  // cursor → the click lands on the protein surface, not a random plane).
-  const target = viewer.screenToWorld(clientX, clientY, { snapToBead: true });
-  if (!target) {
-    ui.ligPlaceInfo.textContent = "⚠ Could not resolve a world point at the cursor.";
-    return;
-  }
-
-  // Protein atom positions + per-atom σ for the clash relaxation (same
-  // arithmetic-mean mixing the live FF's LJ uses). CG: per-bead σ from
-  // _protSigma; heavy: element σ from the per-atom table _elem.
-  const protSigma = state.ff._protSigma
-    ?? (() => {
-        const s = new Float64Array(nProt);
-        for (let i = 0; i < nProt; i++) s[i] = state.ff._elem[i].sigma;
-        return s;
-      })();
-  const protein = {
-    pos: state.integ.pos.subarray(0, 3 * nProt),
-    sigma: protSigma,
-  };
-
-  // Clash-relax a rigid pose of the picked molecule centred on the target.
-  const placed = placeLigand(mol, target, { protein, seed: 42 });
-
+function applyPlacedPose(mol, name, placed) {
   if (!Number.isFinite(placed.residualClash)) {
-    ui.ligPlaceInfo.textContent = "⚠ Placement failed (degenerate pose).";
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = "⚠ Placement failed (degenerate pose).";
+    setPickMode(false);
     return;
   }
 
-  // Write the placed pose into the live position buffer (the placed ligand's
-  // atoms only). Molecular concatenation order matches FF order: the placed
-  // library ligand is the LAST appended molecule in both modes, so its atoms
-  // are n − nLib..n−1 (CG: exactly nProt..nProt+nLig−1; heavy: appended after
-  // the PDB HETATM cofactors/metals).
   const nLib = mol.atoms.length;
   const ligOff = state.ff.n - nLib;
   for (let a = 0; a < nLib; a++) {
@@ -130,38 +86,166 @@ function placeAt(clientX, clientY) {
     state.ff.ref[3 * (ligOff + a) + 2] = placed.pos[3 * a + 2];
   }
 
-  // A placed library ligand is a hypothesis → holo pose springs are OFF so it
-  // can diffuse/bind freely under the binding potentials.
   state.ff.holoOn = false;
-  state.ff.rebuildHoloSprings();
+  if (typeof state.ff.rebuildHoloSprings === "function") {
+    state.ff.rebuildHoloSprings();
+  }
 
-  viewer.setSystem(state.sel, state.ff); // re-colour / re-pivot for new pose
-  state._prevPos = null;                 // avoid a bogus Δr spike on next frame
+  if (viewer) viewer.setSystem(state.sel, state.ff);
+  state._prevPos = null;
 
   const note = placed.converged
-    ? `placed ${entry.name} — clash-free (residual ${placed.residualClash.toFixed(2)})`
-    : `placed ${entry.name} — relaxed (residual ${placed.residualClash.toFixed(2)}, ${placed.iterations} iters)`;
-  ui.ligPlaceInfo.textContent = note;
+    ? `Placed ${name} — clash-free (residual ${placed.residualClash.toFixed(2)})`
+    : `Placed ${name} — relaxed (residual ${placed.residualClash.toFixed(2)}, ${placed.iterations} iters)`;
+  if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = note;
   setPickMode(false);
 }
 
-ui.placeBtn.addEventListener("click", () => {
-  if (!state.parsed) {
-    ui.ligPlaceInfo.textContent = "⚠ Load a structure first (panel 1), then place.";
+function getProteinCoordsAndSigma() {
+  const nProt = state.ff.nProt;
+  const protSigma = state.ff._protSigma
+    ?? (() => {
+        const s = new Float64Array(nProt);
+        for (let i = 0; i < nProt; i++) s[i] = state.ff._elem ? state.ff._elem[i].sigma : 3.8;
+        return s;
+      })();
+  return {
+    pos: state.integ.pos.subarray(0, 3 * nProt),
+    sigma: protSigma,
+  };
+}
+
+function placeAt(clientX, clientY) {
+  if (!state.parsed && !state.parsedHeavy) {
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = "⚠ Load a structure first (Structure panel), then place.";
+    setPickMode(false);
     return;
   }
-  setPickMode(!pickActive);
-});
 
-ui.cancelPlace.addEventListener("click", () => setPickMode(false));
+  const useMol2 = pickTarget === "mol2";
+  let mol, name;
+  if (useMol2) {
+    const mols = state.mol2Ligands;
+    if (!mols || mols.length !== 1) {
+      if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = "⚠ Load a single-molecule MOL2 ligand before placing.";
+      setPickMode(false);
+      return;
+    }
+    mol = mols[0];
+    name = state.mol2Fn || "MOL2 ligand";
+  } else {
+    const entry = selectedEntry();
+    if (!entry) return;
+    mol = parseLibraryLigand(entry);
+    name = entry.name;
+  }
 
-viewer.canvas.addEventListener("click", (e) => {
-  if (!pickActive) return;
-  placeAt(e.clientX, e.clientY);
-});
+  state.libraryLigand = useMol2 ? null : mol;
+  _buildSystem();
+  if (!state.integ || !state.ff) {
+    state.libraryLigand = null;
+    setPickMode(false);
+    return;
+  }
 
-/* ------------------------------------------------------------------ */
-/*  Init                                                                */
-/* ------------------------------------------------------------------ */
+  const target = viewer ? viewer.screenToWorld(clientX, clientY, { snapToBead: true }) : null;
+  if (!target) {
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = "⚠ Could not resolve world point at cursor.";
+    setPickMode(false);
+    return;
+  }
 
-renderLibraryList();
+  const protein = getProteinCoordsAndSigma();
+  const placed = placeLigand(mol, target, { protein, seed: Math.floor(Math.random() * 1000) });
+  applyPlacedPose(mol, name, placed);
+}
+
+function placeInPocket() {
+  if (!state.ff) {
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = "⚠ Load a structure first, then place.";
+    return;
+  }
+
+  const entry = selectedEntry();
+  const mol = state.mol2Ligands && state.mol2Ligands.length === 1 ? state.mol2Ligands[0] : parseLibraryLigand(entry);
+  const name = state.mol2Ligands && state.mol2Ligands.length === 1 ? (state.mol2Fn || "MOL2") : (entry ? entry.name : "Ligand");
+
+  if (state.mol2Ligands && state.mol2Ligands.length === 1) state.libraryLigand = null;
+  else state.libraryLigand = mol;
+
+  _buildSystem();
+  const protein = getProteinCoordsAndSigma();
+  const pocketCenter = findPocketCenter(protein.pos, state.ff.nProt);
+  const placed = placeLigand(mol, pocketCenter, { protein, seed: 42 });
+  applyPlacedPose(mol, `${name} (Pocket)`, placed);
+}
+
+function placeRandomSurface() {
+  if (!state.ff) {
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = "⚠ Load a structure first, then place.";
+    return;
+  }
+
+  const entry = selectedEntry();
+  const mol = state.mol2Ligands && state.mol2Ligands.length === 1 ? state.mol2Ligands[0] : parseLibraryLigand(entry);
+  const name = state.mol2Ligands && state.mol2Ligands.length === 1 ? (state.mol2Fn || "MOL2") : (entry ? entry.name : "Ligand");
+
+  if (state.mol2Ligands && state.mol2Ligands.length === 1) state.libraryLigand = null;
+  else state.libraryLigand = mol;
+
+  _buildSystem();
+  const protein = getProteinCoordsAndSigma();
+  const nProt = state.ff.nProt;
+  const randBead = Math.floor(Math.random() * nProt);
+  const bx = protein.pos[3 * randBead];
+  const by = protein.pos[3 * randBead + 1];
+  const bz = protein.pos[3 * randBead + 2];
+
+  const target = [bx + (Math.random() - 0.5) * 8.0, by + (Math.random() - 0.5) * 8.0, bz + (Math.random() - 0.5) * 8.0];
+  const placed = placeLigand(mol, target, { protein, seed: Math.floor(Math.random() * 1000) });
+  applyPlacedPose(mol, `${name} (Surface)`, placed);
+}
+
+export function initLigandPanel(buildSystemFn) {
+  _buildSystem = buildSystemFn;
+
+  if (ui.ligFilter) {
+    ui.ligFilter.addEventListener("input", renderLibraryList);
+  }
+
+  if (ui.placeBtn) {
+    ui.placeBtn.addEventListener("click", () => {
+      if (!state.parsed && !state.parsedHeavy) return;
+      setPickMode(!pickActive || pickTarget !== "library", "library");
+    });
+  }
+
+  if (ui.placeMol2Btn) {
+    ui.placeMol2Btn.addEventListener("click", () => {
+      if (!state.parsed && !state.parsedHeavy) return;
+      setPickMode(!pickActive || pickTarget !== "mol2", "mol2");
+    });
+  }
+
+  if (ui.placePocketBtn) {
+    ui.placePocketBtn.addEventListener("click", placeInPocket);
+  }
+
+  if (ui.placeRandomBtn) {
+    ui.placeRandomBtn.addEventListener("click", placeRandomSurface);
+  }
+
+  if (ui.cancelPlace) {
+    ui.cancelPlace.addEventListener("click", () => setPickMode(false));
+  }
+
+  if (viewer?.canvas) {
+    viewer.canvas.addEventListener("click", (e) => {
+      if (!pickActive) return;
+      placeAt(e.clientX, e.clientY);
+    });
+  }
+
+  renderLibraryList();
+  updateMol2PlaceButton();
+}

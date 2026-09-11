@@ -394,9 +394,18 @@ export function analyzeTrajectory({ frames, times, ref, nProt, n, beads, ff, fun
   const dtPs = nF > 1 ? rep.spanPs / (nF - 1) : 0;
   lines.push(`Trajectory: ${nF} frames · ${rep.spanPs.toFixed(1)} ps (${(rep.spanPs / 1000).toFixed(3)} ns) · dt ≈ ${dtPs.toFixed(2)} ps`);
 
+  /* ---- 0. Superpose every frame onto native structure (Kabsch) ----- */
+  const sup = [];
+  for (const fr of frames) {
+    const { R, t } = kabsch(fr, ref, nProt);
+    const out = new Float64Array(3 * n);
+    applyRt(R, t, fr, out, n);
+    sup.push(out);
+  }
+
   /* ---- 1. Fluctuations → simulated B-factors vs experimental --------- */
   const msf = new Float64Array(nProt);
-  for (const fr of frames) {
+  for (const fr of sup) {
     for (let i = 0; i < nProt; i++) {
       const dx = fr[3 * i] - ref[3 * i], dy = fr[3 * i + 1] - ref[3 * i + 1], dz = fr[3 * i + 2] - ref[3 * i + 2];
       msf[i] += dx * dx + dy * dy + dz * dz;
@@ -423,14 +432,6 @@ export function analyzeTrajectory({ frames, times, ref, nProt, n, beads, ff, fun
   /* ---- 2. Essential dynamics + RMSIP --------------------------------- */
   let rmsipRes = null;
   if (dim <= 720 && nF >= 3) {
-    // superpose every frame onto the native structure (Kabsch, protein Cα)
-    const sup = [];
-    for (const fr of frames) {
-      const { R, t } = kabsch(fr, ref, nProt);
-      const out = new Float64Array(3 * n);
-      for (let i = 0; i < nProt; i++) applyRt(R, t, fr, out, nProt);
-      sup.push(out);
-    }
     // mean structure of superposed frames
     const mean = new Float64Array(dim);
     for (const fr of sup)
@@ -480,10 +481,10 @@ export function analyzeTrajectory({ frames, times, ref, nProt, n, beads, ff, fun
   }
 
   /* ---- 3. Ligand occupancy ------------------------------------------- */
-  const nLig = n - nProt;
+  const nLig = ff && ff.nLigAtoms !== undefined ? ff.nLigAtoms : (n - nProt);
   let occ = null;
   if (nLig > 0 && nF >= 1) {
-    const lig0 = nProt;
+    const lig0 = ff && ff.ligandStart !== undefined ? ff.ligandStart : nProt;
     let lx = 0, ly = 0, lz = 0;
     for (let a = 0; a < nLig; a++) { lx += ref[3 * (lig0 + a)]; ly += ref[3 * (lig0 + a) + 1]; lz += ref[3 * (lig0 + a) + 2]; }
     const ligCOM0 = [lx / nLig, ly / nLig, lz / nLig];
@@ -519,7 +520,7 @@ export function analyzeTrajectory({ frames, times, ref, nProt, n, beads, ff, fun
     }
     let peak = -1, pk = 0;
     for (let i = 0; i < grid.length; i++) if (grid[i] > peak) { peak = grid[i]; pk = i; }
-    const pxx = pk / (ny * nz), rem = pk % (ny * nz), pyy = Math.floor(rem / nz), pzz = rem % nz;
+    const pxx = Math.floor(pk / (ny * nz)), rem = pk % (ny * nz), pyy = Math.floor(rem / nz), pzz = rem % nz;
     const peakCenter = [minX + pxx + 0.5, minY + pyy + 0.5, minZ + pzz + 0.5];
     const dPeak = Math.sqrt(
       (peakCenter[0] - ligCOM0[0]) ** 2 + (peakCenter[1] - ligCOM0[1]) ** 2 + (peakCenter[2] - ligCOM0[2]) ** 2
@@ -532,10 +533,10 @@ export function analyzeTrajectory({ frames, times, ref, nProt, n, beads, ff, fun
       peakCount: peak,
       peakFrac: peak / totalAtomFrames,
       peakToNative: dPeak,
+      rFar: pcom === ligCOM0 ? null : (funnel ? funnel.rFar : null),
     };
-    lines.push(`[3] Ligand occupancy (${nLig} atoms): bound fraction = ${(occ.boundFrac * 100).toFixed(1)}% (COM within ${rPocket} Å of pocket COM)`);
-    lines.push(`    occupancy peak at (${peakCenter.map((v) => v.toFixed(1)).join(", ")}) · ${occ.peakCount} of ${totalAtomFrames} atom-frames (${(occ.peakFrac * 100).toFixed(2)}%)`);
-    lines.push(`    peak → crystal ligand COM: ${dPeak.toFixed(2)} Å`);
+    lines.push(`[3] Ligand occupancy: bound in pocket ${ (occ.boundFrac * 100).toFixed(1) }% of time (r ≤ ${rPocket} Å)`);
+    lines.push(`    Peak density = ${(occ.peakFrac * 100).toFixed(1)}% of snapshots · peak-to-crystal COM = ${dPeak.toFixed(2)} Å`);
   } else {
     lines.push("[3] Ligand occupancy: no ligand in the system (skipped)");
   }
@@ -543,6 +544,7 @@ export function analyzeTrajectory({ frames, times, ref, nProt, n, beads, ff, fun
   /* ---- 4. Contact lifetimes ------------------------------------------ */
   let ct = null;
   if (nLig > 0 && nF >= 1) {
+    const lig0 = ff && ff.ligandStart !== undefined ? ff.ligandStart : nProt;
     const cutoff = 6.0, cut2 = cutoff * cutoff;
     const streaks = new Map(); // key -> {cur, max, pres}
     for (const fr of frames) {
@@ -550,7 +552,7 @@ export function analyzeTrajectory({ frames, times, ref, nProt, n, beads, ff, fun
       for (let i = 0; i < nProt; i++) {
         const ix = 3 * i;
         for (let a = 0; a < nLig; a++) {
-          const c = 3 * (nProt + a);
+          const c = 3 * (lig0 + a);
           const dx = fr[c] - fr[ix], dy = fr[c + 1] - fr[ix + 1], dz = fr[c + 2] - fr[ix + 2];
           if (dx * dx + dy * dy + dz * dz < cut2) seen.add(i * 100000 + a);
         }
@@ -610,14 +612,18 @@ function meanOf(arr) {
 
 /**
  * Serialize the reconstructed PMF as CSV (r, pmf) plus a ΔG footer line.
+ * Provenance header includes T, gamma, hills, V0 (STANDARD_VOLUME) for D40.
  * @param {object} funnel  active Funnel
  * @returns {string} CSV text
  */
 export function pmfCsv(funnel) {
   if (!funnel || !funnel.active) throw new Error("Funnel is not active — no PMF to export.");
-  const { r, pmf } = funnel.getPMF();
+  const { r, pmf, dG_vol, c_t } = funnel.getPMF();
   const dg = funnel.estimateDG();
-  const out = ["r_Ang,pMF_kcal_per_mol"];
+  // D40 provenance header: T, gamma, hills, V0
+  const V0 = 1660.54; // STANDARD_VOLUME
+  const prov = `# T=${funnel.T}, gamma=${funnel.biasFactor}, hills=${funnel._nHills}, V0=${V0.toFixed(2)}`;
+  const out = [prov, `# dG_vol=${dG_vol.toFixed(4)}, c_t=${c_t.toFixed(4)}`, "r_Ang,pMF_kcal_per_mol"];
   for (let k = 0; k < r.length; k++) out.push(`${r[k].toFixed(3)},${pmf[k].toFixed(4)}`);
   out.push(`# dG_bind_kcal_per_mol,${Number.isNaN(dg) ? "nan" : dg.toFixed(4)}`);
   out.push(`# hills,${funnel._nHills}`);

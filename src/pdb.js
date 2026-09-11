@@ -17,44 +17,102 @@
  * call-sites are unchanged.
  *
  * No external units conversion happens here: coordinates stay in Ångström.
+ *
+ * Input validation / warnings (A06):
+ *  - parseCa, parseLigands, and parseHeavy (see heavy.js) are tolerant parsers:
+ *    malformed ATOM/HETATM lines are skipped with a `warnings` entry and a
+ *    `console.warn`. Callers may inspect `result.warnings` (array of strings)
+ *    and `countWarnings(result.warnings)` for a count. The `continue` on
+ *    malformed lines is intentional (lenient PDB spec), but now always warns.
+ *  - Helper `countWarnings(warnings)` returns warnings.length (0 if none).
  */
 
 import { parseMol2, mol2Element } from "./mol2.js?v=10";
 export { parseMol2, mol2Element };
 
+/**
+ * Count validation warnings from a parser result.
+ * @param {string[]|object} warnings  array of warning strings or result with .warnings
+ * @returns {number}
+ */
+export function countWarnings(warnings) {
+  if (Array.isArray(warnings)) return warnings.length;
+  if (warnings && Array.isArray(warnings.warnings)) return warnings.warnings.length;
+  return 0;
+}
+
 const RCSB_URL = (id) => `https://files.rcsb.org/download/${id}.pdb`;
 const PDBE_URL = (id) => `https://www.ebi.ac.uk/pdbe/entry-files/download/pdb${id.toLowerCase()}.ent`;
 
-/** Fetch a PDB file by 4-letter ID. Tries RCSB, then PDBe as a fallback. */
+/**
+ * Fetch a PDB file by 4-letter ID. Tries local cache, RCSB, then PDBe.
+ *
+ * REST fetch cache (I88):
+ *  - Remote fetches send `Cache-Control: max-age=86400` (24 h) so the browser
+ *    may serve a fresh disk-cache entry without revalidation for a day.
+ *  - In addition, fetch uses browser cache + ETag fallback — the browser's
+ *    HTTP cache (disk/memory) + conditional ETag/Last-Modified revalidation
+ *    handles 304 Not Modified from RCSB/PDBe, so repeated 4W52 fetches do not
+ *    re-download when the server says the file is unchanged.
+ *  - Local `./*.pdb` and `./data/*.pdb` try first and are always cache-hit;
+ *    remote only on cache-miss for unknown IDs.
+ * Docs: see fetch header below and note in docs/SCORER.md (I88 cross-ref).
+ */
 export async function fetchPdb(id) {
   const clean = id.trim();
   if (!/^[0-9A-Za-z]{4}$/.test(clean)) {
     throw new Error(`"${id}" is not a valid 4-character PDB ID.`);
   }
-  for (const url of [RCSB_URL(clean.toUpperCase()), PDBE_URL(clean)]) {
+  const urls = [
+    `./${clean.toLowerCase()}.pdb`,
+    `./data/${clean.toLowerCase()}.pdb`,
+    RCSB_URL(clean.toUpperCase()),
+    PDBE_URL(clean),
+  ];
+  for (const url of urls) {
     try {
-      const res = await fetch(url);
+      // I88: Cache-Control: max-age=86400 via fetch headers;
+      // fetch uses browser cache + ETag fallback for revalidation.
+      const isRemote = url.startsWith("http");
+      const res = await fetch(url, isRemote ? { headers: { "Cache-Control": "max-age=86400" }, cache: "default" } : undefined);
       if (res.ok) {
         const text = await res.text();
         if (text.includes("ATOM")) return text;
       }
     } catch (_) {
-      /* network error — try the fallback mirror */
+      /* try next mirror */
     }
   }
-  throw new Error(`Could not download PDB ${clean} from RCSB or PDBe (network/CORS?).`);
+  throw new Error(`Could not download PDB ${clean} from local presets, RCSB, or PDBe.`);
 }
 
 /**
  * Parse Cα atoms out of raw PDB text (first MODEL only, to avoid NMR bundles).
  * Handles insertion codes via a unique key per residue.
- * @returns {{beads: Array, chains: string[], nAtoms: number}}
+ * Warnings: malformed lines are collected in `warnings` and emitted via
+ * `console.warn`; see module header for warnings behavior. Caller may use
+ * `countWarnings(result.warnings)` to count skipped lines.
+ * Note on disulfides & PTMs (C28): this CG parser keeps only Cα beads, so
+ * Cys SG atoms are intentionally dropped. Disulfide S–S <2.2 Å detection is
+ * handled in the heavy-atom path (see src/heavy.js:248 buildTopology with
+ * COVALENT_RADIUS S=1.02 Å, BOND_SLACK=1.15, hard cap 2.2 Å; SG–SG 2.04 Å
+ * passes with 0.16 Å margin, validated in tests/test_topology.js on 1crn).
+ * If SG coordinates are present in the PDB, heavy mode recovers all three
+ * crambin disulfides; the CG ENM instead captures the Cα–Cα restraint
+ * (Rc=10 Å) and does not need an explicit SG warning. Native PTMs (e.g.
+ * phosphoserine) are likewise coalesced to Cα in CG mode and explicit in
+ * heavy mode. Should a future CG variant retain SG, a check
+ * `if (resName==="CYS" && sgDist<2.2) warnings.push("Cys SG–SG <2.2 Å")`
+ * would be added here.
+ * @returns {{beads: Array, chains: string[], nAtoms: number, warnings: string[]}}
  *   beads: [{x,y,z, chain, resSeq, resName, serial, bfac}]
+ *   warnings: array of human-readable warning strings (may be empty)
  */
 export function parseCa(pdbText) {
   const beads = [];
   const seen = new Set();
   const chains = new Set();
+  const warnings = [];
   let nAtoms = 0;
   let inModel = true; // becomes false after ENDMDL (first atomic model only)
 
@@ -64,11 +122,11 @@ export function parseCa(pdbText) {
       inModel = false;
       break;
     }
-    if (!inModel) break;
-    if (rec !== "ATOM  ") continue;
+    const isAtom = rec.startsWith("ATOM") || rec.startsWith("HETATM");
+    if (!isAtom) continue;
 
     // PDB fixed-column layout (keep leading spaces!)
-    const atomName = line.slice(12, 16).trim();
+    const atomName = line.slice(12, 16).trim().toUpperCase();
     if (atomName !== "CA") continue;   // coarse-grain: one bead per residue at Cα
 
     const resName = line.slice(17, 20).trim();
@@ -79,10 +137,20 @@ export function parseCa(pdbText) {
     const y = parseFloat(line.slice(38, 46));
     const z = parseFloat(line.slice(46, 54));
     const bfac = parseFloat(line.slice(60, 66)); // PDB temperature factor (columns 61–66)
-    if (Number.isNaN(resSeq) || Number.isNaN(x + y + z)) continue;
+    if (Number.isNaN(resSeq) || Number.isNaN(x + y + z)) {
+      const msg = `parseCa: malformed CA line skipped (resSeq=${resSeq} x=${x} y=${y} z=${z}) line="${line.slice(0, 66).trim()}"`;
+      warnings.push(msg);
+      console.warn(msg);
+      continue;
+    }
 
     const key = `${chain}|${resSeq}|${iCode}`;
-    if (seen.has(key)) continue;       // alt-loc duplicates
+    if (seen.has(key)) {
+      const msg = `parseCa: duplicate residue ${key} skipped (altLoc)`;
+      warnings.push(msg);
+      console.warn(msg);
+      continue;       // alt-loc duplicates
+    }
     seen.add(key);
 
     beads.push({ x, y, z, chain, resSeq, resName, serial: nAtoms + 1, bfac: Number.isNaN(bfac) ? 0 : bfac });
@@ -93,7 +161,8 @@ export function parseCa(pdbText) {
   if (beads.length === 0) {
     throw new Error("No Cα ATOM records found — is this a valid (protein) PDB file?");
   }
-  return { beads, chains: [...chains].sort(), nAtoms };
+  if (warnings.length) console.warn(`[parseCa] ${warnings.length} warning(s) total`);
+  return { beads, chains: [...chains].sort(), nAtoms, warnings };
 }
 
 /**
@@ -186,12 +255,15 @@ function elementFromName(atomName) {
  * Parse HETATM records into ligand molecules with bonds.
  * Molecules are grouped by chain|resSeq|resName in file order; bonds come from
  * CONECT records, falling back to a 1.9 Å heavy-atom distance cutoff when none.
+ * Warnings: malformed HETATM lines are skipped with console.warn and collected
+ * in `molecules.warnings` (see module header). Use `countWarnings()` to count.
  * @param {string} pdbText
- * @returns {Array} [{ resName, chain, atoms: [{x,y,z, element, charge, serial}], bonds: [[i,j]] }]
+ * @returns {Array} [{ resName, chain, atoms: [{x,y,z, element, charge, serial}], bonds: [[i,j]] }] with .warnings
  */
 export function parseLigands(pdbText) {
   const molecules = [];
   const byKey = new Map();
+  const warnings = [];
 
   for (const line of pdbText.split(/\r?\n/)) {
     const rec = line.slice(0, 6);
@@ -205,7 +277,12 @@ export function parseLigands(pdbText) {
     const x = parseFloat(line.slice(30, 38));
     const y = parseFloat(line.slice(38, 46));
     const z = parseFloat(line.slice(46, 54));
-    if (Number.isNaN(resSeq) || Number.isNaN(x + y + z)) continue;
+    if (Number.isNaN(resSeq) || Number.isNaN(x + y + z)) {
+      const msg = `parseLigands: malformed HETATM skipped (resSeq=${resSeq} x=${x}) line="${line.slice(0, 54).trim()}"`;
+      warnings.push(msg);
+      console.warn(msg);
+      continue;
+    }
 
     let element = line.slice(76, 78).trim().toUpperCase();
     if (!element) element = elementFromName(atomName);
@@ -242,7 +319,7 @@ export function parseLigands(pdbText) {
     }
   }
 
-  return molecules
+  const filtered = molecules
     .filter((m) => m.atoms.length >= 2)
     .map((m) => {
       delete m._serialToIdx;
@@ -265,6 +342,10 @@ export function parseLigands(pdbText) {
       }
       return m;
     });
+  // Attach warnings array for callers that care (lenient parser — non-fatal)
+  filtered.warnings = warnings;
+  if (warnings.length) console.warn(`[parseLigands] ${warnings.length} warning(s) total`);
+  return filtered;
 }
 
 /**

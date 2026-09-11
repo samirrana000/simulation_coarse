@@ -1,0 +1,49 @@
+This is BibTeX, Version 0.99d (TeX Live 2025/dev/Debian)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: manuscript_jpcb_submission.aux
+The style file: achemso.bst
+Reallocated singl_function (elt_size=4) to 100 items from 50.
+Database file #1: acs-manuscript_jpcb_submission.bib
+Database file #2: references.bib
+achemso 2025-01-29 v3.13h
+You've used 32 entries,
+            2538 wiz_defined-function locations,
+            957 strings with 13066 characters,
+and the built_in function-call counts, 12504 in all, are:
+= -- 1022
+> -- 746
+< -- 14
++ -- 294
+- -- 262
+* -- 1385
+:= -- 1686
+add.period$ -- 62
+call.type$ -- 32
+change.case$ -- 4
+chr.to.int$ -- 2
+cite$ -- 32
+duplicate$ -- 673
+empty$ -- 813
+format.name$ -- 304
+if$ -- 2388
+int.to.chr$ -- 0
+int.to.str$ -- 1
+missing$ -- 0
+newline$ -- 214
+num.names$ -- 93
+pop$ -- 56
+preamble$ -- 1
+purify$ -- 0
+quote$ -- 0
+skip$ -- 32
+stack$ -- 0
+substring$ -- 810
+swap$ -- 741
+text.length$ -- 62
+text.prefix$ -- 0
+top$ -- 1
+type$ -- 221
+warning$ -- 0
+while$ -- 122
+width$ -- 0
+write$ -- 431

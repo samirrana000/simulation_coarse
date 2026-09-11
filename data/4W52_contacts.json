@@ -5,7 +5,11 @@
   "nRes": 164,
   "meta": {
     "created": "2026-08-05T15:22:25.947030+00:00",
-    "min_p": 0.05
+    "min_p": 0.05,
+    "model_version": "heuristic-v1",
+    "version": "1.0.0",
+    "model": "heuristic",
+    "contact_prior_version": "1.0.0-heuristic-v1"
   },
   "contacts": [
     [
