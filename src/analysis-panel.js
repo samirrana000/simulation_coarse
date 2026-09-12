@@ -126,10 +126,36 @@ export function dccmTick(now) {
 // Paint the empty state once at startup (no-data, before any trajectory).
 try { drawDccmEmpty(); } catch (_) {}
 
-// ---- Thermodynamics ΔH/ΔS (Loop-2 S5) -------------------------------
+// ---- Thermodynamics ΔH/ΔS (Loop-2 S5, Stage-5 async) -----------------
 // Holo leg = recorded trajectory (needs ≥30 frames); apo leg = internal
 // relaxation of a binding-off clone (same ENM, no ligand coupling).
+// Stage-5: the apo relaxation runs chunked (setTimeout slices) so the click
+// handler never blocks the UI; progress goes to #thermoCaption, thermoBtn is
+// disabled during the run, and a generation counter cancels a stale run on
+// rebuild or on a fresh click. Final table render is identical
+// (formatThermoTable); defaults/numbers unchanged.
+/** Apo-relaxation steps per UI slice (Stage-5: keeps each slice < ~50 ms). */
+export const THERMO_CHUNK_STEPS = 150;
+let _thermoGen = 0;
+/**
+ * Cancel any in-flight chunked thermo run (e.g. on system rebuild).
+ * Additive Stage-5 hook; safe to call when idle or headless.
+ */
+export function invalidateThermo() {
+  _thermoGen++;
+  try { if (ui.thermoBtn) ui.thermoBtn.disabled = false; } catch (_) {}
+}
+function setThermoCaption(txt) {
+  try {
+    if (ui.thermoCaption) ui.thermoCaption.textContent = txt;
+    else if (typeof document !== "undefined") {
+      const el = document.getElementById("thermoCaption");
+      if (el) el.textContent = txt;
+    }
+  } catch (_) {}
+}
 if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
+  const myGen = ++_thermoGen;
   try {
     if (!state.ff) { ui.analysisOut.textContent = "⚠ Build a system first."; return; }
     if (recorder.frames.length < 30) {
@@ -165,25 +191,55 @@ if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
       }
       for (const row of perTime.values()) holoEnergies.push(row);
     }
-    // apo leg: internal 2000-step relaxation with binding off
-    const ffApo = new ForceField(state.sel, { rc: 10, gamma: 2.0, binding: { on: false } }, state.ligands ?? []);
-    const integApo = new LangevinIntegrator(ffApo.ref, ffApo, 110.0);
-    integApo.setTemperature(300); integApo.setFriction(8.0);
-    const apoFrames = [];
+    // apo leg: internal relaxation with binding off (same count as before)
     const nApo = Math.min(2000, Math.max(600, holoFrames.length * 4));
-    for (let s = 0; s < nApo; s++) {
-      integApo.step();
-      if (s % 2 === 0) apoFrames.push(Float32Array.from(integApo.pos));
+    let ffApo = null, integApo = null;
+    try {
+      ffApo = new ForceField(state.sel, { rc: 10, gamma: 2.0, binding: { on: false } }, state.ligands ?? []);
+      integApo = new LangevinIntegrator(ffApo.ref, ffApo, 110.0);
+      integApo.setTemperature(300); integApo.setFriction(8.0);
+    } catch (err) {
+      ui.analysisOut.textContent = "⚠ " + (err && err.message ? err.message : String(err));
+      return;
     }
-    const res = computeThermodynamics({
-      holoFrames, apoFrames, holoEnergies,
-      pocketIdx, nProt, mass: 110, T: 300,
-    });
-    ui.analysisOut.textContent = formatThermoTable(res) +
-      (holoEnergies.length ? "" : "\n(note: BindLog capture was off — ΔH from recorded-frame recomputation skipped; run with BindLog on for the component split)");
-    if (ui.thermoCaption) ui.thermoCaption.textContent = `ΔH/ΔS done — ${pocketIdx.length} pocket residues, ${holoFrames.length} holo frames.`;
+    const apoFrames = [];
+    try { if (ui.thermoBtn) ui.thermoBtn.disabled = true; } catch (_) {}
+    if (ui.analysisOut) ui.analysisOut.textContent = `Relaxing apo leg… 0/${nApo} steps (UI stays responsive).`;
+    setThermoCaption(`relaxing apo… 0/${nApo} steps`);
+    let done = 0;
+    const stepChunk = () => {
+      if (myGen !== _thermoGen) return; // cancelled by rebuild / newer run
+      try {
+        const n = Math.min(THERMO_CHUNK_STEPS, nApo - done);
+        for (let k = 0; k < n; k++) {
+          integApo.step();
+          if (done % 2 === 0) apoFrames.push(Float32Array.from(integApo.pos));
+          done++;
+        }
+        setThermoCaption(`relaxing apo… ${done}/${nApo} steps`);
+        if (done < nApo) { setTimeout(stepChunk, 0); return; }
+        const res = computeThermodynamics({
+          holoFrames, apoFrames, holoEnergies,
+          pocketIdx, nProt, mass: 110, T: 300,
+        });
+        if (myGen !== _thermoGen) return; // rebuilt mid-compute
+        ui.analysisOut.textContent = formatThermoTable(res) +
+          (holoEnergies.length ? "" : "\n(note: BindLog capture was off — ΔH from recorded-frame recomputation skipped; run with BindLog on for the component split)");
+        setThermoCaption(`ΔH/ΔS done — ${pocketIdx.length} pocket residues, ${holoFrames.length} holo frames.`);
+      } catch (err) {
+        if (myGen !== _thermoGen) return;
+        try { ui.analysisOut.textContent = "⚠ " + (err && err.message ? err.message : String(err)); } catch (_) {}
+        setThermoCaption("thermo failed — see report above.");
+      } finally {
+        if (myGen === _thermoGen) {
+          try { if (ui.thermoBtn) ui.thermoBtn.disabled = false; } catch (_) {}
+        }
+      }
+    };
+    setTimeout(stepChunk, 0);
   } catch (err) {
-    ui.analysisOut.textContent = "⚠ " + (err && err.message ? err.message : String(err));
+    try { ui.analysisOut.textContent = "⚠ " + (err && err.message ? err.message : String(err)); } catch (_) {}
+    try { if (ui.thermoBtn && myGen === _thermoGen) ui.thermoBtn.disabled = false; } catch (_) {}
   }
 });
 function centroidOf(ref, n) {

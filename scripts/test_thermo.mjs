@@ -49,13 +49,19 @@ assert(Math.abs(S_uniform - 0.0019872041 * Math.log(12)) < 0.001, `uniform rotor
 
 // ---- (c) full pipeline: real 4W52 CG holo vs apo ----
 console.log("=== (c) real 4W52 pipeline (holo vs apo, 2000 steps, stride 2) ===");
+// Stage-2 determinism: fixed seeds per replica (holo SEEDS[rep], apo SEEDS[rep]+1000
+// to decorrelate legs). Seeded via LangevinIntegrator opts.seed (mulberry32);
+// replica-mean assertion approach unchanged (no new single-run sign assert).
+// Optional override: THERMO_SEED_BASE env shifts all seeds (default 0).
+const SEED_BASE = Number.parseInt(process.env.THERMO_SEED_BASE || "0", 10) || 0;
+const SEEDS = [101, 202, 303].map((s) => s + SEED_BASE);
 const pdbText = readFileSync(new URL("../4w52.pdb", import.meta.url), "utf8");
 const parsed = parseCa(pdbText);
 const sel = selectSystem(parsed);
 const mols = parseLigands(pdbText);
 const ff = new ForceField(sel, { rc: 10, gamma: 2.0, binding: { charges: true, hbMode: "directional" } }, mols);
 ff.trackTerms = true;
-const integ = new LangevinIntegrator(ff.ref, ff, 110.0);
+const integ = new LangevinIntegrator(ff.ref, ff, 110.0, { seed: SEEDS[0] });
 integ.setTemperature(300); integ.setFriction(8.0);
 // pocket: residues within 8 Å of ligand COM in ref
 const nProt = ff.nProt;
@@ -83,17 +89,19 @@ for (let s = 0; s < 2000; s++) {
 }
 // apo run: clone FF with binding off (same seed reset)
 const ffApo = new ForceField(sel, { rc: 10, gamma: 2.0, binding: { on: false } }, mols);
-const integApo = new LangevinIntegrator(ffApo.ref, ffApo, 110.0);
+const integApo = new LangevinIntegrator(ffApo.ref, ffApo, 110.0, { seed: SEEDS[0] + 1000 });
 integApo.setTemperature(300); integApo.setFriction(8.0);
 const apoFrames = [];
 for (let s = 0; s < 2000; s++) {
   integApo.step();
   if (s % 2 === 0) apoFrames.push(Float32Array.from(integApo.pos));
 }
-// two more independent replicas
+// two more independent replicas (Stage-2: seeded — each replica gets its fixed
+// seed from SEEDS so the 3-rep suite replays bit-identically run to run)
 const holoFramesAlt = [], holoEnergiesAlt = [], apoFramesAlt = [];
 for (let rep = 0; rep < 2; rep++) {
-  const integX = new LangevinIntegrator(ff.ref, ff, 110.0);
+  const seedHolo = SEEDS[rep + 1], seedApo = SEEDS[rep + 1] + 1000;
+  const integX = new LangevinIntegrator(ff.ref, ff, 110.0, { seed: seedHolo });
   integX.setTemperature(300); integX.setFriction(8.0);
   const hfx = [], hex = [];
   for (let s = 0; s < 2000; s++) {
@@ -102,7 +110,7 @@ for (let rep = 0; rep < 2; rep++) {
   }
   holoFramesAlt.push(hfx); holoEnergiesAlt.push(hex);
   const ffApoX = new ForceField(sel, { rc: 10, gamma: 2.0, binding: { on: false } }, mols);
-  const integAX = new LangevinIntegrator(ffApoX.ref, ffApoX, 110.0);
+  const integAX = new LangevinIntegrator(ffApoX.ref, ffApoX, 110.0, { seed: seedApo });
   integAX.setTemperature(300); integAX.setFriction(8.0);
   const afx = [];
   for (let s = 0; s < 2000; s++) { integAX.step(); if (s % 2 === 0) afx.push(Float32Array.from(integAX.pos)); }

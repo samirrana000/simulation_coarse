@@ -92,6 +92,61 @@ holo = recorded frames, apo = internal 2000-step binding-off relaxation).
   Heavy mode (sidechain atoms present) should restore the physical sign — S7 bench.
 - test_thermo: 7/7 (Schlitter 0.20%, torsion kB·ln12 exact, ΔH finite, bounded ΔS).
 
+### Stage-1 verdict (2026-09-12): heavy mode does NOT restore the physical sign — NOT-RESTORED
+
+Protocol (`scripts/test_thermo_heavy.mjs`, 13/13 asserts on finiteness/bounds — the
+sign itself is never asserted): 4W52 heavy, BNZ-only ligand (EPE buffer excluded via
+`heteroSelection {BNZ:true, EPE:false}` — same selection as `tests/test_negative.js`;
+EPE would corrupt the ligand-COM pocket with a second diffusing body). Holo =
+`HeavyForceField` weak:on + trackTerms (charges inherent); apo = ligand-free clone
+(same protein atom indices; `bindingU ≡ 0` verified — the heavy analogue of CG
+`binding:{on:false}`, cf. `apoSystemOf()` heavy branch). `LangevinIntegrator` reads
+per-atom `ff.masses` (dt auto-tunes to 1 fs); 300-step equil discard + 1500 production
+steps, stride 2 → 750 frames/leg × 3 replicas. Pocket = 106 heavy protein atoms within
+8 Å of BNZ COM (56 backbone N/CA/C/O + 50 sidechain, incl. 14 Cα); per-atom masses in
+Schlitter via the new additive `masses` option in `computeThermodynamics` (uniform
+fallback untouched; `meta.massModel` records which). ΔH from the 4 exact
+protein↔ligand cross terms (lj/coul/hb/desolv); S3 weak totals (pi/cpi/xb) are
+whole-system and reported as context only, not folded into ΔH.
+
+Per-replica −TΔS_pocket (kcal/mol), three independent runs of the committed protocol:
+- run A: [8.23, 2.84, 3.63] → mean +4.90
+- run B: [10.12, −3.62, 24.26] → mean +10.26
+- run C: [−11.67, −13.67, 21.24] → mean −1.37
+- run D (post-verdict confirmation): [−2.78, 59.93, −7.73] → mean +16.47
+
+Pooled 12 replicas span −13.7…+59.9 (one apo leg wandered far in 1.5 ps): at 750 frames / 318 DOF (frames/DOF 2.4) the
+Schlitter ΔS is variance-dominated — the sign is undetermined, and the early positive
+means (runs A/B) were sampling noise, not restoration.
+
+Deep-sampling pilot (single pair, 500 equil + 6000 production steps stride 1 → 6000
+frames/leg, /tmp pilot): block curve full-pocket −TΔS at 750/1500/3000/6000 frames =
+−36.20/−0.95/+9.64/−4.78; at 6000 frames (frames/DOF 18.9): full −4.78, backbone
+−5.82, sidechain +1.04, Cα −1.26. The Cα value reproduces the CG scale (−2.5); the net
+sign at converged sampling is NEGATIVE.
+
+Diagnosis: (1) the ligand-bath effect persists in heavy dynamics — backbone −5.82 /
+Cα −1.26 at depth, i.e. binding terms pump ligand thermal motion into pocket backbone
+exactly as in CG (no ENM involved: heavy has none; the covalent/angle network is still
+rattled); (2) the hypothesized sidechain-restriction mechanism is REAL but small
+(sc +1.04 at depth, positive-leaning in 2/3 committed runs) — overwhelmed by the
+backbone bath term at an 8 Å pocket / ps timescale; (3) sampling: 750-frame Schlitter
+over 318 DOF is noise (±15 spread); frames/DOF ≥ 10 is necessary but not sufficient —
+stride-2 1 fs frames decorrelate on ~100 fs vibration timescales (≈15 independent
+samples per leg), so multi-ps production is required.
+
+What WOULD restore an honest positive sign: (a) 10+ ps production × ≥3 replicas to
+converge the sidechain-restriction term; (b) an explicit pocket-χ torsion-Shannon term
+(heavy analogue of ΔS_lig — converges in ~100 frames/rotor per the §1 table);
+(c) sidechain-only pocket entropy (excluding the rattled backbone shell). NOT sidechain
+restraints (would fake the sign).
+
+Trustworthy observables unchanged, plus one addition: heavy ΔH = −19.7 ± 0.3 kcal/mol
+(LJ −8.2 / desolv −11.4, Coul/HB ≈ 0 — physical for nonpolar benzene), tight across all
+12 replicas. UI: no thermo-handler change — step-4 wiring was YES-conditional, and a heavy
+UI leg would block the browser for minutes; a caption-only note was considered and
+rejected as premature without a converged number.
+
 ## 5 (original). Loop-2 integration order
 
 1. **DONE (Loop-2 S4)** — Per-term energy accumulators in binding kernels:

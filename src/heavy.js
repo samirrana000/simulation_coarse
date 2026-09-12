@@ -35,6 +35,7 @@ import { computeBornRadii as computeOBC2Radii, gbEnergyForces as gbOBC2Forces, d
 import { lcpoSasa } from "./physics/solvation/lcpo_sasa.js?v=10";
 import { membraneEnergyForces, transferDgFor } from "./physics/solvation/membrane_slab.js?v=10";
 import { typeMolecule, assignCharges as gaffAssignCharges } from "./chem/gaff2_mapper.js?v=10";
+import { parseAltLoc, parseOccupancy, shouldReplaceAltloc } from "./pdb_altloc.js?v=10";
 import {
   piStackForces, cationPiForces, halogenForces,
   buildRingFrames, buildCationList, buildHalogenList, HALOGEN_EPS,
@@ -98,7 +99,12 @@ export function countWarnings(warnings) {
  */
 export function parseHeavy(pdbText) {
   const atoms = [];
-  const seen = new Set();
+  // Stage-4 altloc cleaner (default-ON, bit-identical on clean files): per
+  // (chain, resSeq, iCode, atom name) key keep the highest-occupancy altloc
+  // ('A' on tie, else first); zero-occupancy duplicates dropped. Shared rule
+  // with parseCa/parseLigands — see src/pdb_altloc.js. Fixes the S7 NaN root
+  // cause (coincident duplicate-altloc atoms) at the input, in place.
+  const seen = new Map();
   const bySerial = new Map();
   const heteroGroupMap = new Map();
   const warnings = [];
@@ -129,12 +135,42 @@ export function parseHeavy(pdbText) {
 
     const serial = parseInt(line.slice(6, 11), 10);
     const key = `${chain}|${resSeq}|${iCode}|${atomName}`;
+    const altLoc = parseAltLoc(line);
+    const occ = parseOccupancy(line);
     if (seen.has(key)) {
-      const msg = `parseHeavy: duplicate atom ${key} skipped`;
-      warnings.push(msg); console.warn(msg);
+      const prev = seen.get(key);
+      if (shouldReplaceAltloc(prev, { occupancy: occ, altLoc })) {
+        const msg = `parseHeavy: duplicate atom ${key} altloc '${prev.altLoc || " "}'→'${altLoc || " "}' replaced (occ ${prev.occupancy}→${occ})`;
+        warnings.push(msg); console.warn(msg);
+        const idx = prev.idx;
+        const oldAtom = atoms[idx];
+        bySerial.delete(oldAtom.serial);
+        const isProtein = rec === "ATOM  ";
+        const isHetero = !isProtein;
+        const isMetal = !!METAL_ELEMENT[element];
+        const heteroKey = isHetero ? `${chain}|${resSeq}|${resName}` : null;
+        const a = {
+          x, y, z, element, atomName, resName, chain, resSeq, serial,
+          isProtein, isMetal, isHetero, isWater: false, heteroKey,
+        };
+        atoms[idx] = a;
+        bySerial.set(serial, a);
+        seen.set(key, { idx, occupancy: occ, altLoc });
+        if (isHetero) {
+          const g = heteroGroupMap.get(heteroKey);
+          if (g) {
+            const pos = g.atomIndices.indexOf(idx);
+            if (pos >= 0) g.elements[pos] = element;
+            if (isMetal) g.isMetal = true;
+          }
+        }
+      } else {
+        const msg = `parseHeavy: duplicate atom ${key} skipped (altLoc '${altLoc || " "}' occ ${occ})`;
+        warnings.push(msg); console.warn(msg);
+      }
       continue;
     }
-    seen.add(key);
+    seen.set(key, { idx: atoms.length, occupancy: occ, altLoc });
 
     const isProtein = rec === "ATOM  ";
     const isHetero = !isProtein;

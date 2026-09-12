@@ -26,13 +26,13 @@ import { downloadText } from "./recorder.js?v=10";
 import { PoseScorer } from "./scorer.js?v=10";
 import { ui, state, viewer, recorder, initParamReadouts, updateSelSummary, updateRecStatus } from "./ui.js?v=10";
 import "./analysis-panel.js?v=10"; // side-effect: Analyze + Phase-4 workflow buttons
-import { dccmTick, drawDccmEmpty } from "./analysis-panel.js?v=10"; // steady ≤1 Hz DCCM empty redraw (P2)
+import { dccmTick, drawDccmEmpty, invalidateThermo } from "./analysis-panel.js?v=10"; // steady ≤1 Hz DCCM empty redraw (P2)
 import { applyMLToFF } from "./ml-tier.js?v=10";
 import { updatePMFPlot } from "./pmf-panel.js?v=10";
 import { initLigandPanel, updateMol2PlaceButton } from "./ligand-panel.js?v=10";
 import { parseHeavy, HeavyForceField, selectHeavy, appendHeavyLigands } from "./heavy.js?v=10";
 import { assignProtonationStates, applyProtonationStates } from "./chem/protonation.js?v=10";
-import { initSettingsModal, settingsState, workerPool, gpuAccelerator } from "./settings-panel.js?v=10";
+import { initSettingsModal, settingsState, workerPool, gpuAccelerator, persistPhysicsLevel, restorePhysicsLevelSelect } from "./settings-panel.js?v=10";
 import { RESPAStepper, splitForceField } from "./physics/integrators/respa.js?v=10";
 import { initNetworkPanel, updateNetworkPlot, networkPanelTick, networkModel, isLiveTrackingActive } from "./network-panel.js?v=10";
 import { BindLog } from "./capture/bindlog.js?v=10";
@@ -41,6 +41,8 @@ import { renderInteractionTimeline, renderEnergyDecomposition, renderPmfFormatio
 // Initialize UI modals & panels
 initSettingsModal();
 initNetworkPanel();
+// Stage-5: restore persisted physics tier onto the selector (default L0).
+try { restorePhysicsLevelSelect(); } catch (_) {}
 
 // Phase 5 — dock sparklines (compact Canvas strips, no chart libs).
 // Fixed-length ring buffers for CV (Å) + total energy (kcal/mol).
@@ -447,6 +449,7 @@ function bindLogWanted() {
 }
 
 export function buildSystem() {
+  try { invalidateThermo(); } catch (_) {} // Stage-5: cancel in-flight thermo apo run
   if (!state.parsed && !state.parsedHeavy) return;  if (!state.parsed && state.parsedHeavy && ui.modelMode) ui.modelMode.value = "heavy";
   state.heavyMode = ui.modelMode?.value === "heavy";
   const chains = parseParamChainIds();
@@ -640,7 +643,9 @@ if (ui.holoSprings) ui.holoSprings.addEventListener("change", () => onParamChang
 // Loop-2 S7: physics-level selector — hot-rebuilds the FF on the new tier
 // (same path as the binding-potential toggles; default L0 = baseline).
 if (ui.physicsLevel) ui.physicsLevel.addEventListener("change", () => {
-  physicsLevelSpec(); // persist to settingsState.physicsLevel
+  const spec = physicsLevelSpec(); // persist to settingsState.physicsLevel
+  try { persistPhysicsLevel(ui.physicsLevel.value); } catch (_) {}
+  void spec;
   onParamChange(true);
 });
 

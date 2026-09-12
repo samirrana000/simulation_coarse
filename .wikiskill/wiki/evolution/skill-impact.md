@@ -41,3 +41,30 @@ cites the wiki pattern that motivated it and the gating outcome.
 - **Verdict:** ACCEPTED (wiki additions are ungated; they only require
   file:line evidence + measured numbers, both present in P6).
 
+---
+
+## Proposal 2026-09-12 #3 — Stage-7 Loop-2 closeout (perf honesty + GPU decision + docs)
+
+- **Motivated by:** Pareto heap ±50% GC noise with no allocation tracking;
+  undocumented GPU-port decision (bindU/weak not in WGSL); README Loop-2 gap.
+- **Proposal:** Additive-only closeout, zero deps, no retuning, no UI changes:
+  allocation tracking in `scripts/pareto_bench.mjs` (heapUsed delta per tier +
+  optional `--expose-gc` gc bracketing, history-preserving CSV writer);
+  accept-CPU GPU decision note; README Loop-2 + Stages 1–7 section.
+- **Validation plan:** baseline R_best = tests/test_all.js 215 PASSED (measured
+  2026-09-12). Gate = `node scripts/wikiskill_gate.js` (OPEN required).
+- **Verdict:** ACCEPTED
+- **Gating numbers (2026-09-12):**
+  - node --check: touched files clean (`scripts/pareto_bench.mjs` et al.)
+  - tests/test_all.js: 215 PASSED, 0 FAILED fast (~13 s); --slow 245/245
+  - DOM contract: 98/98 ui ids present in index.html (untouched, no new ids)
+  - Hotkey contract: Digit1-7 vs top-level panels ✓
+  - Bench FULL x2 + gc run (~25 s each): ms stable ±5% (L0 0.22/L1 0.20-0.21/
+    L2 78.8-84.8/L3 76.1-83.1); gc-bracketed heap deltas ≤0.3 MB all tiers
+    vs ±15 MB un-bracketed (GC-noise debt closed with numbers)
+  - Pose recovery unchanged: 10/10 CG, 9/10 heavy
+- **Notes:** full record in `docs/BINDING_LOOP2_DONE.md` §14 (allocation
+  method + numbers, GPU accept-CPU verdict, README/wiki refs); no GPU code
+  changes; Stages 1–6 debts (heavy verdict NOT-restored, seeding, 215/245
+  tiers, altloc+rotbonds, async thermo+persist, 4W52 anchor) all carried.
+

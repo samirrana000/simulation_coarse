@@ -262,6 +262,37 @@ Run on the recorded trajectory (need ≥ 2 frames — press **● Rec**, run, **
 
 ---
 
+## Binding-physics Loop-2 + Stages 1–7
+
+Loop-2 upgraded the binding physics in 7 additive, opt-in stages (default L0
+path bit-identical; full record in `docs/BINDING_LOOP2_DONE.md`):
+
+- **Physics-level selector** (panel 3, persisted to `localStorage`): **L0**
+  fast CG (default) · **L1** balanced (CG formal charges + directional-HB
+  virtual sites, ≈1.09×) · **L2** full-rigor (heavy π-stack / cation-π /
+  halogen weak terms + per-term accumulators, ≈1.0× over tier base).
+- **BindLog** (panel 5/6 wiring): per-term `bindU` vector (CG 4-term, heavy
+  7-term), tick frames, energy events, contact diffs, funnel hills — off
+  unless enabled or L2 selected.
+- **BindViz** (collapsed subpanels): ≤1 Hz timeline/energy/PMF strips with a
+  null-bindlog guard.
+- **Thermo panel**: ΔH ± SE with component split + Schlitter/torsion −TΔS
+  (async chunked apo leg, progress in the caption).
+- **Seeded determinism**: opt-in `seed` on the Langevin integrator
+  (mulberry32); default unseeded path unchanged.
+- **Calibration boundary** (`scripts/calibration_4w52.mjs`): 4W52 anchor
+  ΔG_est ≈ −2.2 vs experimental −5.2 (ITC) / −4.2 (NMR) kcal/mol — replica SD
+  (±7, entropy-driven) dominates, so ΔG is **ranking-only, NOT FEP, NOT
+  absolute Kd**.
+- **Perf honesty**: `node [--expose-gc] scripts/pareto_bench.mjs` →
+  `docs/pareto_frontier.csv` (ms/step + gc-bracketed heap deltas ≤0.3 MB;
+  history rows preserved). Loop-2 binding terms are CPU-only by decision
+  (see `docs/BINDING_LOOP2_DONE.md` §14) — GPU covers LJ/Coulomb/GB.
+- **Tests**: `node tests/test_all.js` → **215/215 fast** (~13 s, gate);
+  `--slow` → **245/245** (+ thermo 7 + heavy 13 + calibration 10).
+
+---
+
 ## Limitations
 
 > **Honest scope:** This browser model is not production MD — see the explicit list in **[docs/LIMITATIONS.md](docs/LIMITATIONS.md)** for full detail.

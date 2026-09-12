@@ -13,6 +13,9 @@ import { GeneralizedBorn } from "../src/physics/gb.js";
 import { ChemicalNetworkModel } from "../src/physics/network.js";
 import { placeLigand, relaxClash, findPocketCenter } from "../src/placement.js";
 import { KB_KCAL, KCONV } from "../src/units.js";
+import { execFileSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 let passed = 0;
 let failed = 0;
@@ -25,6 +28,91 @@ function assert(condition, message) {
     failed++;
     console.error(`  ✗ FAIL: ${message}`);
   }
+}
+
+// -----------------------------------------------------------------
+// Stage-3 tiered integration (Loop-2 suites guarded by this harness).
+// FAST tier runs by default (must stay < ~60s for gate/CI).
+// SLOW tier is opt-in: `node tests/test_all.js --slow` or SLOW=1.
+// Suites are standalone scripts (call process.exit), so they run via
+// child_process with a timeout; child stdout is captured (piped) and only
+// a one-line lowercase summary is printed per suite — the single
+// uppercase "N PASSED, M FAILED" line in this harness output is the
+// grand total below, which scripts/wikiskill_gate.js checks.
+// -----------------------------------------------------------------
+const __testAllDir = path.dirname(fileURLToPath(import.meta.url));
+const SLOW = process.argv.includes("--slow") || process.env.SLOW === "1";
+
+// Runtimes measured 2026-09-12 (linux, node): charges 0.1s, vsites 0.1s,
+// weakint ~15s, seeded 0.2s, bindviz 0.0s, bindlog 0.2s, bindlog-int 0.2s,
+// altloc-cleaner 0.1s, rotbonds 0.1s (Stage-4).
+const FAST_SUITES = [
+  { file: "test_charges.js", expect: 20, timeout: 60000 },
+  { file: "test_virtual_sites.js", expect: 8, timeout: 60000 },
+  { file: "test_weakint.js", expect: 49, timeout: 90000 },
+  { file: "test_seeded_integrator.js", expect: 16, timeout: 60000 },
+  { file: "../scripts/test_bindviz.mjs", expect: 22, timeout: 60000 },
+  { file: "../scripts/test_bindlog.mjs", expect: 18, timeout: 60000 },
+  { file: "../scripts/test_bindlog_integration.mjs", expect: 14, timeout: 60000 },
+  { file: "test_altloc_cleaner.js", expect: 19, timeout: 60000 },
+  { file: "test_rotbonds.js", expect: 17, timeout: 60000 },
+];
+
+// test_thermo: 7 asserts, ~60-120s seeded CG. test_thermo_heavy: 13 asserts,
+// ~200s+ heavy (6 legs × 1800 steps × ~20ms). Both deterministic via SEEDS.
+// calibration_4w52: 10 asserts, ~5s seeded CG (4W52 ΔG anchor + ala-scan).
+const SLOW_SUITES = [
+  { file: "../scripts/test_thermo.mjs", expect: 7, timeout: 600000 },
+  { file: "../scripts/test_thermo_heavy.mjs", expect: 13, timeout: 900000 },
+  { file: "../scripts/calibration_4w52.mjs", expect: 10, timeout: 600000 },
+];
+
+/** Run one standalone suite script; return { passed, failed, secs }. */
+function runSuiteFile(suite) {
+  const t0 = Date.now();
+  let out = "";
+  try {
+    out = execFileSync(process.execPath, [path.resolve(__testAllDir, suite.file)], {
+      encoding: "utf-8", timeout: suite.timeout, stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (e) {
+    out = (e.stdout || "") + (e.stderr || "");
+    const ms = [...String(out).matchAll(/(\d+) PASSED, (\d+) FAILED/g)];
+    if (ms.length) {
+      const last = ms[ms.length - 1];
+      throw new Error(`${suite.file} exited ${e.status ?? "?"} (${last[1]} passed, ${last[2]} failed): ${(e.stderr || "").split("\n").filter((l) => l.includes("FAIL")).slice(0, 3).join(" | ")}`);
+    }
+    throw new Error(`${suite.file} failed to run: ${(e.message || "").split("\n")[0]}`);
+  }
+  const ms = [...out.matchAll(/(\d+) PASSED, (\d+) FAILED/g)];
+  if (!ms.length) throw new Error(`${suite.file}: no results line in output`);
+  const last = ms[ms.length - 1];
+  return { passed: Number(last[1]), failed: Number(last[2]), secs: (Date.now() - t0) / 1000 };
+}
+
+/** Run a tier, folding child counts into the harness totals (additive). */
+function runTier(label, suites) {
+  console.log(`\n[${label}] Tiered Loop-2 suites (${suites.length} scripts)...`);
+  const t0 = Date.now();
+  let tierPassed = 0;
+  for (const suite of suites) {
+    const name = path.basename(suite.file);
+    try {
+      const r = runSuiteFile(suite);
+      if (r.failed === 0 && r.passed === suite.expect) {
+        passed += r.passed;
+        tierPassed += r.passed;
+        console.log(`  ✓ [${label}] ${name}: ${r.passed} passed, 0 failed (${r.secs.toFixed(1)}s)`);
+      } else {
+        failed += r.failed + 1;
+        console.error(`  ✗ FAIL: [${label}] ${name}: got ${r.passed} passed/${r.failed} failed, expected ${suite.expect}/0`);
+      }
+    } catch (e) {
+      failed++;
+      console.error(`  ✗ FAIL: [${label}] ${name} — ${e.message}`);
+    }
+  }
+  console.log(`  [${label}] tier done: +${tierPassed} asserts in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
 async function runTests() {
@@ -217,7 +305,17 @@ async function runTests() {
   }
 
   // -----------------------------------------------------------------
-  // SUMMARY
+  // 9. Stage-3 tiered Loop-2 suites (FAST default; SLOW opt-in)
+  // -----------------------------------------------------------------
+  runTier("FAST", FAST_SUITES);
+  if (SLOW) {
+    runTier("SLOW", SLOW_SUITES);
+  } else {
+    console.log("\n[SLOW] skipped (opt-in: `node tests/test_all.js --slow` or SLOW=1) — test_thermo (7, ~3s) + test_thermo_heavy (13, ~200s+) + calibration_4w52 (10, ~5s)");
+  }
+
+  // -----------------------------------------------------------------
+  // SUMMARY (grand total: Tier-0 32 + FAST 183 [+ SLOW 30])
   // -----------------------------------------------------------------
   console.log("\n=================================================");
   console.log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

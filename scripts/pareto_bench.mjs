@@ -4,11 +4,23 @@
  * Measures per-tier: ms/step, top-1 native-pose discrimination over the ligand
  * library vs randomized decoys, memory. Headless, zero deps.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
 const QUICK = process.argv.includes("--quick");
 const KB = 0.0019872041, T = 300;
+
+// ---- Stage-7 allocation tracking (additive; timing logic untouched) ----
+// Debt closed: the heap snapshot column was GC-timing noise (±50% seen across
+// S7 runs: L3 24.2→13.8, L2-full-rigor 17.6→25.6 MB). Each tier now records
+// heapUsed BEFORE and AFTER its timed loop; the delta bounds that tier's own
+// allocation. Run with `node --expose-gc` to force gc() before each read
+// (near-true allocation figure); without it the GC-noise caveat below applies
+// WITH the measured numbers. Zero deps, no timing-logic change.
+const HAS_GC = typeof globalThis.gc === "function";
+const heapMB = () => process.memoryUsage().heapUsed / 1e6;
+function gcIfExposed() { if (HAS_GC) { try { globalThis.gc(); } catch { /* ignore */ } } }
+gcIfExposed();
 
 // ---------- PDB / MOL2 loading (repo modules) ----------
 const pdbText = readFileSync(new URL("../4w52.pdb", import.meta.url), "utf8");
@@ -101,10 +113,12 @@ const results = [];
   pos.set(ff.ref, 0);
   // ligand reference positions from ff (set at construction from mols)
   const N = QUICK ? 200 : 1000;
+  gcIfExposed(); const heapBefore = heapMB();
   const t0 = performance.now();
   for (let s = 0; s < N; s++) ff.compute(pos, f);
   const msPerStep = (performance.now() - t0) / N;
-  results.push({ tier: "L0 CG", msPerStep, mem: process.memoryUsage().heapUsed / 1e6, note: `ENM+binding, nLig=${ff.nLigAtoms}` });
+  gcIfExposed(); const heapAfter = heapMB();
+  results.push({ tier: "L0 CG", msPerStep, mem: heapAfter, heapDelta: heapAfter - heapBefore, note: `ENM+binding, nLig=${ff.nLigAtoms}` });
 }
 
 // ---- L1: CG+ speed (Loop-2 S1+S2: charges + directional-HB virtual sites) ----
@@ -114,11 +128,13 @@ const results = [];
   const pos = new Float64Array(f.length);
   pos.set(ff.ref, 0);
   const N = QUICK ? 200 : 1000;
+  gcIfExposed(); const heapBefore = heapMB();
   const t0 = performance.now();
   for (let s = 0; s < N; s++) ff.compute(pos, f);
   const msPerStep = (performance.now() - t0) / N;
+  gcIfExposed(); const heapAfter = heapMB();
   const vSites = ff._vSites ? ff._vSites.filter((s) => s && s.valid).length : 0;
-  results.push({ tier: "L1 CG+", msPerStep, mem: process.memoryUsage().heapUsed / 1e6, note: `charges+directional-HB, nLig=${ff.nLigAtoms}, vSites=${vSites}` });
+  results.push({ tier: "L1 CG+", msPerStep, mem: heapAfter, heapDelta: heapAfter - heapBefore, note: `charges+directional-HB, nLig=${ff.nLigAtoms}, vSites=${vSites}` });
 }
 
 // ---- L1+BindLog: per-term accumulator overhead (Loop-2 S4 trackTerms) ----
@@ -129,11 +145,13 @@ const results = [];
   const pos = new Float64Array(f.length);
   pos.set(ff.ref, 0);
   const N = QUICK ? 200 : 1000;
+  gcIfExposed(); const heapBefore = heapMB();
   const t0 = performance.now();
   for (let s = 0; s < N; s++) ff.compute(pos, f);
   const msPerStep = (performance.now() - t0) / N;
+  gcIfExposed(); const heapAfter = heapMB();
   const termsOk = ff.bindU && Number.isFinite(ff.bindU.lj + ff.bindU.coul + ff.bindU.hb + ff.bindU.desolv);
-  results.push({ tier: "L1 CG+ +BindLog", msPerStep, mem: process.memoryUsage().heapUsed / 1e6, note: `trackTerms, bindU finite=${termsOk}` });
+  results.push({ tier: "L1 CG+ +BindLog", msPerStep, mem: heapAfter, heapDelta: heapAfter - heapBefore, note: `trackTerms, bindU finite=${termsOk}` });
 }
 
 // ---- L2: heavy speed (direct HeavyForceField) ----
@@ -148,10 +166,12 @@ try {
   const pos = new Float64Array(3 * n);
   selH.atoms.forEach((a, i) => { if (a.pos) { pos[3 * i] = a.pos[0]; pos[3 * i + 1] = a.pos[1]; pos[3 * i + 2] = a.pos[2]; } });
   const N = QUICK ? 20 : 100;
+  gcIfExposed(); const heapBefore = heapMB();
   const t0 = performance.now();
   for (let s = 0; s < N; s++) ff.compute(pos, f);
   const msPerStep = (performance.now() - t0) / N;
-  results.push({ tier: "L2 heavy", msPerStep, mem: process.memoryUsage().heapUsed / 1e6, note: `${n} atoms` });
+  gcIfExposed(); const heapAfter = heapMB();
+  results.push({ tier: "L2 heavy", msPerStep, mem: heapAfter, heapDelta: heapAfter - heapBefore, note: `${n} atoms` });
 
   // ---- L3: heavy+R3 speed (Loop-2 S3: weakint π-stack + cation-π + halogen, opt-in) ----
   try {
@@ -159,11 +179,13 @@ try {
     const ffW = new HFF2({ atoms: selH.atoms }, { gamma: 2.0, weak: "on" }, []);
     const fW = new Float64Array(3 * n);
     const N = QUICK ? 20 : 100;
+    gcIfExposed(); const heapBefore = heapMB();
     const t0 = performance.now();
     for (let s = 0; s < N; s++) ffW.compute(pos, fW);
     const msPerStep = (performance.now() - t0) / N;
+    gcIfExposed(); const heapAfter = heapMB();
     const weakOk = Number.isFinite(ffW.weakU) && Number.isFinite(ffW.piU + ffW.cpiU + ffW.xbU);
-    results.push({ tier: "L3 heavy+R3", msPerStep, mem: process.memoryUsage().heapUsed / 1e6, note: `${n} atoms, weakU finite=${weakOk}, rings=${(ffW._weakRings ?? []).length}` });
+    results.push({ tier: "L3 heavy+R3", msPerStep, mem: heapAfter, heapDelta: heapAfter - heapBefore, note: `${n} atoms, weakU finite=${weakOk}, rings=${(ffW._weakRings ?? []).length}` });
   } catch (e) {
     console.log("L3 heavy+R3 skipped:", e.message);
     results.push({ tier: "L3 heavy+R3", msPerStep: NaN, mem: NaN, note: `skip: ${e.message.slice(0, 60)}` });
@@ -176,12 +198,14 @@ try {
     ffF.trackTerms = true;
     const fF = new Float64Array(3 * n);
     const N = QUICK ? 20 : 100;
+    gcIfExposed(); const heapBefore = heapMB();
     const t0 = performance.now();
     for (let s = 0; s < N; s++) ffF.compute(pos, fF);
     const msPerStep = (performance.now() - t0) / N;
+    gcIfExposed(); const heapAfter = heapMB();
     const b = ffF.bindU || {};
     const termsOk = ["lj", "coul", "hb", "desolv", "pi", "cpi", "xb"].every((k) => Number.isFinite(b[k]));
-    results.push({ tier: "L2 full-rigor", msPerStep, mem: process.memoryUsage().heapUsed / 1e6, note: `${n} atoms, bindU 7-term finite=${termsOk}` });
+    results.push({ tier: "L2 full-rigor", msPerStep, mem: heapAfter, heapDelta: heapAfter - heapBefore, note: `${n} atoms, bindU 7-term finite=${termsOk}` });
   } catch (e) {
     console.log("L2 full-rigor skipped:", e.message);
     results.push({ tier: "L2 full-rigor", msPerStep: NaN, mem: NaN, note: `skip: ${e.message.slice(0, 60)}` });
@@ -272,8 +296,19 @@ const accHeavy = poseRecoveryTrials("heavy");
 results.push({ tier: "L0 CG (Cα-only scorer)", top1: `${accCG.wins}/${accCG.nTrials}`, meanRank: accCG.meanRank.toFixed(1), note: "pose recovery, benzene" });
 results.push({ tier: "L2 heavy (element scorer)", top1: `${accHeavy.wins}/${accHeavy.nTrials}`, meanRank: accHeavy.meanRank.toFixed(1), note: "pose recovery, benzene" });
 
-// ---- report + CSV ----
+// ---- report + CSV (Stage-7: heap_delta_MB column + dated history rows) ----
 console.table(results);
+// GC-noise caveat WITH numbers: the `mem` snapshot column is GC-timing
+// dependent (±50% seen: L3 24.2→13.8, L2-full-rigor 17.6→25.6 MB across S7
+// runs). The per-tier heapDelta (before/after the timed loop) bounds that
+// tier's own allocation; with --expose-gc the gc() bracketing makes it a
+// near-true figure, otherwise it still contains floating garbage.
+{
+  const deltas = results.filter((r) => Number.isFinite(r.heapDelta));
+  const worst = deltas.length ? Math.max(...deltas.map((r) => Math.abs(r.heapDelta))) : NaN;
+  console.log(`\n[Stage-7 alloc] gc exposed: ${HAS_GC} (run with node --expose-gc for gc-bracketed deltas); `
+    + `max |heapDelta| this run: ${Number.isFinite(worst) ? worst.toFixed(2) + " MB" : "n/a"} over ${deltas.length} tiers.`);
+}
 const l0s = results.find(r => r.tier === "L0 CG" && r.msPerStep);
 const l1s = results.find(r => r.tier === "L1 CG+" && r.msPerStep);
 const l1bs = results.find(r => r.tier === "L1 CG+ +BindLog" && r.msPerStep);
@@ -282,18 +317,44 @@ const l3s = results.find(r => r.tier === "L3 heavy+R3" && r.msPerStep);
 const l2fs = results.find(r => r.tier === "L2 full-rigor" && r.msPerStep);
 const fmt = (r) => (r && Number.isFinite(r.msPerStep) ? r.msPerStep.toFixed(3) : "n/a");
 const mem = (r) => (r && Number.isFinite(r.mem) ? r.mem.toFixed(1) : "");
+const dlt = (r) => (r && Number.isFinite(r.heapDelta) ? r.heapDelta.toFixed(2) : "");
 // Loop-2 S7: L1/L3 rows are MEASURED now (S1–S3 integrated); L4 stays an
 // estimate (OBC2+RESPA unchanged by Loop 2). Prior Loop-1 estimates are kept
 // in git history; the (est) tags below mark the only remaining estimates.
-const csv = [
-  "tier,ms_per_step,heap_MB,pose_recovery_top1,mean_rank,terms",
-  `L0 CG,${fmt(l0s)},${mem(l0s)},${accCG.wins}/${accCG.nTrials},${accCG.meanRank.toFixed(1)},ENM+isotropic-LJ+burial (today)`,
-  `L1 CG+,${fmt(l1s)},${mem(l1s)},${accCG.wins}/${accCG.nTrials},${accCG.meanRank.toFixed(1)},+charges+directional-HB virtual-sites (Loop-2 S1+S2 measured)`,
-  `L1 CG+ +BindLog,${fmt(l1bs)},${mem(l1bs)},,,+per-term accumulators trackTerms (Loop-2 S4 measured)`,
-  `L2 heavy,${fmt(l2s)},${mem(l2s)},${accHeavy.wins}/${accHeavy.nTrials},${accHeavy.meanRank.toFixed(1)},covalent+LJ+GB (today)`,
-  `L3 heavy+R3,${fmt(l3s)},${mem(l3s)},${accHeavy.wins}/${accHeavy.nTrials},${accHeavy.meanRank.toFixed(1)},+pi-stack+cation-pi+halogen weakint (Loop-2 S3 measured)`,
-  `L2 full-rigor,${fmt(l2fs)},${mem(l2fs)},${accHeavy.wins}/${accHeavy.nTrials},${accHeavy.meanRank.toFixed(1)},heavy+weakint+7-term bindU accumulators (Loop-2 S7 measured)`,
-  `L4 heavy+OBC2+RESPA (est),${l2s && Number.isFinite(l2s.msPerStep) ? (l2s.msPerStep * 0.55).toFixed(3) : "n/a"},,est,est,OBC2+LCPO+RESPA 2fs (Ph1/Ph3)`,
+// Stage-7: new heap_delta_MB column (per-tier heapUsed delta around the timed
+// loop; see alloc caveat above) + run tag. The writer PRESERVES history rows
+// (any row whose run tag differs from this run's) and adds fresh dated rows,
+// so reruns never destroy prior measurements; same-day reruns replace rows
+// with the identical run tag (idempotent).
+const RUN_TAG = `${new Date().toISOString().slice(0, 10)} ${QUICK ? "quick" : "FULL"}`;
+const HEADER = "tier,ms_per_step,heap_MB,heap_delta_MB,pose_recovery_top1,mean_rank,terms,run";
+const freshRows = [
+  `L0 CG,${fmt(l0s)},${mem(l0s)},${dlt(l0s)},${accCG.wins}/${accCG.nTrials},${accCG.meanRank.toFixed(1)},ENM+isotropic-LJ+burial (today),${RUN_TAG}`,
+  `L1 CG+,${fmt(l1s)},${mem(l1s)},${dlt(l1s)},${accCG.wins}/${accCG.nTrials},${accCG.meanRank.toFixed(1)},+charges+directional-HB virtual-sites (Loop-2 S1+S2 measured),${RUN_TAG}`,
+  `L1 CG+ +BindLog,${fmt(l1bs)},${mem(l1bs)},${dlt(l1bs)},,,+per-term accumulators trackTerms (Loop-2 S4 measured),${RUN_TAG}`,
+  `L2 heavy,${fmt(l2s)},${mem(l2s)},${dlt(l2s)},${accHeavy.wins}/${accHeavy.nTrials},${accHeavy.meanRank.toFixed(1)},covalent+LJ+GB (today),${RUN_TAG}`,
+  `L3 heavy+R3,${fmt(l3s)},${mem(l3s)},${dlt(l3s)},${accHeavy.wins}/${accHeavy.nTrials},${accHeavy.meanRank.toFixed(1)},+pi-stack+cation-pi+halogen weakint (Loop-2 S3 measured),${RUN_TAG}`,
+  `L2 full-rigor,${fmt(l2fs)},${mem(l2fs)},${dlt(l2fs)},${accHeavy.wins}/${accHeavy.nTrials},${accHeavy.meanRank.toFixed(1)},heavy+weakint+7-term bindU accumulators (Loop-2 S7 measured),${RUN_TAG}`,
+  `L4 heavy+OBC2+RESPA (est),${l2s && Number.isFinite(l2s.msPerStep) ? (l2s.msPerStep * 0.55).toFixed(3) : "n/a"},,,est,est,OBC2+LCPO+RESPA 2fs (Ph1/Ph3),${RUN_TAG}`,
 ];
-writeFileSync(new URL("../docs/pareto_frontier.csv", import.meta.url).pathname, csv.join("\n") + "\n");
-console.log("\nwrote docs/pareto_frontier.csv");
+const csvPath = new URL("../docs/pareto_frontier.csv", import.meta.url).pathname;
+let historyRows = [];
+if (existsSync(csvPath)) {
+  const prev = readFileSync(csvPath, "utf8").split("\n").map((l) => l.trim()).filter(Boolean);
+  for (const line of prev.slice(1)) {
+    const parts = line.split(",");
+    if (parts.length === 6) {
+      // Pre-Stage-7 row (tier,ms,heap,top1,rank,terms): splice the empty
+      // heap_delta_MB in column 4 so columns stay aligned, tag as history.
+      const [hTier, hMs, hHeap, hTop1, hRank, hTerms] = parts;
+      historyRows.push([hTier, hMs, hHeap, "", hTop1, hRank, hTerms, "Loop2-S7-FULL history pre-alloc-tracking"].join(","));
+    } else if (parts.length >= 8) {
+      const run = parts.slice(7).join(",");
+      if (run !== RUN_TAG) historyRows.push(line); // keep other runs, drop same-tag reruns
+    } else {
+      historyRows.push(line); // unknown shape: preserve verbatim, never delete
+    }
+  }
+}
+writeFileSync(csvPath, [HEADER, ...historyRows, ...freshRows].join("\n") + "\n");
+console.log(`\nwrote docs/pareto_frontier.csv (run ${RUN_TAG}, gc exposed: ${HAS_GC}; kept ${historyRows.length} history rows)`);

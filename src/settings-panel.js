@@ -40,6 +40,49 @@ export const settingsState = {
   physicsLevel: "L0",
 };
 
+/**
+ * Stage-5: localStorage key for the physics-level selector.
+ * No other setting persisted before (all in-memory); this follows the
+ * specs/PLAN.md "persist to localStorage" convention. Default stays L0.
+ */
+export const PHYSICS_LEVEL_KEY = "sim.physicsLevel";
+const _PHYSICS_LEVELS = ["L0", "L1", "L2"];
+
+/** Guarded localStorage read → valid tier or null (fresh default L0). */
+export function readStoredPhysicsLevel() {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    const v = localStorage.getItem(PHYSICS_LEVEL_KEY);
+    return _PHYSICS_LEVELS.includes(v) ? v : null;
+  } catch (_) { return null; }
+}
+
+/**
+ * Guarded persist of the physics level (validates, never throws).
+ * @param {string} lvl "L0"|"L1"|"L2"
+ */
+export function persistPhysicsLevel(lvl) {
+  try {
+    if (!_PHYSICS_LEVELS.includes(lvl)) return;
+    settingsState.physicsLevel = lvl;
+    if (typeof localStorage !== "undefined") localStorage.setItem(PHYSICS_LEVEL_KEY, lvl);
+  } catch (_) { /* storage unavailable (private mode/headless) */ }
+}
+
+/** Restore the select element from stored state (guarded, default L0). */
+export function restorePhysicsLevelSelect() {
+  try {
+    const stored = readStoredPhysicsLevel();
+    if (stored) settingsState.physicsLevel = stored;
+    const sel = (ui && ui.physicsLevel) ||
+      (typeof document !== "undefined" ? document.getElementById("physicsLevel") : null);
+    if (sel && _PHYSICS_LEVELS.includes(settingsState.physicsLevel)) sel.value = settingsState.physicsLevel;
+  } catch (_) {}
+}
+
+// Stage-5: restore persisted tier at startup (default L0 when absent/invalid).
+try { restorePhysicsLevelSelect(); } catch (_) {}
+
 // Phase 3 auto-detect: probe the WGSL backend once at startup. Never throws;
 // failure simply leaves the CPU/worker default in place.
 try {
@@ -89,6 +132,7 @@ export function updateSettingsUI() {
 
 export function initSettingsModal() {
   if (typeof document === "undefined") return; // headless/Node: no DOM to wire
+  try { restorePhysicsLevelSelect(); } catch (_) {}
   const settingsBtn = document.getElementById("settingsBtn");
   const settingsModal = document.getElementById("settingsModal");
   const closeSettingsBtn = document.getElementById("closeSettingsBtn");

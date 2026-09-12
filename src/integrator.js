@@ -38,17 +38,40 @@
  */
 
 import { KB_KCAL, KCONV } from "./units.js?v=10";
+import { SeededRNG } from "./seeded-rng.js?v=10";
 
 export class LangevinIntegrator {
   /**
    * @param {Float64Array} refPositions  native Cα positions (for reset)
    * @param {object} ff                  ForceField instance
-   * @param {number} mass                protein Cα mass in Da (default ≈ 110);
+   * @param {number|object} [mass=110]   protein Cα mass in Da (default ≈ 110);
    *   used only as the fallback when ff.masses is missing/empty (legacy
    *   protein-only force field). When ligand masses are present they are read
    *   from ff.masses and this argument only covers the protein beads.
+   *   Object form allowed: `new LangevinIntegrator(ref, ff, { seed: 42 })`.
+   * @param {object} [opts={}]           optional seeding: `{ seed: n }` for a
+   *   deterministic mulberry32 stream, or `{ rng }` to inject a uniform source
+   *   (a `() => [0,1)` function or an object with a `rand()` method such as
+   *   `SeededRNG`). Absent → unseeded `Math.random()` path (L0 bit-identical).
    */
-  constructor(refPositions, ff, mass = 110) {
+  constructor(refPositions, ff, mass = 110, opts = {}) {
+    // Allow (ref, ff, opts) overload: 3rd arg is an options object.
+    if (mass !== null && typeof mass === "object") {
+      opts = mass;
+      mass = 110;
+    }
+    opts = opts || {};
+    // Injected uniform source (null = default Math.random path). Set before
+    // initial velocity sampling so a constructor seed covers velocities too.
+    /** @type {(() => number)|null} uniform [0,1) source; null → Math.random */
+    this._uniform = null;
+    /** @type {SeededRNG|null} owned RNG when setSeed()/opts.seed is used */
+    this._seededRng = null;
+    if (opts.rng !== undefined && opts.rng !== null) {
+      this.setRng(opts.rng);
+    } else if (opts.seed !== undefined && opts.seed !== null) {
+      this.setSeed(opts.seed);
+    }
     this.ff = ff;
     const n3 = this.n3 = ff.n * 3;
 
@@ -97,6 +120,62 @@ export class LangevinIntegrator {
   /** Set bath temperature (K); also refreshes the per-coordinate thermal scale. */
   setTemperature(T) { this.T = Math.max(1, T); this._rebuildThermal(); }
   setFriction(z)    { this.zeta = Math.max(0.1, z); this.dt = this._pickDt(); }
+
+  /**
+   * Inject a deterministic uniform source for all Langevin Gaussian draws.
+   * Additive + opt-in: when never called the integrator uses `Math.random()`
+   * exactly as before (L0 bit-identical). Accepts either a `() => [0,1)`
+   * function or an object with a `rand()` method (e.g. `SeededRNG`).
+   * Clears the cached Box–Muller spare so the new stream starts clean.
+   * Does NOT resample velocities — call `reset()` afterwards if a fresh
+   * Maxwell–Boltzmann draw from the new stream is wanted.
+   * @param {(() => number)|{ rand: () => number }} rng uniform source
+   * @returns {this}
+   */
+  setRng(rng) {
+    if (typeof rng === "function") {
+      this._uniform = rng;
+      this._seededRng = null;
+    } else if (rng && typeof rng.rand === "function") {
+      const r = rng;
+      this._uniform = () => r.rand();
+      this._seededRng = (typeof SeededRNG !== "undefined" && r instanceof SeededRNG) ? r : null;
+    } else {
+      throw new Error("setRng expects a () => [0,1) function or an object with rand()");
+    }
+    this._haveSpare = false;
+    this._spare = 0;
+    return this;
+  }
+
+  /**
+   * Seed the integrator deterministically with mulberry32 (`SeededRNG`).
+   * Equivalent to `setRng(new SeededRNG(seed))` but retains the owned RNG so
+   * `getSeed()` can report it. Clears the Box–Muller spare.
+   * @param {number} seed 32-bit integer seed (any integer; truncated to uint32)
+   * @returns {this}
+   */
+  setSeed(seed) {
+    const r = new SeededRNG(seed);
+    this._seededRng = r;
+    this._uniform = () => r.rand();
+    this._haveSpare = false;
+    this._spare = 0;
+    return this;
+  }
+
+  /**
+   * Report the owned deterministic seed, or null on the default Math.random path.
+   * @returns {number|null}
+   */
+  getSeed() {
+    return this._seededRng ? this._seededRng.seed : null;
+  }
+
+  /** Uniform [0,1) draw: injected source when present, else Math.random (default). */
+  _randUniform() {
+    return this._uniform ? this._uniform() : Math.random();
+  }
 
   /**
    * Set the protein Cα bead mass (Da) — the scalar slider semantics. Protein
@@ -309,13 +388,17 @@ export class LangevinIntegrator {
     for (let i = 0; i < this.n3; i += 3) { this.vel[i] -= px; this.vel[i + 1] -= py; this.vel[i + 2] -= pz; }
   }
 
-  /** Fill this._rnd[0..k) with N(0,1) via Box–Muller (paired deviates). */
+  /**
+   * Fill this._rnd[0..k) with N(0,1) via Box–Muller (paired deviates).
+   * Uniform draws come from the injected RNG when seeded, else Math.random
+   * (default path bit-identical to the pre-seeding implementation).
+   */
   _fillGaussian(k) {
     let i = 0;
     if (this._haveSpare) { this._rnd[0] = this._spare; this._haveSpare = false; i = 1; }
     while (i < k) {
       let u = 0, v = 0, s = 0;
-      do { u = Math.random() * 2 - 1; v = Math.random() * 2 - 1; s = u * u + v * v; } while (s >= 1 || s === 0);
+      do { u = this._randUniform() * 2 - 1; v = this._randUniform() * 2 - 1; s = u * u + v * v; } while (s >= 1 || s === 0);
       const mul = Math.sqrt((-2 * Math.log(s)) / s);
       this._rnd[i] = u * mul;
       if (i + 1 < k) this._rnd[i + 1] = v * mul;

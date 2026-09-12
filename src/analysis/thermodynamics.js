@@ -15,6 +15,9 @@
 
 const KB = 0.0019872041; // kcal/mol/K
 
+import { findRotatableBonds, autoTorsions } from "./rotbonds.js";
+export { findRotatableBonds, autoTorsions };
+
 /** ln det of symmetric PD matrix via Cholesky. −Infinity if not PD. */
 function lnDetCholesky(M) {
   const n = M.length;
@@ -192,9 +195,18 @@ function dihedral(f, a, b, c, d) {
  * @param {number[][]} [p.holoEnergies] per-frame 7-vector [lj,coul,hb,desolv,pi,cpi,xb]
  * @param {number[]} p.pocketIdx residue indices (bead space)
  * @param {number} [p.nProt] protein bead count (pocket indices absolute)
- * @param {number} [p.mass] bead mass Da (110)
+ * @param {number} [p.mass] bead mass Da (110; used when p.masses absent)
+ * @param {number[]|Float64Array} [p.masses] per-atom masses Da in atom space
+ *   (Stage-1 heavy path: pocket DOFs inherit their atom's mass; falls back to
+ *   p.mass when absent or too short — CG callers unaffected)
  * @param {number} [p.T] 300
  * @param {number[]} [p.torsions] ligand rotatable-bond quadruples (absolute atom idx)
+ * @param {object} [p.ligand] ligand graph for auto-detection fallback
+ *   { atoms, bonds, offset?, orders?, aromatic? } — when p.torsions is empty,
+ *   rotatable torsions are auto-detected via rotbonds.autoTorsions (Stage-4).
+ *   Shorthand: p.ligandAtoms + p.ligandBonds (+ p.ligandStart | p.nProt as
+ *   offset) is also accepted. Additive only: explicit p.torsions always wins;
+ *   no ligand graph ⇒ legacy rigid-ligand path (ΔS_lig = 0), bit-identical.
  * @param {number} [p.dsasa] precomputed ΔSASA Å² (else contact-count × 10 Å² proxy)
  */
 export function computeThermodynamics(p) {
@@ -228,22 +240,56 @@ export function computeThermodynamics(p) {
     }
   }
   // ---- ΔS pocket ----
-  let dS_pocket = 0, framesPerDof = 0;
+  let dS_pocket = 0, framesPerDof = 0, massModel = `uniform ${mass} Da`;
+  let S_holo_pocket = 0, S_apo_pocket = 0;
   if (p.holoFrames?.length >= 10 && p.apoFrames?.length >= 10 && p.pocketIdx?.length) {
     const dofIdx = [];
     for (const r of p.pocketIdx) for (let k = 0; k < 3; k++) dofIdx.push(3 * r + k);
+    // Stage-1: per-atom masses when the caller supplies an atom-space table
+    // (heavy FF ff.masses); else the legacy uniform bead mass. Additive only.
+    let dofMasses = null;
+    if (p.masses && p.masses.length > Math.max(...p.pocketIdx)) {
+      dofMasses = [];
+      for (const r of p.pocketIdx) for (let k = 0; k < 3; k++) dofMasses.push(p.masses[r]);
+      massModel = "per-atom";
+    } else {
+      dofMasses = new Array(dofIdx.length).fill(mass);
+    }
     const holoA = kabschAlignFrames(p.holoFrames);
     const apoA = kabschAlignFrames(p.apoFrames);
-    const S_holo = schlitterEntropy(covariance(holoA, dofIdx), new Array(dofIdx.length).fill(mass), T);
-    const S_apo = schlitterEntropy(covariance(apoA, dofIdx), new Array(dofIdx.length).fill(mass), T);
-    dS_pocket = S_holo - S_apo; // negative: pocket restricted on binding
+    const S_holo = schlitterEntropy(covariance(holoA, dofIdx), dofMasses, T);
+    const S_apo = schlitterEntropy(covariance(apoA, dofIdx), dofMasses, T);
+    S_holo_pocket = S_holo; S_apo_pocket = S_apo;
+    dS_pocket = S_holo - S_apo; // holo − apo (sign is model-dependent: see R4 §5)
     framesPerDof = Math.min(holoA.length, apoA.length) / dofIdx.length;
   }
   // ---- ΔS ligand (torsion) ----
+  // Stage-4: autoTorsions fallback — when no explicit torsion list is given
+  // but a ligand graph is supplied, detect rotatable bonds automatically.
   let dS_lig = 0, ligNote = "rigid ligand (no rotatable bonds) ⇒ 0";
-  if (p.torsions?.length && p.holoFrames?.length) {
-    dS_lig = torsionEntropy(p.holoFrames, p.torsions) - torsionEntropy(p.apoFrames ?? [], p.torsions);
-    ligNote = `${p.torsions.length} torsions`;
+  let rotatableBonds = p.torsions?.length ?? 0;
+  let torsions = p.torsions;
+  let ligAuto = false;
+  if ((!torsions || !torsions.length) && p.holoFrames?.length) {
+    const lig = p.ligand
+      ?? ((p.ligandAtoms && p.ligandBonds)
+        ? { atoms: p.ligandAtoms, bonds: p.ligandBonds, offset: p.ligandStart ?? p.nProt ?? 0 }
+        : null);
+    if (lig?.atoms?.length && lig?.bonds?.length) {
+      try {
+        torsions = autoTorsions(lig.atoms, lig.bonds, lig.offset ?? 0, { orders: lig.orders, aromatic: lig.aromatic });
+        rotatableBonds = torsions.length;
+        ligAuto = true;
+      } catch { torsions = []; rotatableBonds = 0; }
+    }
+  }
+  if (torsions?.length && p.holoFrames?.length) {
+    dS_lig = torsionEntropy(p.holoFrames, torsions) - torsionEntropy(p.apoFrames ?? [], torsions);
+    ligNote = ligAuto
+      ? `${torsions.length} auto rotatable bonds (${torsions.length} torsions)`
+      : `${torsions.length} torsions`;
+  } else if (ligAuto) {
+    ligNote = "rigid ligand (0 rotatable bonds) ⇒ 0";
   }
   // ---- ΔS solvent (SASA proxy) ----
   let dS_solv = 0, dsasa = p.dsasa ?? null;
@@ -258,12 +304,16 @@ export function computeThermodynamics(p) {
   return {
     dH, dH_se,
     dS: { pocket: dS_pocket, ligand: dS_lig, solvent: dS_solv, total: dS_total },
+    // Stage-1: absolute pocket entropies (diagnose holo-tightening vs apo-loosening).
+    S_pocket: { holo: S_holo_pocket, apo: S_apo_pocket },
     dG_estimate: dG,
     meta: {
       T, framesPerDof, ligNote,
+      rotatableBonds,
       dsasa, sasaScale: "0.012 kcal/mol/Å² (±50%)",
       pocketResidues: p.pocketIdx?.length ?? 0,
       holoFrames: p.holoFrames?.length ?? 0, apoFrames: p.apoFrames?.length ?? 0,
+      massModel,
       warning: framesPerDof && framesPerDof < 10 ? "UNDER-SAMPLED (frames/DOF < 10) — Schlitter unstable" : null,
     },
   };
@@ -279,7 +329,11 @@ export function formatThermoTable(r) {
     L.push(`     ${k.padEnd(7)} ${v >= 0 ? "+" : ""}${v.toFixed(2)}`);
   }
   L.push(`ΔS  pocket  ${r.dS.pocket.toFixed(4)} kcal/mol/K  (−TΔS = ${(-r.meta.T * r.dS.pocket).toFixed(2)})`);
-  L.push(`     ligand  ${r.dS.ligand.toFixed(4)}  (${r.meta.ligNote})`);
+  // Stage-4: ligand line always carries the rotatable-bond count — via ligNote
+  // ("N torsions" / "N auto rotatable bonds") plus the explicit suffix below
+  // when meta.rotatableBonds is known.
+  const rotSuffix = Number.isFinite(r.meta?.rotatableBonds) ? ` [${r.meta.rotatableBonds} rotatable]` : "";
+  L.push(`     ligand  ${r.dS.ligand.toFixed(4)}  (${r.meta.ligNote}${rotSuffix})`);
   L.push(`     solvent ${r.dS.solvent.toFixed(4)}  (ΔSASA ${r.meta.dsasa} Å² × 0.012)`);
   L.push(`ΔS total    ${r.dS.total.toFixed(4)} kcal/mol/K  (−TΔS = ${(-r.meta.T * r.dS.total).toFixed(2)})`);
   L.push(`ΔG estimate ${r.dG_estimate.toFixed(2)} kcal/mol  (±bootstrap SE on ΔH; ±50% on SASA term)`);

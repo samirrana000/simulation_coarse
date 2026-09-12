@@ -28,6 +28,7 @@
  */
 
 import { parseMol2, mol2Element } from "./mol2.js?v=10";
+import { parseAltLoc, parseOccupancy, shouldReplaceAltloc } from "./pdb_altloc.js?v=10";
 export { parseMol2, mol2Element };
 
 /**
@@ -110,7 +111,10 @@ export async function fetchPdb(id) {
  */
 export function parseCa(pdbText) {
   const beads = [];
-  const seen = new Set();
+  // Stage-4 altloc cleaner (default-ON, bit-identical on clean files): per
+  // (chain, resSeq, iCode) key keep the highest-occupancy altloc ('A' on tie,
+  // else first); zero-occupancy duplicates dropped. See src/pdb_altloc.js.
+  const seen = new Map();
   const chains = new Set();
   const warnings = [];
   let nAtoms = 0;
@@ -145,13 +149,24 @@ export function parseCa(pdbText) {
     }
 
     const key = `${chain}|${resSeq}|${iCode}`;
+    const altLoc = parseAltLoc(line);
+    const occ = parseOccupancy(line);
     if (seen.has(key)) {
-      const msg = `parseCa: duplicate residue ${key} skipped (altLoc)`;
-      warnings.push(msg);
-      console.warn(msg);
+      const prev = seen.get(key);
+      if (shouldReplaceAltloc(prev, { occupancy: occ, altLoc })) {
+        const msg = `parseCa: duplicate residue ${key} altloc '${prev.altLoc || " "}'→'${altLoc || " "}' replaced (occ ${prev.occupancy}→${occ})`;
+        warnings.push(msg);
+        console.warn(msg);
+        beads[prev.idx] = { x, y, z, chain, resSeq, resName, serial: beads[prev.idx].serial, bfac: Number.isNaN(bfac) ? 0 : bfac };
+        seen.set(key, { idx: prev.idx, occupancy: occ, altLoc });
+      } else {
+        const msg = `parseCa: duplicate residue ${key} skipped (altLoc '${altLoc || " "}' occ ${occ})`;
+        warnings.push(msg);
+        console.warn(msg);
+      }
       continue;       // alt-loc duplicates
     }
-    seen.add(key);
+    seen.set(key, { idx: beads.length, occupancy: occ, altLoc });
 
     beads.push({ x, y, z, chain, resSeq, resName, serial: nAtoms + 1, bfac: Number.isNaN(bfac) ? 0 : bfac });
     chains.add(chain);
@@ -292,10 +307,37 @@ export function parseLigands(pdbText) {
     const key = `${chain}|${resSeq}|${resName}`;
     let mol = byKey.get(key);
     if (!mol) {
-      mol = { resName, chain, atoms: [], bonds: [], _serialToIdx: new Map() };
+      mol = { resName, chain, atoms: [], bonds: [], _serialToIdx: new Map(), _atomKeys: new Map() };
       byKey.set(key, mol);
       molecules.push(mol);
     }
+    // Stage-4 altloc/exact-duplicate cleaner (default-ON): dedup by
+    // (iCode, atom name) within the residue — highest occupancy wins ('A' on
+    // tie, else first); zero-occupancy copies dropped. Prevents coincident
+    // duplicate atoms (S7 NaN root cause) at the ligand source. Clean files
+    // (4W52 BNZ/EPE: no altloc) are bit-identical.
+    const iCode = line.charAt(26).trim();
+    const altLoc = parseAltLoc(line);
+    const occ = parseOccupancy(line);
+    const akey = `${iCode}|${atomName}`;
+    const prevDup = mol._atomKeys.get(akey);
+    if (prevDup) {
+      if (shouldReplaceAltloc(prevDup, { occupancy: occ, altLoc })) {
+        const msg = `parseLigands: duplicate atom ${key} ${akey} altloc '${prevDup.altLoc || " "}'→'${altLoc || " "}' replaced (occ ${prevDup.occupancy}→${occ})`;
+        warnings.push(msg);
+        console.warn(msg);
+        mol._serialToIdx.delete(prevDup.serial);
+        mol.atoms[prevDup.idx] = { x, y, z, element, charge: 0, serial };
+        mol._serialToIdx.set(serial, prevDup.idx);
+        mol._atomKeys.set(akey, { idx: prevDup.idx, occupancy: occ, altLoc, serial });
+      } else {
+        const msg = `parseLigands: duplicate atom ${key} ${akey} skipped (altLoc '${altLoc || " "}' occ ${occ})`;
+        warnings.push(msg);
+        console.warn(msg);
+      }
+      continue;
+    }
+    mol._atomKeys.set(akey, { idx: mol.atoms.length, occupancy: occ, altLoc, serial });
     mol._serialToIdx.set(serial, mol.atoms.length);
     mol.atoms.push({ x, y, z, element, charge: 0, serial });
   }
@@ -323,6 +365,7 @@ export function parseLigands(pdbText) {
     .filter((m) => m.atoms.length >= 2)
     .map((m) => {
       delete m._serialToIdx;
+      delete m._atomKeys;
       // CONECT records in real PDBs are frequently INCOMPLETE (e.g. buffer
       // molecules like HEPES) — an omitted covalent bond leaves two heavy atoms
       // at ~1.4 Å with no repulsion exclusion, which explodes the CG force

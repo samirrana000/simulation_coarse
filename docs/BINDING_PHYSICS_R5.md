@@ -69,3 +69,13 @@ recovery ≥ 8/10 both scorers.
 ## 6. What each tier CANNOT answer (per docs/APPLICABILITY.md, still true at every tier)
 Absolute K_D/ΔG, explicit-solvent effects, membrane/nucleic systems, PME-charged
 systems, production kinetics. Tiers move you ALONG the frontier, not past its trust boundary.
+
+## 7. Stage-7 addendum (2026-09-12): allocation tracking + GPU decision
+
+`scripts/pareto_bench.mjs` now brackets each tier with heapUsed before/after
+reads (gc-bracketed via `node --expose-gc`); `docs/pareto_frontier.csv` gains
+`heap_delta_MB` + `run` columns with the §5 rows preserved as dated history.
+Headline: ms stable ±5% over 3 FULL reruns; gc-bracketed per-tier allocation
+≤0.3 MB (memory is not a frontier axis — quantified). GPU verdict: Loop-2
+binding terms stay CPU-only (WGSL covers LJ/Coulomb/GB; port cost > benefit at
+0.22 ms CG / ~80 ms heavy). Full numbers in `docs/BINDING_LOOP2_DONE.md` §14.

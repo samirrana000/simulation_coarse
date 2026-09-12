@@ -49,17 +49,22 @@ check("node --check src/*.js", () => {
   return `${files.length + physicsFiles.length} files clean`;
 });
 
-/* 2. regression suite */
+/* 2. regression suite (Stage-4: grand total = Tier-0 32 + FAST 183 = 215;
+ * Stage-6: SLOW tier is now 30 (thermo 7 + heavy 13 + calibration_4w52 10),
+ * full --slow total 245 — gate still checks the FAST grand total only) */
 check("tests/test_all.js baseline", () => {
   const out = execFileSync(process.execPath, [path.join(ROOT, "tests", "test_all.js")], {
-    stdio: ["pipe", "pipe", "pipe"], encoding: "utf-8", timeout: 120000,
+    stdio: ["pipe", "pipe", "pipe"], encoding: "utf-8", timeout: 180000,
   });
-  const m = out.match(/(\d+) PASSED, (\d+) FAILED/);
-  if (!m) throw new Error("no results line");
-  const [passed, failed] = [Number(m[1]), Number(m[2])];
+  // Stage-3: test_all.js runs tiered suites; each child result is captured
+  // (lowercase one-liners), so the LAST uppercase line is the grand total.
+  const matches = [...out.matchAll(/(\d+) PASSED, (\d+) FAILED/g)];
+  if (!matches.length) throw new Error("no results line");
+  const last = matches[matches.length - 1];
+  const [passed, failed] = [Number(last[1]), Number(last[2])];
   if (failed > 0) throw new Error(`${failed} FAILED`);
-  if (passed < 32) throw new Error(`regression: ${passed} < 32 baseline`);
-  return `${passed} PASSED, 0 FAILED (>= 32 baseline)`;
+  if (passed < 215) throw new Error(`regression: ${passed} < 215 baseline (32 Tier-0 + 183 FAST)`);
+  return `${passed} PASSED, 0 FAILED (>= 215 baseline)`;
 });
 
 /* 3. DOM contract: ui.js ids ⊆ index.html ids */
