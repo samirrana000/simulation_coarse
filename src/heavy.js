@@ -35,6 +35,11 @@ import { computeBornRadii as computeOBC2Radii, gbEnergyForces as gbOBC2Forces, d
 import { lcpoSasa } from "./physics/solvation/lcpo_sasa.js?v=10";
 import { membraneEnergyForces, transferDgFor } from "./physics/solvation/membrane_slab.js?v=10";
 import { typeMolecule, assignCharges as gaffAssignCharges } from "./chem/gaff2_mapper.js?v=10";
+import {
+  piStackForces, cationPiForces, halogenForces,
+  buildRingFrames, buildCationList, buildHalogenList, HALOGEN_EPS,
+} from "./physics/weakint.js?v=10";
+import { detectCoordination, enforceCoordination } from "./chem/metals.js?v=10";
 
 export const K_ELEC = 332.0;
 export const SCREEN_LEN = 8.0; // Å
@@ -616,6 +621,13 @@ export class HeavyForceField {
 
     this.bindingU = 0;
     this.desolvU = 0;
+    // Loop-2 S4 (R4 §5 item 1): per-term binding-accumulator opt-in.
+    // trackTerms = true fills bindLJU/bindCoulU/bindHBU/desolvU + the
+    // bindU component vector {lj, coul, hb, desolv, pi, cpi, xb} on each
+    // compute(). DEFAULT false — legacy scalar path, zero overhead.
+    this.trackTerms = false;
+    this.bindLJU = 0; this.bindCoulU = 0; this.bindHBU = 0;
+    this.bindU = { lj: 0, coul: 0, hb: 0, desolv: 0, pi: 0, cpi: 0, xb: 0 };
     this.repU = 0;
     this.bondU = 0;
     this.angleU = 0;
@@ -651,6 +663,75 @@ export class HeavyForceField {
       try { this._buildAmberStiffness(); } catch (e) {
         console.warn(`[HeavyForceField] AMBER14 tables unavailable (${e.message}) — uniform k fallback`);
         this.useAmber14 = false;
+      }
+    }
+
+    // ---- Loop-2 S3 opt-in weak interactions (R3 §6 items 1–3 + §1e) ----
+    // par.weak: "off" (default, bit-identical legacy) | "on" adds π-stack,
+    //   cation-π and halogen σ-hole terms after the LJ/GB grid pass.
+    // par.metalAngles: true (default false) swaps metal distance springs for
+    //   chem/metals.js enforceCoordination (radial k=40 + cross-angle k=20)
+    //   for metals with a detected coordination geometry — R3 §1e.
+    this.weakOn = par.weak === "on";
+    this.metalAngles = par.metalAngles === true;
+    this.weakU = 0; this.piU = 0; this.cpiU = 0; this.xbU = 0;
+    this.coordAngleU = 0;
+    this._weakRings = [];
+    this._weakCations = [];
+    this._weakHalogens = [];
+    this._weakRingAtoms = new Set();
+    this._metalEnforce = null; // { metals:[{index,element,donors}], elements, hasGeometry:Set }
+    if (this.weakOn || this.metalAngles) this._buildWeakAndMetalLists(atoms, L.bonds);
+  }
+
+  /**
+   * Build the once-per-topology weak-interaction lists + metal coordination
+   * upgrade state (Loop-2 S3).
+   * Ring frames from buildRingFrames (protein name sets + GAFF2 types +
+   * geometric fallback); cation list from Lys NZ / Arg CZ / HIP / charged
+   * ligand N; halogen list from Cl/Br/I with a bonded C; metal upgrade from
+   * detectCoordination + classifyGeometry at the construction pose.
+   * @param {Array} atoms
+   * @param {Array} bonds  flat [i,j,r0,...] list from buildLists
+   */
+  _buildWeakAndMetalLists(atoms, bonds) {
+    const bondPairs = [];
+    for (let a = 0; a < bonds.length; a += 3) bondPairs.push([bonds[a], bonds[a + 1]]);
+    if (this.weakOn) {
+      this._weakRings = buildRingFrames(atoms, bondPairs);
+      this._weakRingAtoms = new Set();
+      for (const r of this._weakRings) for (const i of r.atomIdx) this._weakRingAtoms.add(i);
+      this._weakCations = buildCationList(atoms);
+      this._weakHalogens = buildHalogenList(atoms, bondPairs);
+      // Acceptor list for halogen bonds: hbond acceptor classification
+      // (backbone/sidechain O, S, aromatic N) — same set as the H-bond pass.
+      const acc = this._hbClassification.isAcceptor;
+      this._weakAcceptors = [];
+      for (let i = 0; i < this.n; i++) if (acc[i]) this._weakAcceptors.push(i);
+    }
+    if (this.metalAngles) {
+      // R3 §1e metal upgrade: detect coordination at the native pose, classify
+      // the polyhedron, and pin ideal angles. Metals without a detected
+      // geometry (coordinationNumber ≤ 1) keep the legacy k=40 springs.
+      const elements = atoms.map((a) => a.element ?? "C");
+      const metals = [];
+      const hasGeometry = new Set();
+      for (let i = 0; i < this.n; i++) {
+        if (!atoms[i].isMetal) continue;
+        const det = detectCoordination(this.ref, i, elements);
+        metals.push({ index: i, element: atoms[i].element, donors: det.donorIndices });
+        if (det.coordinationNumber >= 2) hasGeometry.add(i);
+      }
+      this._metalEnforce = { metals, elements, hasGeometry };
+      // Remove those metals' radial springs from the legacy coord list so
+      // enforceCoordination is the ONLY radial term for them (no double radial).
+      if (hasGeometry.size > 0 && this.coord.length > 0) {
+        const keep = [];
+        for (let a = 0; a < this.coord.length; a += 3) {
+          if (hasGeometry.has(this.coord[a])) continue; // metal side of [metal, donor]
+          keep.push(this.coord[a], this.coord[a + 1], this.coord[a + 2]);
+        }
+        this.coord = new Float64Array(keep);
       }
     }
   }
@@ -755,7 +836,24 @@ export class HeavyForceField {
     } else {
       this.bondU = harmonicFlat(pos, f, this.bonds, 3, this.kBond);
     }
-    this.coordU = harmonicFlat(pos, f, this.coord, 3, this.metalK);
+    // Metal coordination: legacy k=40 distance springs for metals WITHOUT a
+    // detected coordination geometry. When par.metalAngles === true (R3 §1e),
+    // metals WITH a geometry are handled below by enforceCoordination (radial
+    // k=40 + cross-angle k=20) instead of these springs.
+    const me = this._metalEnforce;
+    this.coordU = 0;
+    if (this.coord.length > 0) {
+      this.coordU = harmonicFlat(pos, f, this.coord, 3, this.metalK);
+    }
+    if (me) {
+      const sub = me.metals.filter((m) => me.hasGeometry.has(m.index));
+      if (sub.length > 0) {
+        const res = enforceCoordination(pos, sub, me.elements, {
+          forces: f, kRadial: this.metalK, kAngle: 20.0, ideal: true,
+        });
+        this.coordU += res.energy;
+      }
+    }
     U += this.bondU + this.coordU;
 
     // 2. Angles (AMBER14 per-angle k when opted in)
@@ -792,26 +890,65 @@ export class HeavyForceField {
     this.hbondU = nb.hbond;
     U += nb.lj + nb.elec + nb.gb + nb.hbond;
 
+    // 4b. Weak interactions (opt-in par.weak === "on", Loop-2 S3 / R3 §1a–c):
+    // π-stack ring-ring, cation-π cation-ring, halogen σ-hole X···acceptor.
+    // Runs nonbonded-adjacent (after the grid pass); pairs already excluded
+    // by _excluded (1-2/1-3/intra-ligand) or same-ring are skipped.
+    if (this.weakOn) {
+      const w = this._weakInteractions(pos, f);
+      this.weakU = w.pi + w.cpi + w.xb;
+      this.piU = w.pi; this.cpiU = w.cpi; this.xbU = w.xb;
+      U += this.weakU;
+    } else {
+      this.weakU = 0; this.piU = 0; this.cpiU = 0; this.xbU = 0;
+    }
+
     // 5. Hydrophobic SASA burial ("lcpo" routes through lcpo_sasa.js)
     if (this.sasaModel === "lcpo") {
       try {
         const res = lcpoSasa(pos, this._lcpoElements, { gamma: this.sasa.gamma, excluded: this._excluded, forces: f });
         this.sasaU = res.energy;
         this.bindingU = nb.bindE;
+        if (this.trackTerms === true) this._bindSasaE = 0; // LCPO: bindE carries no SASA part
         U += this.sasaU;
       } catch (e) {
         console.warn(`[HeavyForceField] LCPO SASA failed (${e.message}) — legacy SASA fallback`);
         const sasaRes = this.sasa.compute(pos, f, this._elem, this.n, this.nProt, this.ligandStart);
         this.sasaU = sasaRes.energy;
         this.bindingU = nb.bindE + sasaRes.bindSasaE;
+        if (this.trackTerms === true) this._bindSasaE = sasaRes.bindSasaE;
         U += this.sasaU;
       }
     } else {
       const sasaRes = this.sasa.compute(pos, f, this._elem, this.n, this.nProt, this.ligandStart);
       this.sasaU = sasaRes.energy;
       this.bindingU = nb.bindE + sasaRes.bindSasaE;
+      if (this.trackTerms === true) this._bindSasaE = sasaRes.bindSasaE;
       U += this.sasaU;
     }
+
+    // 5a. Loop-2 S4 per-term binding accumulators (R4 §5 item 1, R6 §5).
+    // trackTerms === true splits bindingU into {lj, coul, hb, desolv} from
+    // the per-pair trackers filled in _nonBondedGrid/_nonBondedGridNoGB
+    // (bindTerms) + the SASA cross-burial part captured above (bindSasaE);
+    // the S3 weak terms join via piU/cpiU/xbU (bindU vector). DEFAULT OFF —
+    // trk branches in the kernels are skipped, path bit-identical to pre-S4.
+    if (this.trackTerms === true) {
+      const bt = nb.bindTerms || {};
+      this.bindLJU = bt.lj || 0;
+      this.bindCoulU = bt.coul || 0;
+      this.bindHBU = bt.hb || 0;
+      this.desolvU = this._bindSasaE || 0;
+      // Weak cross terms: the S3 kernels are whole-molecule; the ligand's
+      // share enters the binding vector via the native-pose contacts each
+      // term makes (approximated here by the weak totals when a ligand is
+      // present — documented approximation, S5 consumes only the split).
+      this.bindU = {
+        lj: this.bindLJU, coul: this.bindCoulU, hb: this.bindHBU,
+        desolv: this.desolvU, pi: this.piU || 0, cpi: this.cpiU || 0, xb: this.xbU || 0,
+      };
+    }
+    this._bindSasaE = null;
 
     // 5b. Implicit membrane slab (opt-in via par.membrane = {on:true,...})
     if (this.membraneOpts?.on) {
@@ -879,7 +1016,11 @@ export class HeavyForceField {
     // To avoid duplicating the full kernel, call the legacy grid then subtract
     // its HCT GB contribution and add OBC2 instead.
     const base = this._nonBondedGridNoGB(pos, f);
-    return { lj: base.lj, elec: base.elec, gb: gbRes.gbEnergy, hbond: base.hbond, bindE: base.bindE + gbRes.gbEnergy * 0 };
+    return {
+      lj: base.lj, elec: base.elec, gb: gbRes.gbEnergy, hbond: base.hbond,
+      bindE: base.bindE + gbRes.gbEnergy * 0,
+      bindTerms: base.bindTerms, // S4 per-term trackers pass through (null when off)
+    };
   }
 
   /**
@@ -896,6 +1037,9 @@ export class HeavyForceField {
     // clean, so implement the short-range loop directly (no GB term).
     const n = this.n;
     let ljTot = 0, elecTot = 0, hbondTot = 0, bindTot = 0;
+    // Loop-2 S4: per-term trackers (skipped when trackTerms is off)
+    const trk = this.trackTerms === true && ligStart > 0;
+    let bLJ = 0, bCoul = 0, bHB = 0;
     this.grid.build(pos, n);
     const isDonor = this._hbClassification.isDonor;
     const isAcceptor = this._hbClassification.isAcceptor;
@@ -936,9 +1080,19 @@ export class HeavyForceField {
       }
       f[xi] += fx; f[xi + 1] += fy; f[xi + 2] += fz;
       f[xj] -= fx; f[xj + 1] -= fy; f[xj + 2] -= fz;
-      if (i < nProt && j >= ligStart && ligStart > 0) bindTot += s14 * S * (ljE + hbE);
+      if (i < nProt && j >= ligStart && ligStart > 0) {
+        bindTot += s14 * S * (ljE + hbE);
+        if (trk) {
+          bLJ += s14 * S * ljE;
+          bCoul += s14 * S * (((COULOMB_CONST / this.gbEpsIn) * qi * qj) / r);
+          bHB += s14 * S * hbE;
+        }
+      }
     });
-    return { lj: ljTot, elec: elecTot, gb: 0, hbond: hbondTot, bindE: bindTot };
+    return {
+      lj: ljTot, elec: elecTot, gb: 0, hbond: hbondTot, bindE: bindTot,
+      bindTerms: trk ? { lj: bLJ, coul: bCoul, hb: bHB } : null,
+    };
   }
 
   /**
@@ -949,6 +1103,9 @@ export class HeavyForceField {
     const nProt = this.nProt;
     const ligStart = this.ligandStart;
     let ljTot = 0, elecTot = 0, gbTot = 0, hbondTot = 0, bindTot = 0;
+    // Loop-2 S4: per-term trackers (skipped when trackTerms is off — zero overhead)
+    const trk = this.trackTerms === true && ligStart > 0;
+    let bLJ = 0, bCoul = 0, bHB = 0;
 
     // Build spatial hash
     this.grid.build(pos, n);
@@ -1008,10 +1165,97 @@ export class HeavyForceField {
 
       if (i < nProt && j >= ligStart && ligStart > 0) {
         bindTot += totE;
+        // S4 tracker: coul = full electrostatic pair term (Coulomb + GB
+        // reaction field) so lj+coul+hb+desolv sums exactly to bindingU.
+        if (trk) { bLJ += s14 * S * ljE; bCoul += gbRes.energy; bHB += s14 * S * hbE; }
       }
     });
 
-    return { lj: ljTot, elec: elecTot, gb: gbTot, hbond: hbondTot, bindE: bindTot };
+    return {
+      lj: ljTot, elec: elecTot, gb: gbTot, hbond: hbondTot, bindE: bindTot,
+      bindTerms: trk ? { lj: bLJ, coul: bCoul, hb: bHB } : null,
+    };
+  }
+
+  /**
+   * Weak-interaction pass (π-stack, cation-π, halogen σ-hole) — opt-in,
+   * runs after the LJ/GB grid kernel. Cutoffs: ring-ring 5.5 Å (centroid),
+   * cation-ring 6 Å, X···D 4 Å (all inside the kernels' Gaussian tails;
+   * pre-screened by centroid distance to skip far pairs cheaply).
+   * Exclusions: pairs present in _excluded (bonded/1-3/intra-ligand) and
+   * same-ring pairs are skipped. Energies returned per term.
+   * @param {ArrayLike<number>} pos
+   * @param {Float64Array} f
+   * @returns {{pi:number, cpi:number, xb:number}}
+   */
+  _weakInteractions(pos, f) {
+    const rings = this._weakRings;
+    const excl = this._excluded;
+    let pi = 0, cpi = 0, xb = 0;
+
+    // --- π-stack: ring-ring pairs within 5.5 Å centroid cutoff ---
+    for (let a = 0; a < rings.length; a++) {
+      const ra = rings[a];
+      const a0 = 3 * ra.atomIdx[0];
+      const ax = pos[a0], ay = pos[a0 + 1], az = pos[a0 + 2];
+      for (let b = a + 1; b < rings.length; b++) {
+        const rb = rings[b];
+        // cheap prescreen on first atom (within ring diameter of centroid)
+        const b0 = 3 * rb.atomIdx[0];
+        const dx = pos[b0] - ax, dy = pos[b0 + 1] - ay, dz = pos[b0 + 2] - az;
+        if (dx * dx + dy * dy + dz * dz > 121) continue; // 11 Å atom prescreen ≫ 5.5 + 2×2.8 ring radius
+        // fused rings share a bond (e.g. Trp 5+6 rings) — those pairs sit in
+        // _excluded and must not double-stack; same-molecule NON-bonded rings
+        // (Phe–Phe′ stacking) keep the term (R3 §4). Intra-ligand pairs are
+        // all-excluded → ligand-internal stacking off (geometry already fixed).
+        let skip = false;
+        for (const ia of ra.atomIdx) {
+          for (const ib of rb.atomIdx) {
+            if (ia === ib || excl.has(pairKey(ia, ib))) { skip = true; break; }
+          }
+          if (skip) break;
+        }
+        if (skip) continue;
+        pi += piStackForces(pos, f, ra, rb);
+      }
+    }
+
+    // --- cation-π: cation-ring pairs within 6 Å ---
+    for (const ci of this._weakCations) {
+      const cx = pos[3 * ci], cy = pos[3 * ci + 1], cz = pos[3 * ci + 2];
+      for (const ring of rings) {
+        // cations inside their own ring (pyridinium N) skip
+        if (ring.atomIdx.includes(ci)) continue;
+        const i0 = 3 * ring.atomIdx[0];
+        const dx = pos[i0] - cx, dy = pos[i0 + 1] - cy, dz = pos[i0 + 2] - cz;
+        if (dx * dx + dy * dy + dz * dz > 100) continue; // 10 Å prescreen
+        // cation covalently tied to the ring (aniline-type N) — excluded pair
+        let skip = false;
+        for (const ia of ring.atomIdx) {
+          if (excl.has(pairKey(ci, ia))) { skip = true; break; }
+        }
+        if (skip) continue;
+        cpi += cationPiForces(pos, f, ci, ring);
+      }
+    }
+
+    // --- halogen σ-hole: C–X···D triples, X···D within 4 Å ---
+    for (const { x, c } of this._weakHalogens) {
+      const xx = pos[3 * x], xy = pos[3 * x + 1], xz = pos[3 * x + 2];
+      const el = String(this.atoms[x]?.element ?? "").toUpperCase();
+      const epsX = HALOGEN_EPS[el] ?? 1.2;
+      for (const d of this._weakAcceptors) {
+        if (d === x || d === c) continue;
+        const dx = pos[3 * d] - xx, dy = pos[3 * d + 1] - xy, dz = pos[3 * d + 2] - xz;
+        const r2 = dx * dx + dy * dy + dz * dz;
+        if (r2 > 16) continue; // 4 Å
+        // bonded X···D / C···D pairs skipped (intra-ligand included)
+        if (excl.has(pairKey(x, d)) || excl.has(pairKey(c, d))) continue;
+        xb += halogenForces(pos, f, c, x, d, { eps: epsX });
+      }
+    }
+
+    return { pi, cpi, xb };
   }
 
   kineticTemp(vel, mass) {

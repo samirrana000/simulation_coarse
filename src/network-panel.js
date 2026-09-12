@@ -16,12 +16,14 @@ export let isLiveTrackingActive = true;
 let _lastSteadyDraw = 0;
 
 export function updateNetworkPlot(force = false) {
+  if (typeof document === "undefined") return; // headless/Node: no DOM to update
   const canvas = document.getElementById("networkCanvas");
   if (!canvas) return;
 
+  const dpr0 = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
   const rect = canvas.getBoundingClientRect();
-  if (rect.width > 0 && canvas.width !== Math.floor(rect.width * (Math.min(2, window.devicePixelRatio || 1)))) {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (rect.width > 0 && canvas.width !== Math.floor(rect.width * (Math.min(2, dpr0)))) {
+    const dpr = Math.min(2, dpr0);
     canvas.width = Math.floor(rect.width * dpr);
     canvas.height = Math.floor(140 * dpr);
   }
@@ -29,7 +31,7 @@ export function updateNetworkPlot(force = false) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const dpr = Math.min(2, (typeof window !== "undefined" && window.devicePixelRatio) || 1);
   const w = canvas.width / dpr;
   const h = canvas.height / dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -172,6 +174,7 @@ export function networkPanelTick(now) {
 }
 
 export function initNetworkPanel() {
+  if (typeof document === "undefined") return; // headless/Node: no DOM to wire
   const stepBtn = document.getElementById("netStepBtn");
   if (stepBtn) {
     stepBtn.addEventListener("click", () => {
@@ -218,7 +221,7 @@ export function initNetworkPanel() {
 
   const canvas = document.getElementById("networkCanvas");
   if (canvas) {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = Math.min(2, (typeof window !== "undefined" && window.devicePixelRatio) || 1);
     canvas.width = Math.floor((canvas.clientWidth || 300) * dpr);
     canvas.height = Math.floor(140 * dpr);
     updateNetworkPlot();

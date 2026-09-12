@@ -15,3 +15,12 @@ Also fixed latent bug: `analysis-panel.js` was never imported, so Analyze/PMF bu
   4 pulls: works [173.8,160.7,157.2,158.4], ΔF=157.95±2.35 (v=4 Å/ps fast protocol, dissipative by design).
 
 Runs synchronously (CG: seconds) — move to workerPool/GPU backend in follow-up.
+
+## Physics fidelity level (Loop-2 S7)
+
+Dynamics & Force Field → "Physics fidelity level (L0 / L1 / L2)" subpanel
+(`#physicsLevel`, default L0 = baseline, opt-in hot-rebuild):
+L0 fast (CG isotropic, charges off) · L1 balanced (CG charges + directional
+H-bonds, ≈1.09×) · L2 full-rigor (L1 + heavy weakint + BindLog capture,
+≈1.0× over tier base). L2 keeps BindLog capture on even with the Recording
+checkbox off. Full bench: `docs/pareto_frontier.csv`, `docs/BINDING_LOOP2_DONE.md`.

@@ -34,6 +34,10 @@ export const settingsState = {
   // Phase 3: r-RESPA multiple-time-stepping (opt-in, default OFF).
   respaOn: false,
   respaOuterFs: 4, // outer non-bonded step in fs (inner bonded fixed 1 fs)
+  // Loop-2 S7: physics fidelity level (opt-in, default "L0" = baseline).
+  // In-memory persist for the Dynamics-panel selector; "L1" adds CG charges
+  // + directional HB, "L2" adds heavy weakint + BindLog accumulators.
+  physicsLevel: "L0",
 };
 
 // Phase 3 auto-detect: probe the WGSL backend once at startup. Never throws;
@@ -84,6 +88,7 @@ export function updateSettingsUI() {
 }
 
 export function initSettingsModal() {
+  if (typeof document === "undefined") return; // headless/Node: no DOM to wire
   const settingsBtn = document.getElementById("settingsBtn");
   const settingsModal = document.getElementById("settingsModal");
   const closeSettingsBtn = document.getElementById("closeSettingsBtn");

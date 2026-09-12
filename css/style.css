@@ -74,7 +74,7 @@ header {
 
 /* ---------------- control panel ---------------- */
 #controls {
-  width: 330px; min-width: 330px;
+  width: 330px; min-width: 330px; flex: none; min-height: 0;
   overflow-y: auto; padding: 12px 10px;
   background: var(--panel);
   border-right: 1px solid var(--border);
@@ -150,7 +150,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; h
 .row { display: flex; gap: 6px; }
 .row .half { flex: 1; }
 .btns { margin-top: 6px; }
-.or { text-align: center; color: #4a545c; margin: 4px 0; font-size: 11px; }
+.or { text-align: center; color: var(--dim); margin: 4px 0; font-size: 11px; }
 .note { color: #9aa4ad; font-size: 10.5px; margin-top: 6px; line-height: 1.45; }
 .examples { color: var(--dim); font-size: 10.5px; margin-top: 6px; }
 .examples a { color: var(--accent); text-decoration: none; font-weight: 600; }
@@ -190,9 +190,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; h
 @keyframes blink { 50% { opacity: .5; } }
 
 /* ---------------- viewer ---------------- */
-#viewerCol { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
-#viewerWrap { position: relative; flex: 1; min-height: 240px; }
-#canvas { width: 100%; height: 100%; display: block; background: #0B0D0E; cursor: grab; }
+#viewerCol { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+#viewerWrap { position: relative; flex: 1; min-height: 400px; min-width: 0; overflow: hidden; }
+#canvas { width: 100%; height: 100%; min-height: 400px; display: block; background: #0B0D0E; cursor: grab; }
 
 @media (max-width: 900px) {
   #controls { width: 260px; min-width: 260px; }
@@ -202,7 +202,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; h
 
 #toolbar {
   position: absolute; top: 8px; left: 8px;
-  display: flex; gap: 6px; align-items: center;
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  max-width: calc(100% - 16px);
   background: #121517;
   padding: 4px 8px; border-radius: var(--radius); border: 1px solid var(--border);
   z-index: 10;
@@ -231,42 +232,58 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; h
   position: absolute; bottom: 8px; left: 8px;
   background: #121517;
   padding: 5px 9px; border-radius: var(--radius); border: 1px solid var(--border);
-  font-family: var(--mono); font-size: 11px; line-height: 1.5; color: #7dd3fc;
-  max-width: 82%; pointer-events: none; z-index: 10;
+  font-family: var(--mono); font-size: 11px; line-height: 1.4; color: #7dd3fc;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: calc(100% - 228px); pointer-events: none; z-index: 9;
 }
 
 #canvasCaption {
   position: absolute; top: 8px; right: 8px;
   background: #121517; border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 4px 8px; z-index: 10; pointer-events: none;
-  font-size: 10.5px; color: var(--dim); max-width: 46%;
+  padding: 3px 8px; z-index: 10; pointer-events: none;
+  font-size: 11px; color: var(--dim);
+  width: max-content; max-width: calc(100% - 320px);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
 #metricsHud {
-  position: absolute; bottom: 8px; left: 8px; transform: translateY(-100%);
-  margin-bottom: 34px;
-  background: #121517; border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 3px 8px; z-index: 10; pointer-events: none;
-  font-size: 10.5px; color: var(--polar);
-  white-space: nowrap; max-width: 82%; overflow: hidden; text-overflow: ellipsis;
+  display: none;
 }
 
-/* Bottom dock: trajectory timeline + CV/E streams + hotkey hints. */
+/* Bottom dock: 2-row grid — row1 timeline full-width, row2 CV/E streams + hints. */
 #dock {
+  flex: none;
+  min-height: 102px;
   border-top: 1px solid var(--border); background: #0B0D0E;
-  padding: 4px 10px; display: flex; flex-direction: column; gap: 2px;
+  padding: 6px 10px 8px;
+  display: grid; grid-template-rows: auto auto; row-gap: 6px; align-content: center;
 }
-.dock-row { display: flex; gap: 10px; align-items: center; }
-.dock-row .lbl { font-size: 10px; }
-.dock-timeline { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 0; }
-.dock-timeline input[type=range] { flex: 1; }
-#scrubLabel { font-size: 10.5px; color: var(--dim); white-space: nowrap; }
+.dock-row:first-child { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.dock-row:last-child {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) auto minmax(120px, 1fr) auto;
+  gap: 10px; align-items: center; min-width: 0;
+}
+.dock-row .lbl { font-size: 10px; white-space: nowrap; }
+.dock-timeline {
+  display: grid; grid-template-columns: auto minmax(80px, 1fr);
+  gap: 8px; align-items: center; flex: 1 1 auto; min-width: 0;
+}
+.dock-timeline input[type=range] { width: 100%; min-width: 80px; }
+#scrubLabel { font-size: 10.5px; color: var(--dim); white-space: nowrap; flex: none; }
 #cvStrip, #hudSpark {
   border: 1px solid var(--border); border-radius: 3px;
-  background: #0B0D0E; height: 28px;
+  background: #0B0D0E; width: 100%; min-width: 120px; height: 44px; display: block;
 }
-#dockHints { font-size: 10px; color: #4a545c; margin-left: auto; white-space: nowrap; }
+#dockHints {
+  font-size: 10px; color: var(--dim); margin-left: auto; white-space: nowrap;
+  justify-self: end; text-align: right; overflow: hidden; text-overflow: ellipsis; max-width: 340px;
+}
+@media (max-width: 900px) {
+  #dockHints { display: none; }
+  .dock-row:last-child { grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); }
+  #cvStrip, #hudSpark { min-width: 0; }
+}
 
 .live-canvas { display: block; }
 
@@ -278,13 +295,15 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; h
   padding: 5px 9px; z-index: 10; pointer-events: none;
   display: flex; gap: 12px; align-items: center;
   font-size: 10px; color: var(--dim);
+  white-space: nowrap; flex: none; max-width: 212px;
+  overflow: hidden;
 }
 .ligand-chip .swatch {
   width: 10px; height: 10px; border-radius: 50%; display: inline-block;
   vertical-align: -1px; margin-right: 4px;
 }
 .ligand-chip .swatch.lig {
-  background: #ff7962; box-shadow: 0 0 0 1.5px #fff;
+  background: #ff7962; border: 1.5px solid #fff;
 }
 
 #equations { margin: 8px 12px; }
@@ -318,20 +337,3 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; h
 .settings-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
 .settings-title { font-weight: 600; color: var(--accent); font-size: 12px; margin-bottom: 8px; }
 .status-tag { font-size: 11px; padding: 3px 8px; border-radius: 4px; background: #0B0D0E; display: inline-block; margin-top: 4px; border: 1px solid var(--border); }
-
-/* Ligand vs protein visual legend — rendered as HUD chip */
-.ligand-chip {
-  position: absolute; bottom: 12px; right: 12px;
-  background: rgba(13, 18, 29, 0.92); backdrop-filter: blur(8px);
-  border: 1px solid var(--border); border-radius: 6px;
-  padding: 6px 10px; z-index: 10; pointer-events: none;
-  display: flex; gap: 12px; align-items: center;
-  font-size: 10.5px; color: var(--dim);
-}
-.ligand-chip .swatch {
-  width: 10px; height: 10px; border-radius: 50%; display: inline-block;
-  vertical-align: -1px; margin-right: 4px;
-}
-.ligand-chip .swatch.lig {
-  background: #ff7962; box-shadow: 0 0 0 1.5px #fff;
-}

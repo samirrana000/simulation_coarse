@@ -35,6 +35,8 @@ import { assignProtonationStates, applyProtonationStates } from "./chem/protonat
 import { initSettingsModal, settingsState, workerPool, gpuAccelerator } from "./settings-panel.js?v=10";
 import { RESPAStepper, splitForceField } from "./physics/integrators/respa.js?v=10";
 import { initNetworkPanel, updateNetworkPlot, networkPanelTick, networkModel, isLiveTrackingActive } from "./network-panel.js?v=10";
+import { BindLog } from "./capture/bindlog.js?v=10";
+import { renderInteractionTimeline, renderEnergyDecomposition, renderPmfFormation } from "./capture/bindviz.js?v=10";
 
 // Initialize UI modals & panels
 initSettingsModal();
@@ -114,6 +116,49 @@ if (ui.scrub) {
     }
   });
 }
+
+// Loop-2 S6 (R7 §4): BindViz live renderers. Pixel sizing follows the
+// dccm/pmf devicePixelRatio pattern (canvas.width = clientWidth × dpr,
+// setTransform(dpr)) so CSS-sized canvases render crisp; renderers read
+// the CSS-pixel size back via canvas._dpr. ≤1 Hz steady (three-state P2).
+let _lastBindvizDraw = 0;
+function bindvizFit(canvas) {
+  if (!canvas) return null;
+  const w = canvas.clientWidth || 280;
+  const h = canvas.clientHeight || (canvas === ui.bindvizPmf ? 120 : 140);
+  if (w === 0 || h === 0) return null;
+  const dpr = Math.min(2, (typeof window !== "undefined" && window.devicePixelRatio) || 1);
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+  }
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  canvas._dpr = dpr;
+  return ctx;
+}
+/** Draw all three BindViz canvases from the current BindLog (or empty states). */
+function drawBindviz() {
+  const bl = state.bindLog;
+  const hasData = !!(bl && bl.nFrames > 0 && bl.nEvents > 0);
+  if (ui.bindvizTimeline && bindvizFit(ui.bindvizTimeline)) renderInteractionTimeline(ui.bindvizTimeline, hasData ? bl : null);
+  if (ui.bindvizEnergy && bindvizFit(ui.bindvizEnergy)) renderEnergyDecomposition(ui.bindvizEnergy, hasData ? bl : null);
+  if (ui.bindvizPmf && bindvizFit(ui.bindvizPmf)) renderPmfFormation(ui.bindvizPmf, hasData ? bl : null);
+  if (ui.bindvizCaption) {
+    ui.bindvizCaption.textContent = hasData
+      ? `BindViz · ${bl.nEvents} events · ${bl.nFrames} frames (1 Hz live).`
+      : "Enable BindLog capture in Recording, run, then insights render live (1 Hz).";
+  }
+}
+/** Steady ≤1 Hz tick — no-data canvases redraw actionable text, live data redraws plots. */
+function bindvizTick(now) {
+  if (now - _lastBindvizDraw < 1000) return;
+  _lastBindvizDraw = now;
+  try { drawBindviz(); } catch (_) { /* headless */ }
+}
+// Paint the three empty states once at startup (no system yet).
+try { drawBindviz(); } catch (_) { /* headless */ }
 
 // A01 — Deterministic build version in HUD and console
 if (typeof console !== "undefined") console.log(`[simulation_coarse] version ${VERSION} build ${BUILD_DATE}`);
@@ -356,9 +401,53 @@ function renderHeteroPanel(external) {
   }).join("");
 }
 
+/* ------------------------------------------------------------------ */
+/*  Loop-2 S7: physics fidelity level (opt-in Dynamics-panel selector) */
+/* ------------------------------------------------------------------ */
+/**
+ * Fidelity-tier table for the physics-level selector (index.html
+ * #physicsLevel, default L0). L0 = pre-Loop-2 baseline (bit-identical).
+ * L1 adds CG salt-bridge charges (S1) + directional-HB virtual sites (S2).
+ * L2 adds heavy weakint π/cation-π/halogen (S3) + BindLog per-term
+ * accumulators (S4) on top. CG paths consume {charges, hbMode},
+ * HeavyForceField consumes par.weak, both consume bindLog via
+ * bindLogWanted(). All flags are enums/booleans (no units).
+ * @type {Record<string, {charges:boolean, hbMode:string, weak:string, bindLog:boolean}>}
+ */
+const PHYSICS_LEVELS = {
+  L0: { charges: false, hbMode: "off", weak: "off", bindLog: false },
+  L1: { charges: true, hbMode: "directional", weak: "off", bindLog: false },
+  L2: { charges: true, hbMode: "directional", weak: "on", bindLog: true },
+};
+
+/**
+ * Read the active physics level (guarded; headless/unknown → L0 baseline)
+ * and persist it to settingsState.physicsLevel (in-memory, existing
+ * settings pattern).
+ * @returns {{charges:boolean, hbMode:string, weak:string, bindLog:boolean}} active tier spec
+ */
+function physicsLevelSpec() {
+  let lvl = "L0";
+  try {
+    const v = ui.physicsLevel?.value ?? settingsState.physicsLevel ?? "L0";
+    if (PHYSICS_LEVELS[v]) lvl = v;
+  } catch (_) { lvl = "L0"; }
+  try { settingsState.physicsLevel = lvl; } catch (_) { /* headless */ }
+  return PHYSICS_LEVELS[lvl];
+}
+
+/**
+ * Effective BindLog-capture flag: manual checkbox OR L2 full-rigor tier.
+ * @returns {boolean} true when per-term accumulators + event capture stay on
+ */
+function bindLogWanted() {
+  try {
+    return (ui.bindlogOn?.checked === true) || physicsLevelSpec().bindLog === true;
+  } catch (_) { return false; }
+}
+
 export function buildSystem() {
-  if (!state.parsed && !state.parsedHeavy) return;
-  if (!state.parsed && state.parsedHeavy && ui.modelMode) ui.modelMode.value = "heavy";
+  if (!state.parsed && !state.parsedHeavy) return;  if (!state.parsed && state.parsedHeavy && ui.modelMode) ui.modelMode.value = "heavy";
   state.heavyMode = ui.modelMode?.value === "heavy";
   const chains = parseParamChainIds();
   const resFrom = ui.resFrom?.value === "" ? null : Number(ui.resFrom?.value);
@@ -387,11 +476,16 @@ export function buildSystem() {
     return;
   }
 
+  // Loop-2 S7: physics-level selector feeds the FF flags (default L0 =
+  // pre-Loop-2 baseline, bit-identical). CG consumes charges/hbMode,
+  // HeavyForceField consumes par.weak (set below, ignored by CG).
+  const physLvl = physicsLevelSpec();
   const par = {
     rc: Number(ui.rc?.value || 10),
     gamma: Number(ui.gamma?.value || 2),
     temp: Number(ui.temp?.value || 300),
-    binding: { on: ui.bindPot?.checked ?? true, holo: ui.holoSprings?.checked ?? true },
+    binding: { on: ui.bindPot?.checked ?? true, holo: ui.holoSprings?.checked ?? true, charges: physLvl.charges, hbMode: physLvl.hbMode },
+    weak: physLvl.weak === "on" ? "on" : "off",
   };
 
   if (state.heavyMode) {
@@ -437,6 +531,9 @@ export function buildSystem() {
   }
 
   state.integ = new LangevinIntegrator(state.ff.ref, state.ff, Number(ui.mass?.value || 110));
+  // Loop-2 S4+S7: keep per-term accumulators on across rebuilds while
+  // capturing (manual checkbox OR L2 full-rigor tier).
+  state.ff.trackTerms = bindLogWanted();
 
   if (state.ff.nLigAtoms > 0) {
     state.funnel = new Funnel({
@@ -447,6 +544,12 @@ export function buildSystem() {
     });
     state.ff.setFunnel(state.funnel);
     state.ff.funnelOn = ui.funnelToggle?.checked ?? false;
+    // Loop-2 S4 (R6 §5) + S7: guarded hill-deposit hook → BindLog hill channel
+    if (bindLogWanted()) {
+      state.funnel.onHill = (cv, h) => state.bindLog && state.bindLog.pushHill(state.integ.time, cv, h);
+    } else {
+      state.funnel.onHill = null;
+    }
   } else {
     state.funnel = null;
   }
@@ -465,18 +568,23 @@ export function buildSystem() {
   recorder.clear();
   updateRecStatus();
   updateSelSummary();
+  // Loop-2 S4 (R6 §5): fresh BindLog per Build (clears frames + events).
+  state.bindLog = new BindLog();
+  state._lastContacts = null;
   // Phase 5 — reset dock + strips + DCCM empty state on rebuild.
   try {
     _cvHist.length = 0;
     _eHist.length = 0;
     updateDockTimeline();
     drawDccmEmpty();
+    // Loop-2 S6: fresh BindLog above → BindViz canvases back to no-data.
+    drawBindviz();
     if (ui.topPdb) {
       const id = (ui.pdbId?.value?.trim()?.toUpperCase()) || "CUSTOM";
       ui.topPdb.textContent = `PDB ${id}`;
     }
     if (ui.sysState) ui.sysState.textContent = "STATE: READY";
-    if (ui.canvasCaption) ui.canvasCaption.textContent = `Steady — ${state.ff.nProt}${state.heavyMode ? " heavy" : " Cα"}${state.ff.nLigAtoms ? ` + ${state.ff.nLigAtoms} lig (halo)` : ""} · press Run or [Space]`;
+    if (ui.canvasCaption) ui.canvasCaption.textContent = state.ff.nLigAtoms > 0 ? `○ Steady · halo ${state.ff.nLigAtoms}` : "○ Steady";
   } catch (_) { /* headless */ }
 
   state.running = false;
@@ -527,8 +635,14 @@ if (ui.heteroNone) {
   });
 }
 
-if (ui.bindPot) ui.bindPot.addEventListener("change", () => onParamChange(true));
+  if (ui.bindPot) ui.bindPot.addEventListener("change", () => onParamChange(true));
 if (ui.holoSprings) ui.holoSprings.addEventListener("change", () => onParamChange(true));
+// Loop-2 S7: physics-level selector — hot-rebuilds the FF on the new tier
+// (same path as the binding-potential toggles; default L0 = baseline).
+if (ui.physicsLevel) ui.physicsLevel.addEventListener("change", () => {
+  physicsLevelSpec(); // persist to settingsState.physicsLevel
+  onParamChange(true);
+});
 
 /* ------------------------------------------------------------------ */
 /*  Physics parameter hot-reload                                       */
@@ -544,11 +658,14 @@ function onParamChange(rebuildContacts = true) {
   }
 
   if (rebuildContacts) {
+    // Loop-2 S7: hot-reload path carries the same tier flags as buildSystem.
+    const physLvlHot = physicsLevelSpec();
     const par = {
       rc: Number(ui.rc?.value || 10),
       gamma: Number(ui.gamma?.value || 2),
       temp: Number(ui.temp?.value || 300),
-      binding: { on: ui.bindPot?.checked ?? true, holo: ui.holoSprings?.checked ?? true },
+      binding: { on: ui.bindPot?.checked ?? true, holo: ui.holoSprings?.checked ?? true, charges: physLvlHot.charges, hbMode: physLvlHot.hbMode },
+      weak: physLvlHot.weak === "on" ? "on" : "off",
     };
     const keepPos = Float64Array.from(integ.pos);
     const keepVel = Float64Array.from(integ.vel);
@@ -568,6 +685,8 @@ function onParamChange(rebuildContacts = true) {
     }
     state._prevPos = null;
     state.nanWarning = false;
+    // Loop-2 S4+S7: reapply the per-term accumulator flag on the rebuilt FF
+    state.ff.trackTerms = bindLogWanted();
     state.integ.setTemperature(Number(ui.temp?.value || 300));
     state.integ.setFriction(Number(ui.fric?.value || 8));
 
@@ -580,6 +699,12 @@ function onParamChange(rebuildContacts = true) {
       });
       state.ff.setFunnel(state.funnel);
       state.ff.funnelOn = ui.funnelToggle?.checked ?? false;
+      // Loop-2 S4+S7: hill hook follows the rebuild (same guard as buildSystem)
+      if (bindLogWanted()) {
+        state.funnel.onHill = (cv, h) => state.bindLog && state.bindLog.pushHill(state.integ.time, cv, h);
+      } else {
+        state.funnel.onHill = null;
+      }
     } else {
       state.funnel = null;
     }
@@ -705,6 +830,22 @@ if (ui.recStopBtn) {
     ui.recBtn.classList.remove("rec-on");
   });
 }
+// Loop-2 S4 (R6 §5): BindLog capture toggle — flips the FF per-term
+// accumulator flag (default off → bit-identical hot path) and resets the
+// contact-diff baseline so form/break events only fire across the switch.
+if (ui.bindlogOn) {
+  ui.bindlogOn.addEventListener("change", () => {
+    // Loop-2 S7: effective flag is checkbox OR L2 tier (unchecking while L2
+    // is active keeps capture on — the tier owns the flag until deselected).
+    if (state.ff) state.ff.trackTerms = bindLogWanted();
+    if (!bindLogWanted()) state._lastContacts = null;
+    if (bindLogWanted() && state.funnel) {
+      state.funnel.onHill = (cv, h) => state.bindLog && state.bindLog.pushHill(state.integ.time, cv, h);
+    } else if (state.funnel) {
+      state.funnel.onHill = null;
+    }
+  });
+}
 if (ui.dlBtn) {
   ui.dlBtn.addEventListener("click", () => {
     if (!state.sel) return;
@@ -782,8 +923,29 @@ function tick(now) {
       state.nanWarning = true;
     }
 
+    // Loop-2 S4 (R6 §5): stride for the BindLog scheduler follows the
+    // recorder's stride input (same cadence, independent scheduler).
+    if (state.bindLog) state.bindLog.stridePs = Number(ui.stridePs?.value) || 2.0;
+
     const captured = recorder.maybeCapture(state.integ.pos, state.integ.time);
     if (captured || recorder.recording || recorder.count > 0) updateRecStatus();
+
+    // Loop-2 S4 (R6 §5) + S7: BindLog capture — frames + 7-term energy vector at
+    // the recorder stride. Guarded: only when capture is wanted (manual
+    // checkbox OR L2 tier) and the BindLog exists. Same-stride idempotency:
+    // own _nextAt scheduler (like recorder), so no double-push regardless
+    // of capture order.
+    if (state.bindLog && bindLogWanted()) {
+      const bl = state.bindLog, t = state.integ.time;
+      if (t + 1e-9 >= (bl._nextAt ?? 0)) {
+        bl.captureFrame(state.integ.pos, t);
+        bl.pushEnergyComponents(t, [
+          state.ff.bindLJU || 0, state.ff.bindCoulU || 0, state.ff.bindHBU || 0,
+          state.ff.desolvU || 0, state.ff.piU || 0, state.ff.cpiU || 0, state.ff.xbU || 0,
+        ]);
+        bl._nextAt = t + (bl.stridePs ?? 2.0);
+      }
+    }
   }
 
   if (state.integ && viewer) {
@@ -805,11 +967,35 @@ function tick(now) {
       const ligStart = state.ff.ligandStart ?? nProt;
 
       let nc = 0;
+      // Loop-2 S4 (R6 §5): contact form/break diff for the BindLog contact
+      // channel — same 5.5 Å pair set the nContacts HUD counts, diffed
+      // against the previous tick's set (state._lastContacts Map). Only
+      // runs when BindLog capture is on (flag set below with trackTerms).
+      const blg = (state.bindLog && bindLogWanted() && ff.trackTerms === true) ? state.bindLog : null;
+      const curC = blg ? new Map() : null;
       for (let i = 0; i < nProt; i++) {
         for (let la = ligStart; la < state.ff.n; la++) {
           const dx = p[3 * la] - p[3 * i], dy = p[3 * la + 1] - p[3 * i + 1], dz = p[3 * la + 2] - p[3 * i + 2];
-          if (dx * dx + dy * dy + dz * dz < 30.25) nc++;
+          const r2 = dx * dx + dy * dy + dz * dz;
+          if (r2 < 30.25) {
+            nc++;
+            if (curC) curC.set(i * 1e6 + la, Math.sqrt(r2));
+          }
         }
+      }
+      if (blg && curC) {
+        const prevC = state._lastContacts;
+        if (prevC) {
+          for (const [k, d] of curC) {
+            if (!prevC.has(k)) blg.pushContact(integ.time, true, k % 1e6, (k / 1e6) | 0, d);
+          }
+          for (const [k, d] of prevC) {
+            if (!curC.has(k)) blg.pushContact(integ.time, false, k % 1e6, (k / 1e6) | 0, d);
+          }
+        }
+        state._lastContacts = curC;
+      } else if (state._lastContacts) {
+        state._lastContacts = null; // capture turned off — drop stale set
       }
 
       let s = 0;
@@ -869,6 +1055,16 @@ function tick(now) {
       // debounce guard: if (now - lastHudUpdate < 100) skip HUD update this frame
       if (now - lastHudUpdate >= 100) {
         lastHudUpdate = now;
+        // Phase 5 — Metrics merged into the single #hud line (one T, one E;
+        // #metricsHud stays in DOM for contract but hidden via CSS).
+        let pmfStr = "—";
+        if (state.funnel && state.funnel.active) {
+          try {
+            pmfStr = state.funnel._nHills < 50 ? `collect ${state.funnel._nHills}/50`
+              : `ΔG ${state.funnel.estimateDG().toFixed(2)}`;
+          } catch (_) { pmfStr = "—"; }
+        }
+        const dccmStr = recorder.count > 0 ? `${recorder.count}fr` : "—";
         ui.hud.textContent =
           `v${VERSION} · ` +
           (state.nanWarning ? `⚠ NON-FINITE ENERGY — simulation auto-paused. Reset (⟲) to recover.  ·  ` : "") +
@@ -878,6 +1074,7 @@ function tick(now) {
           extra +
           `RMSD = ${ff.rmsd(integ.pos).toFixed(2)} Å  ·  ` +
           `T_inst = ${ff.kineticTemp(integ.vel, integ.mass).toFixed(0)} K  ·  ` +
+          `PMF ${pmfStr}  ·  DCCM ${dccmStr}  ·  ` +
           `Δr = ${dr.toFixed(2)} Å/frame  ·  ` +
           `${state.fpsEMA.toFixed(0)} fps  (${state.heavyMode ? `${state.ff.nProt} prot + ${state.ff.nHetero} hetero` : `${state.ff.nProt} Cα`}${state.ff.nLigAtoms ? ` + ${state.ff.nLigAtoms} lig` : ""})`;
 
@@ -894,26 +1091,21 @@ function tick(now) {
           if (ui.topStep) ui.topStep.textContent = `step ${state.integ.steps ?? 0}`;
         } catch (_) { /* headless */ }
 
-        // Phase 5 — Metrics HUD: Temp, Etot, PMF live, DCCM (10 Hz, monospace).
+        // Phase 5 — Metrics HUD mirror (hidden via CSS; #hud above is the
+        // single visible readout — keep one T, one E there).
         try {
           const tInst = ff.kineticTemp(integ.vel, integ.mass);
           const eTot = Number.isFinite(ff.energy) ? ff.energy.toFixed(1) : "NaN";
-          let pmfStr = "—";
-          if (state.funnel && state.funnel.active) {
-            pmfStr = state.funnel._nHills < 50 ? `collect ${state.funnel._nHills}/50`
-              : `ΔG ${state.funnel.estimateDG().toFixed(2)}`;
-          }
-          const dccmStr = recorder.count > 0 ? `${recorder.count}fr` : "—";
           if (ui.metricsHud) ui.metricsHud.textContent = `T ${Number.isFinite(tInst) ? tInst.toFixed(0) : "—"}K · Etot ${eTot} · PMF ${pmfStr} · DCCM ${dccmStr}`;
         } catch (_) { /* headless */ }
 
-        // Phase 5 — canvas caption: active transition indicator + one-line
-        // caption (P2). Steady vs running states are explicit.
+        // Phase 5 — canvas caption: compact status pill (P2). Full hints
+        // stay in the empty-state text only; running/steady are short.
         try {
           if (ui.canvasCaption) {
             if (!state.sel || !state.ff) ui.canvasCaption.textContent = "No system — Load a PDB, Build, then Run. Ligand halo = white ring.";
-            else if (state.running) ui.canvasCaption.textContent = `● Running — ${ff.nLigAtoms > 0 ? `ligand halo on (${ff.nLigAtoms} atoms) · ` : ""}drag rotate · wheel zoom · [Space] pause`;
-            else ui.canvasCaption.textContent = `Steady — ${ff.nProt}${state.heavyMode ? " heavy" : " Cα"}${ff.nLigAtoms ? ` + ${ff.nLigAtoms} lig (halo)` : ""} · press Run or [Space]`;
+            else if (state.running) ui.canvasCaption.textContent = ff.nLigAtoms > 0 ? `● Running · halo ${ff.nLigAtoms}` : "● Running";
+            else ui.canvasCaption.textContent = ff.nLigAtoms > 0 ? `○ Steady · halo ${ff.nLigAtoms}` : "○ Steady";
           }
         } catch (_) { /* headless */ }
 
@@ -936,9 +1128,12 @@ function tick(now) {
     // change, so the CNM diagram never reads as dead.
     networkPanelTick(now);
     dccmTick(now);
+    // Loop-2 S6 (R7 §4): BindViz ≤1 Hz — empty states or live plots (P2).
+    bindvizTick(now);
   } else if (viewer) {
     viewer.render(null);
     try { dccmTick(now); } catch (_) {}
+    try { bindvizTick(now); } catch (_) {}
   } else {
     console.warn("[viewer] not ready");
   }

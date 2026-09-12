@@ -11,3 +11,6 @@ Per https://github.com/miqdadbadjuber/anti-slop and P1–P5 decluttering protoco
   #38BDF8/#F87171/#FBBF24/#34D399/#E879F9.
 - Sliders: 6 slider+numeric pairs, `Math.fround` Float32, hot-rebuild. Hotkeys: Space run/pause, R reset, C record, M mutagenesis, 1–7 panels, Esc close.
 - DOM contract: `node scripts/wikiskill_gate.js` OPEN (90 ui ids ⊆ index.html; Digit1-7 vs 7 panels). Full suite 29/29 files exit 0; `cli --pdb 4w52 --steps 10` E=12.13, RMSD 0.044 Å.
+- Loop-2 S7: one opt-in `#physicsLevel` select (L0/L1/L2, default L0) in a
+  `details.subpanel` inside Dynamics & Force Field — no new top-level panel,
+  no sidebar/toolbar touch; gate OPEN (98 ids), Digit1-7 contract unchanged.

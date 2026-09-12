@@ -81,10 +81,11 @@ import { repulsion } from "./ff-repulsion.js?v=10";
 import { binding } from "./ff-binding.js?v=10";
 import { KB_KCAL, KCONV } from "./units.js?v=10";
 import {
-  RES_CLASS, RES_CLASS_OF, LIG_ELEMENT, LIG_ELEMENT_DEFAULT,
+  RES_CLASS, RES_CLASS_OF, CG_FORMAL_CHARGES, LIG_ELEMENT, LIG_ELEMENT_DEFAULT,
   SEQ_WEIGHT, KBOND_DEFAULT, KANGLE_DEFAULT,
 } from "./ff-params.js?v=10";
 import { buildTirionNetwork, applyTirionToForceField } from "./physics/forcefield/tirion_anm.js?v=10";
+import { buildVirtualSites, coneAxisOf } from "./physics/virtual-sites.js";
 
 // canonical units live in units.js; re-export keeps backward compat for
 // integrator.js / funnel.js / tests that historically imported from here.
@@ -112,6 +113,18 @@ export class ForceField {
     this.epsRep = par.epsRep ?? 0.3;   // kcal/mol      (excluded-volume depth)
     this.sigmaRep = par.sigmaRep ?? 4.0; // Å           (Cα bead diameter ≈ 2·2.0 Å)
     this.bindOn = par.binding?.on ?? true; // protein–ligand binding potentials
+    // Loop-2 S2 (R2 §2a): H-bond mode. "off" (default) = legacy isotropic
+    // bead-flag term, bit-identical to pre-S2. "directional" = Cα-triplet
+    // virtual O-sites + angular gates. "all-flags" = legacy term with the
+    // 52% class-A flag bug fixed via _protHB=1 everywhere (A/B stopgap).
+    this.hbMode = par.binding?.hbMode ?? "off";
+    // CG salt-bridge charges (Loop-2 S1, R2 term b): when true, _protQ is
+    // filled from CG_FORMAL_CHARGES (ASP/GLU −1, LYS/ARG +1; HIS 0 — neutral
+    // default, HIP hookup deferred), reviving the screened-Coulomb path in
+    // ff-binding.js. DEFAULT OFF: preserves the pre-S1 q=0 behavior exactly
+    // (RES_CLASS.q stays 0), so existing trajectories are bit-identical
+    // unless the caller opts in. See src/ff-params.js:CG_FORMAL_CHARGES.
+    this.chargesOn = par.binding?.charges === true;
     this.bindRcut = 9.0;                    // Å, cross-term cutoff
     this.holoGamma = par.binding?.gammaLig ?? 0.5; // kcal/mol/Å²  (holo-pose spring)
     this.holoOn = par.binding?.holo ?? true;
@@ -182,8 +195,23 @@ export class ForceField {
       this.resClass[i] = ["H", "A", "P", "Cp", "Cn"].indexOf(cls);
       const p = RES_CLASS[cls];
       this._protSigma[i] = p.sigma; this._protEps[i] = p.eps; this._protQ[i] = p.q;
+      // Loop-2 S1 (R2 term b): opt-in formal charges override the class-level
+      // q=0 with the residue-identity value (ASP/GLU −1, LYS/ARG +1, HIS 0).
+      if (this.chargesOn) this._protQ[i] = CG_FORMAL_CHARGES[b.resName] ?? 0;
       this._protHB[i] = (cls === "P" || cls === "Cp" || cls === "Cn") ? 1 : 0;
     });
+    // Loop-2 S2: virtual interaction sites (backbone O acceptors for ALL
+    // residues — fixes the 52% class-A gap where only P/Cp/Cn beads could
+    // ever accept; hydrophobic backbones accept too in reality).
+    this._vSites = null;
+    if (this.hbMode === "directional") {
+      this._vSites = buildVirtualSites(beads);
+      beads.forEach((b, i) => {
+        const s = this._vSites[i];
+        if (s.valid) coneAxisOf(s, [b.x, b.y, b.z]);
+      });
+      this._vSiteValence = new Uint8Array(nProt); // per-frame acceptor valence caps
+    }
     // Per-ligand-atom element params
     this._ligSigma = new Float64Array(this.nLigAtoms);
     this._ligEps = new Float64Array(this.nLigAtoms);
@@ -415,6 +443,14 @@ export class ForceField {
     this.energy = 0; // last computed potential energy (kcal/mol)
     this.bindingU = 0;   // protein–ligand nonbonded energy (last compute)
     this.desolvU = 0;    // EEF1-lite burial/desolvation energy (last compute)
+    // Loop-2 S4 (R4 §5 item 1, R6 §5): per-term binding-accumulator opt-in.
+    // trackTerms = true fills bindLJU/bindCoulU/bindHBU/desolvU + the
+    // bindU vector {lj, coul, hb, desolv} each compute() — consumed by the
+    // BindLog energy channel (main.js tick). DEFAULT false: kernel skips
+    // all tracker branches → bit-identical to pre-S4, zero overhead.
+    this.trackTerms = false;
+    this.bindLJU = 0; this.bindCoulU = 0; this.bindHBU = 0;
+    this.bindU = { lj: 0, coul: 0, hb: 0, desolv: 0 };
 
     // EEF1-lite desolvation scratch (reused every compute call — GC-free).
     // dens[a]  = soft protein-occupancy count n_a (Pass 1 accumulation)

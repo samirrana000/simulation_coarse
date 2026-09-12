@@ -16,6 +16,9 @@ import { scanPocket, pocketResidues, formatMutationTable } from "./analysis/alan
 import { computeDCCM, renderDCCMHeatmap, topCorrelations, dccmPick, highlightCorrelatedPair } from "./analysis/dccm.js?v=10";
 import { trackPocketVolume, detectCryptic } from "./analysis/cryptic_pockets.js?v=10";
 import { runPullingEnsemble, jarzynskiFreeEnergy, koffSurrogate } from "./analysis/unbinding_smd.js?v=10";
+import { computeThermodynamics, formatThermoTable } from "./analysis/thermodynamics.js?v=10";
+import { ForceField } from "./forcefield.js?v=10";
+import { LangevinIntegrator } from "./integrator.js?v=10";
 
 if (ui.anaBtn) ui.anaBtn.addEventListener("click", () => {
   if (recorder.count === 0) {
@@ -122,6 +125,72 @@ export function dccmTick(now) {
 
 // Paint the empty state once at startup (no-data, before any trajectory).
 try { drawDccmEmpty(); } catch (_) {}
+
+// ---- Thermodynamics ΔH/ΔS (Loop-2 S5) -------------------------------
+// Holo leg = recorded trajectory (needs ≥30 frames); apo leg = internal
+// relaxation of a binding-off clone (same ENM, no ligand coupling).
+if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
+  try {
+    if (!state.ff) { ui.analysisOut.textContent = "⚠ Build a system first."; return; }
+    if (recorder.frames.length < 30) {
+      ui.analysisOut.textContent = `⚠ Need ≥30 recorded holo frames for the Schlitter covariance (have ${recorder.frames.length}). ● Rec, run ~100 ps, Stop, retry.`;
+      return;
+    }
+    const ff = state.ff;
+    const nProt = ff.nProt;
+    // ligand COM in ref → pocket residues
+    let lcom = [0, 0, 0];
+    if (ff.nLigAtoms > 0) {
+      for (let a = 0; a < ff.nLigAtoms; a++) {
+        lcom[0] += ff.ref[3 * (nProt + a)] / ff.nLigAtoms;
+        lcom[1] += ff.ref[3 * (nProt + a) + 1] / ff.nLigAtoms;
+        lcom[2] += ff.ref[3 * (nProt + a) + 2] / ff.nLigAtoms;
+      }
+    } else lcom = centroidOf(ff.ref, nProt);
+    const pocketIdx = [];
+    for (let i = 0; i < nProt; i++) {
+      if (Math.hypot(ff.ref[3 * i] - lcom[0], ff.ref[3 * i + 1] - lcom[1], ff.ref[3 * i + 2] - lcom[2]) < 8.0) pocketIdx.push(i);
+    }
+    // holo frames from recorder; energies from BindLog if capture was on
+    const holoFrames = recorder.frames.map((f) => Float32Array.from(f));
+    const holoEnergies = [];
+    if (state.bindLog && state.bindLog.nEvents > 0) {
+      // collect the last 7-term energy snapshot per captured frame time
+      const perTime = new Map();
+      for (let i = 0; i < state.bindLog.nEvents; i++) {
+        if (state.bindLog.evType[i] !== 0) continue;
+        const t = state.bindLog.evTime[i];
+        if (!perTime.has(t)) perTime.set(t, new Array(7).fill(0));
+        perTime.get(t)[state.bindLog.evA[i] % 7] = state.bindLog.evX[i];
+      }
+      for (const row of perTime.values()) holoEnergies.push(row);
+    }
+    // apo leg: internal 2000-step relaxation with binding off
+    const ffApo = new ForceField(state.sel, { rc: 10, gamma: 2.0, binding: { on: false } }, state.ligands ?? []);
+    const integApo = new LangevinIntegrator(ffApo.ref, ffApo, 110.0);
+    integApo.setTemperature(300); integApo.setFriction(8.0);
+    const apoFrames = [];
+    const nApo = Math.min(2000, Math.max(600, holoFrames.length * 4));
+    for (let s = 0; s < nApo; s++) {
+      integApo.step();
+      if (s % 2 === 0) apoFrames.push(Float32Array.from(integApo.pos));
+    }
+    const res = computeThermodynamics({
+      holoFrames, apoFrames, holoEnergies,
+      pocketIdx, nProt, mass: 110, T: 300,
+    });
+    ui.analysisOut.textContent = formatThermoTable(res) +
+      (holoEnergies.length ? "" : "\n(note: BindLog capture was off — ΔH from recorded-frame recomputation skipped; run with BindLog on for the component split)");
+    if (ui.thermoCaption) ui.thermoCaption.textContent = `ΔH/ΔS done — ${pocketIdx.length} pocket residues, ${holoFrames.length} holo frames.`;
+  } catch (err) {
+    ui.analysisOut.textContent = "⚠ " + (err && err.message ? err.message : String(err));
+  }
+});
+function centroidOf(ref, n) {
+  let x = 0, y = 0, z = 0;
+  for (let i = 0; i < n; i++) { x += ref[3 * i]; y += ref[3 * i + 1]; z += ref[3 * i + 2]; }
+  return [x / n, y / n, z / n];
+}
 
 // ---- Alanine scanning ----------------------------------------------
 if (ui.alaScanBtn) ui.alaScanBtn.addEventListener("click", () => {

@@ -72,6 +72,34 @@ export const RES_CLASS_OF = {
   LYS: "Cp", ARG: "Cp",
   ASP: "Cn", GLU: "Cn",
 };
+
+/**
+ * Formal bead charges (e) by residue identity — CG salt-bridge term
+ * (R2 term b, docs/BINDING_PHYSICS_R2.md §2b; Loop-2 S1).
+ *
+ * Revives the dead screened-Coulomb path in ff-binding.js
+ * (`E_coul = 332.0637·q_i·q_a/(ε(r)·r)·sw(r)`, ε(r) = 4+76·tanh(r/8)) by
+ * giving the Cα bead of each charged residue its formal charge:
+ *   ASP/GLU −1 (deprotonated carboxylate), LYS/ARG +1 (ammonium/guanidinium).
+ *
+ * Design decisions (R2 §2b + Loop-1 review S1):
+ *   • HIS is deliberately absent ⇒ q = 0 (neutral default). A HIP +1 charge
+ *     is assigned only when a protonation heuristic says so; the hookup to
+ *     chem/protonation.js is explicitly deferred (documented, not guessed).
+ *   • No mean-neutralization of net charge: the distance-dependent dielectric
+ *     ε(r) together with the EEF1-lite burial/desolvation counterweight
+ *     (Hendsch & Tidor 1994 lesson — bare Coulomb over-praises salt bridges,
+ *     burial penalty rescues it) already temper net-charge effects; the
+ *     formal ±1 values are kept as-is.
+ *   • DEFAULT OFF: ForceField fills `_protQ` from this map only when
+ *     `par.binding.charges === true` (opt-in flag). RES_CLASS.q stays 0, so
+ *     the default path is bit-identical to the pre-S1 force field and the
+ *     rollback is a single flag flip.
+ */
+export const CG_FORMAL_CHARGES = {
+  ASP: -1, GLU: -1,
+  LYS: 1, ARG: 1,
+};
 // Ligand element → LJ params (σ Å, ε kcal/mol), partial charge (e), H-bond flag, ΔG desolvation (kcal/mol)
 export const LIG_ELEMENT = {
   C:  { sigma: 3.4, eps: 0.12, q: 0.0,  hb: false, dG: -0.55 },

@@ -8,7 +8,7 @@ import { PoseScorer } from "./scorer.js?v=10";
 import { ui, state, updateSelSummary } from "./ui.js?v=10";
 
 // contacts.json loader (output of ml/export_esm_contacts.py)
-ui.contactsFile.addEventListener("change", async () => {
+if (ui.contactsFile) ui.contactsFile.addEventListener("change", async () => {
   const f = ui.contactsFile.files[0];
   if (!f) return;
   try {
@@ -17,28 +17,28 @@ ui.contactsFile.addEventListener("change", async () => {
     state.contacts = d.contacts;       // [[i,j,p], ...]
     state.contactsFn = d.source || f.name;
     applyMLToFF();
-    ui.nnInfo.textContent = `Loaded ${state.contacts.length} pairs (${state.contactsFn})`;
+    if (ui.nnInfo) ui.nnInfo.textContent = `Loaded ${state.contacts.length} pairs (${state.contactsFn})`;
   } catch (err) {
-    ui.nnInfo.textContent = "⚠ " + err.message;
+    if (ui.nnInfo) ui.nnInfo.textContent = "⚠ " + err.message;
   }
 });
 
 // scorer weights JSON loader (PoseScorer config)
-ui.scorerFile.addEventListener("change", async () => {
+if (ui.scorerFile) ui.scorerFile.addEventListener("change", async () => {
   const f = ui.scorerFile.files[0];
   if (!f) return;
   try {
     const d = JSON.parse(await f.text());
     state.scorer = new PoseScorer(d);
-    ui.nnInfo.textContent = `Scorer: ${state.scorer.layers.join("→")} (${f.name})`;
+    if (ui.nnInfo) ui.nnInfo.textContent = `Scorer: ${state.scorer.layers.join("→")} (${f.name})`;
   } catch (err) {
-    ui.nnInfo.textContent = "⚠ " + err.message;
+    if (ui.nnInfo) ui.nnInfo.textContent = "⚠ " + err.message;
   }
 });
 
 // toggles
-ui.nnContacts.addEventListener("change", applyMLToFF);
-ui.poseScore.addEventListener("change", () => {
+if (ui.nnContacts) ui.nnContacts.addEventListener("change", applyMLToFF);
+if (ui.poseScore) ui.poseScore.addEventListener("change", () => {
   // ensure a default scorer exists; the toggle just turns the readout on
   if (!state.scorer) state.scorer = PoseScorer.docked();
 });
@@ -50,11 +50,11 @@ ui.poseScore.addEventListener("change", () => {
  */
 export function applyMLToFF() {
   if (!state.ff) return;
-  if (ui.nnContacts.checked && state.contacts) {
+  if (ui.nnContacts?.checked && state.contacts) {
     state.ff.setSpringScale(state.contacts, state.mlAlpha);
   } else {
     state.ff.clearSpringScale();
   }
-  if (ui.poseScore.checked && !state.scorer) state.scorer = PoseScorer.docked();
+  if (ui.poseScore?.checked && !state.scorer) state.scorer = PoseScorer.docked();
   updateSelSummary();
 }

@@ -165,6 +165,20 @@
           <label class="chk"><input id="bindPot" type="checkbox" checked /> Binding potentials (LJ, GB/Solvation, H-bonds, SASA)</label>
           <label class="chk"><input id="holoSprings" type="checkbox" checked /> Holo contacts (native pose springs)</label>
           <details class="subpanel" style="margin-top:8px;">
+            <summary>Physics fidelity level (L0 / L1 / L2)</summary>
+            <div class="subpanel-body">
+              <label class="field">
+                <span class="lbl">Physics level</span>
+                <select id="physicsLevel">
+                  <option value="L0" selected>L0 fast — CG isotropic, charges off (default)</option>
+                  <option value="L1">L1 balanced — CG charges + directional H-bonds</option>
+                  <option value="L2">L2 full-rigor — L1 + heavy weak terms + BindLog capture</option>
+                </select>
+              </label>
+              <div class="summary">Opt-in. L0 = current baseline (bit-identical). L1 adds S1 charges + S2 directional HB (CG, ≈1.09×). L2 adds S3 weakint (heavy) + S4 BindLog accumulators (≈1.0×). Rebuilds the force field on change.</div>
+            </div>
+          </details>
+          <details class="subpanel" style="margin-top:8px;">
             <summary>Advanced sampling (r-RESPA · funnel metadynamics)</summary>
             <div class="subpanel-body">
               <label class="chk"><input id="respaToggle" type="checkbox" /> r-RESPA multi-stepping (1 fs bonded / outer non-bonded)</label>
@@ -259,6 +273,7 @@
               <option value="pdb">PDB (multi-MODEL)</option>
             </select>
           </label>
+          <label class="chk"><input id="bindlogOn" type="checkbox" /> BindLog capture (frames + energies + contacts)</label>
           <div class="row btns">
             <button id="recBtn" class="btn warn">&#9679; Rec</button>
             <button id="recStopBtn" class="btn">Stop</button>
@@ -277,6 +292,15 @@
             <button id="anaBtn" type="button" class="btn primary" style="flex:1;">Analyze Trajectory</button>
             <button id="anaPmfBtn" type="button" class="btn" style="flex:1;">Export PMF (CSV)</button>
           </div>
+          <details class="subpanel" style="margin-top:8px;">
+            <summary>Thermodynamics (ΔH / ΔS decomposition)</summary>
+            <div class="subpanel-body">
+              <div class="row btns">
+                <button id="thermoBtn" type="button" class="btn" style="flex:1;" title="ΔH−TΔS decomposition: holo recording vs internal apo relaxation">ΔH/ΔS Decomposition</button>
+              </div>
+              <div id="thermoCaption" class="caption mono" style="margin-top:4px;">Needs a recorded holo trajectory (● Rec, run, Stop). Apo leg runs automatically (binding off).</div>
+            </div>
+          </details>
           <details class="subpanel" style="margin-top:8px;">
             <summary>Mutagenesis (alanine scanning)</summary>
             <div class="subpanel-body">
@@ -306,6 +330,15 @@
                 <button id="smdBtn" type="button" class="btn" style="flex:1;" title="4× steered-MD pulls + Jarzynski ΔF">SMD Pulls (×4)</button>
                 <button id="crypticBtn" type="button" class="btn" style="flex:1;" title="Transient pocket volumes + probe map">Cryptic Pockets</button>
               </div>
+            </div>
+          </details>
+          <details class="subpanel" style="margin-top:8px;">
+            <summary>Binding Insights (BindViz)</summary>
+            <div class="subpanel-body">
+              <canvas id="bindvizTimeline" class="live-canvas" style="width:100%;height:140px;background:#0f172a;border:1px solid #334155;border-radius:5px;"></canvas>
+              <canvas id="bindvizEnergy" class="live-canvas" style="width:100%;height:140px;background:#0f172a;border:1px solid #334155;border-radius:5px;margin-top:6px;"></canvas>
+              <canvas id="bindvizPmf" class="live-canvas" style="width:100%;height:120px;background:#0f172a;border:1px solid #334155;border-radius:5px;margin-top:6px;"></canvas>
+              <div id="bindvizCaption" class="caption mono">Enable BindLog capture in Recording, run, then insights render live (1 Hz).</div>
             </div>
           </details>
           <pre id="analysisOut" class="summary" style="white-space:pre-wrap;margin-top:8px;">No analysis yet &mdash; record a trajectory, then click Analyze.</pre>

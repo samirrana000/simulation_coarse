@@ -274,6 +274,9 @@ export class Funnel {
       this._biasForce[k] += -dr * invSig2 * g; // dg/dr at bin centre
     }
     this._nHills++;
+    // Loop-2 S4 (R6 §5): optional hill-deposit callback for the BindLog
+    // hill channel (guarded — undefined by default, zero overhead).
+    this.onHill?.(r, w);
   }
 
   /**
