@@ -21,11 +21,11 @@ for Skill Evolution", arXiv:2608.27454 (2026).
    supersede by linking.
 3. **Propose** (Skill Proposer role): from the updated wiki, propose skill
    edits (create/edit/delete) in `.agents/skills/`. Check
-   `wiki/evolution/skill-impact.md` first to avoid re-proposing rejected ideas.
+   `.wikiskill/wiki/evolution/skill-impact.md` first to avoid re-proposing rejected ideas.
 4. **Gate** (Gating & Rollback): run `node scripts/wikiskill_gate.js`.
    Accept the skill set only if the measured validation score beats the
    stored best `R_best`; otherwise roll back skills — but ALWAYS keep the
-   wiki update and log the rejection in `wiki/evolution/skill-impact.md`.
+   wiki update and log the rejection in `.wikiskill/wiki/evolution/skill-impact.md`.
 
 ## Local conventions
 

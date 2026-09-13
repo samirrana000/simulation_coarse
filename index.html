@@ -295,10 +295,19 @@
           <details class="subpanel" style="margin-top:8px;">
             <summary>Thermodynamics (ΔH / ΔS decomposition)</summary>
             <div class="subpanel-body">
+              <label class="field">
+                <span class="lbl">Ligand</span>
+                <select id="thermoLig">
+                  <option value="auto" selected>auto/cavity (BNZ-only default)</option>
+                  <option value="all">all (record path)</option>
+                </select>
+              </label>
               <div class="row btns">
                 <button id="thermoBtn" type="button" class="btn" style="flex:1;" title="ΔH−TΔS decomposition: holo recording vs internal apo relaxation">ΔH/ΔS Decomposition</button>
+                <button id="thermoCancelBtn" type="button" class="btn" disabled title="Cancel the running ΔH/ΔS apo relaxation">Cancel</button>
               </div>
               <div id="thermoCaption" class="caption mono" style="margin-top:4px;">Needs a recorded holo trajectory (● Rec, run, Stop). Apo leg runs automatically (binding off).</div>
+              <div class="summary">Auto = BNZ cavity (buffer-free default); all = record path (BNZ+EPE, inflates |ΔH| by ≈3.2).</div>
             </div>
           </details>
           <details class="subpanel" style="margin-top:8px;">

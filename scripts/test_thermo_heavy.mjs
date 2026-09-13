@@ -38,6 +38,12 @@
  * never asserted (either outcome exits 0 when the pipeline asserts pass).
  *
  * Run: node scripts/test_thermo_heavy.mjs   (~3-4 min: 6 legs × 1800 × ~20 ms)
+ *   SMOKE (Stage-6 fast CI): node scripts/test_thermo_heavy.mjs --smoke
+ *   or HEAVY_SMOKE=1 node scripts/test_thermo_heavy.mjs — 1 replica,
+ *   50 equil + 300 production steps stride 2 → 150 frames/leg
+ *   (0.30 ps production + 0.05 ps equil at heavy dt 0.001 ps = 1 fs),
+ *   ~15-25 s. Same asserts (finiteness/boundedness only — sign never
+ *   asserted). FULL (default) stays 3 replicas × 300+1500 stride 2.
  */
 
 import { readFileSync } from "node:fs";
@@ -48,7 +54,10 @@ import { LangevinIntegrator } from "../src/integrator.js";
 let passed = 0, failed = 0;
 const assert = (c, m) => { if (c) { passed++; console.log(`  ✓ ${m}`); } else { failed++; console.error(`  ✗ FAIL: ${m}`); } };
 
-const EQUIL = 300, STEPS = 1500, STRIDE = 2, REPS = 3, T = 300;
+const SMOKE = process.argv.includes("--smoke") || process.env.HEAVY_SMOKE === "1";
+const EQUIL = SMOKE ? 50 : 300, STEPS = SMOKE ? 300 : 1500, STRIDE = 2, REPS = SMOKE ? 1 : 3, T = 300;
+const DT_PS = 0.001; // measured heavy dt on this system (integrator._pickDt); 1 fs
+const prodPs = STEPS * DT_PS, equilPs = EQUIL * DT_PS;
 // Stage-2 determinism: fixed seeds per replica (holo SEEDS[rep], apo SEEDS[rep]+1000
 // to decorrelate legs). Seeded via LangevinIntegrator opts.seed (mulberry32);
 // replica-mean reporting unchanged (sign never asserted — see VERDICT block).
@@ -57,7 +66,9 @@ const SEED_BASE = Number.parseInt(process.env.THERMO_HEAVY_SEED_BASE || "0", 10)
 const SEEDS = [1001, 2002, 3003].map((s) => s + SEED_BASE);
 
 // ---- build heavy 4W52/BNZ system (main.js buildSystem heavy path) ----
-console.log("=== Stage-1 setup: 4W52 heavy (BNZ-only ligand) ===");
+console.log(`=== Stage-1 setup: 4W52 heavy (BNZ-only ligand) [${SMOKE ? "SMOKE" : "FULL"}] ===`);
+console.log(`  protocol: ${REPS} replica(s) × (holo ${EQUIL}+${STEPS} + apo ${EQUIL}+${STEPS} steps, stride ${STRIDE})`);
+console.log(`  time: ${prodPs.toFixed(2)} ps production + ${equilPs.toFixed(2)} ps equil per leg (dt ${DT_PS * 1000} fs)`);
 const pdbText = readFileSync(new URL("../4w52.pdb", import.meta.url), "utf8");
 const parsedHeavy = parseHeavy(pdbText);
 const selH = selectHeavy(parsedHeavy, {
@@ -102,7 +113,7 @@ for (let i = 0; i < probeFF.nProt; i++) {
 }
 console.log(`  pocket: ${pocketIdx.length} heavy atoms (${bbIdx.length} backbone N/CA/C/O + ${scIdx.length} sidechain, of which ${caIdx.length} Cα), DOF ${pocketIdx.length * 3}`);
 assert(pocketIdx.length > 0 && bbIdx.length > 0 && scIdx.length > 0, "pocket + backbone/sidechain subsets nonempty");
-assert(caIdx.length >= 5, `Cα subset sizable (${caIdx.length} atoms → ${caIdx.length * 3} DOF, frames/DOF ≈ ${(STEPS / STRIDE) / (caIdx.length * 3)} ≥ 10)`);
+assert(caIdx.length >= 5, `Cα subset sizable (${caIdx.length} atoms → ${caIdx.length * 3} DOF, frames/DOF ≈ ${((STEPS / STRIDE) / (caIdx.length * 3)).toFixed(1)})`);
 // Apo sanity: bindingU ≡ 0 with no ligand present.
 probeFF.compute(probeFF.ref);
 const probeApo = makeApoFF();
@@ -138,8 +149,8 @@ function runLeg(ff, collectE, seed = null) {
   return { frames, energies, weakMean: nW ? [wPi / nW, wCpi / nW, wXb / nW] : [0, 0, 0] };
 }
 
-// ---- 3 replicas ----
-console.log(`=== 3 replicas × (holo ${EQUIL}+${STEPS} + apo ${EQUIL}+${STEPS} steps, stride ${STRIDE}) ===`);
+// ---- replicas (FULL 3, SMOKE 1) ----
+console.log(`=== ${REPS} replica(s) × (holo ${EQUIL}+${STEPS} + apo ${EQUIL}+${STEPS} steps, stride ${STRIDE}) ===`);
 const t0 = Date.now();
 const reps = [];
 for (let rep = 0; rep < REPS; rep++) {
@@ -203,5 +214,5 @@ console.log(`  this run: full-pocket mean −TΔS = ${mTdS.toFixed(2)} [${perRun
 console.log(`  this run: Cα control (well-conditioned) mean −TΔS = ${mTdSca.toFixed(2)} kcal/mol`);
 console.log("  recorded Stage-1 verdict: NOT-RESTORED — deep-sampling pilot stays negative (full −4.78); ligand-bath effect persists, sidechain restriction (+1.04) too small to flip the net sign.");
 
-console.log(`\n=== test_thermo_heavy: ${passed} PASSED, ${failed} FAILED ===`);
+console.log(`\n=== test_thermo_heavy (${SMOKE ? "SMOKE" : "FULL"}): ${passed} PASSED, ${failed} FAILED ===`);
 process.exit(failed ? 1 : 0);

@@ -29,6 +29,12 @@
  * illustrative row assumes ΔSASA ≈ 180 Å² (benzene total-SASA order, burial upper
  * bound): −TΔS_solv = −2.16, band [−1.08, −3.24].
  *
+ * Stage-3 (§17, measured live below): real LCPO cross-burial on the BNZ-only
+ * legs (stride 10, 100+100 evals) gives ΔSASA ≈ 167.1 ± 3.5 Å² → code-exact
+ * −TΔS_solv +2.01 (convention dS_solv = −ΔSASA·γ/T; the §13 illustrative −2.16
+ * used the opposite favorable sign — physics-sign review open, see §17) and a
+ * revised anchor-B ΔG_est ≈ −0.16 with the ±50% band on the REAL base.
+ *
  * Ala-scan: CG BNZ-only system, pocketResidues(rCut 8 Å, maxN 12) + scanPocket
  * (relaxSteps 80, deterministic). NOTE on the task premise: 4W52 is T4 lysozyme
  * L99A (164 residues, no Zn, single HIS31), NOT carbonic anhydrase II — the
@@ -47,6 +53,7 @@ import { parseCa, selectSystem, parseLigands } from "../src/pdb.js";
 import { ForceField } from "../src/forcefield.js";
 import { LangevinIntegrator } from "../src/integrator.js";
 import { computeThermodynamics } from "../src/analysis/thermodynamics.js";
+import { sasaBurial, cgBeadExtendedRadius, selectedLigandElements } from "../src/analysis/thermo_sasa.js";
 import { pocketResidues, scanPocket } from "../src/analysis/alanine_scanning.js";
 
 /** Seeded replicas: holo SEED_HOLO, apo SEED_HOLO+1000 (matches test_thermo rep0). */
@@ -60,6 +67,8 @@ const POCKET_RCUT = 8.0, MAXN = 12;
 const RELAX_STEPS = 80;
 /** SASA scale (kcal/mol/Å²) with its documented ±50% band. */
 const SASA_SCALE = 0.012;
+/** Real-burial subsample stride (matches THERMO_SASA_STRIDE in thermo_sasa.js). */
+const SASA_STRIDE = 10;
 /** Illustrative burial (Å², ASSUMED — benzene total-SASA order, upper bound). */
 const DSASA_ILLUS = 180;
 /** True T4L-L99A cavity liners (Merski et al. 2015; Eriksson/Matthews work). */
@@ -179,6 +188,42 @@ console.log("\n── SASA-term sensitivity (−TΔS_solv = ΔSASA × 0.012, ±5
 console.log(`as-run ΔSASA ${resA.meta.dsasa} Å² → −TΔS_solv ${sasaAsRun.toFixed(2)}; ±50% swing ±${(0.5 * sasaAsRun).toFixed(2)}`);
 console.log(`illustrative (ASSUMED ΔSASA ${DSASA_ILLUS} Å² burial upper bound) → −TΔS_solv −${sasaIllus.toFixed(2)}; band [−${(0.5 * sasaIllus).toFixed(2)}, −${(1.5 * sasaIllus).toFixed(2)}], swing ±${(0.5 * sasaIllus).toFixed(2)}`);
 
+// ---- Stage-3: real LCPO burial (BNZ-only legs; docs/BINDING_LOOP2_DONE.md §17) ----
+// Cross-burial route (src/analysis/thermo_sasa.js): ligand-side free-LCPO areas
+// × protein-cap survival fractions + stripped-protein apo−holo reorganization
+// (ΔSASA = ⟨apo⟩ − ⟨holo⟩, positive = burial). Subsampled stride SASA_STRIDE
+// (100 holo + 100 apo evals of 1000 frames/leg; CG 4W52 ≈ 0.3 ms/frame,
+// sub-second; stride-5 agrees to 0.2 Å² — subsampling-insensitive).
+// BNZ-only leg: the whole 6-carbon block IS the selected subset (Stage-2
+// picker auto→BNZ), so selElements is the BNZ concatenation order.
+// Deterministic: no RNG (verified bit-identical twice, §17).
+const sasaB = sasaBurial(holoB.frames, apoB.frames, {
+  nProt: ffB.nProt,
+  selElements: selectedLigandElements(bnzMols, [0]),
+  protRadius: cgBeadExtendedRadius(ffB),
+  stride: SASA_STRIDE,
+});
+const resBRev = computeThermodynamics({
+  holoFrames: holoB.frames, apoFrames: apoB.frames, holoEnergies: holoB.energies,
+  pocketIdx: pocB.idx, nProt: ffB.nProt, mass: MASS, T: TEMP,
+  sasa: {
+    dsasa: sasaB.dsasa, se: sasaB.se, dLig: sasaB.dLig, dProt: sasaB.dProt,
+    method: sasaB.method, stride: sasaB.stride,
+    nHoloEval: sasaB.nHoloEval, nApoEval: sasaB.nApoEval,
+  },
+});
+// Code convention (src/analysis/thermodynamics.js): dS_solv = −ΔSASA·γ/T, so
+// −TΔS_solv = +γ·ΔSASA (UNfavorable sign under the current dS sign; the §13
+// illustrative row used favorable −γ·ΔSASA — physics-sign review open, §17;
+// the numbers below are code-exact via computeThermodynamics).
+const minusTdsSolvB = SASA_SCALE * sasaB.dsasa;
+const solvSEB = SASA_SCALE * sasaB.se;
+const dgRevB = resBRev.dG_estimate;
+console.log("\n── real SASA burial (Stage-3 BNZ-only, lcpo-cross-burial, stride 10) ──");
+console.log(`ΔSASA ${sasaB.dsasa.toFixed(1)} ± ${sasaB.se.toFixed(1)} Å² (dLig ${sasaB.dLig.toFixed(1)} ± ${sasaB.dLigSE.toFixed(1)} + dProt ${sasaB.dProt.toFixed(1)} ± ${sasaB.dProtSE.toFixed(1)}; free-ligand ⟨S⟩ ${sasaB.ligFreeMean.toFixed(1)} Å²; ${sasaB.nHoloEval}+${sasaB.nApoEval} frames)`);
+console.log(`−TΔS_solv +${minusTdsSolvB.toFixed(2)} ± ${solvSEB.toFixed(2)} (= γ·ΔSASA, γ = 0.012; ±50% scale band [+${(0.5 * minusTdsSolvB).toFixed(2)}, +${(1.5 * minusTdsSolvB).toFixed(2)}])`);
+console.log(`revised anchor-B ΔG_est ${dgRevB.toFixed(2)} (legacy ${f2(resB.dG_estimate)} + ${minusTdsSolvB.toFixed(2)}); ±50% band [${(dgRevB - 0.5 * minusTdsSolvB).toFixed(2)}, ${(dgRevB + 0.5 * minusTdsSolvB).toFixed(2)}], swing ±${(0.5 * minusTdsSolvB).toFixed(2)}`);
+
 // ---- ala-scan spot-check (CG, BNZ cavity) ----
 console.log("\n=== ala-scan spot-check (CG BNZ-only, rCut 8 Å, maxN 12, relax 80) ===");
 const scanSys = { mode: "cg", sel, ff: ffB, ligands: bnzMols };
@@ -194,7 +239,7 @@ const maxAbs = Math.max(...scan.rows.map((r) => Math.abs(r.ddG)));
 console.log(`top-3: ${top3.map((r) => `${r.label}(${r.ddG >= 0 ? "+" : ""}${r.ddG.toFixed(3)})`).join(", ")}`);
 console.log(`cavity-liner overlap ${hits}/3 → verdict PARTIAL (nominal) but max|ΔΔG| ${maxAbs.toFixed(3)} < 0.02: no CG discriminating power → effectively NO hotspot resolution (ENM perturbation cancels in the cycle; sidechains invisible at Cα)`);
 
-// ---- calibration asserts (10; SLOW tier) ----
+// ---- calibration asserts (14; SLOW tier) ----
 console.log("\n=== calibration asserts ===");
 assert(Number.isFinite(resA.dH.total), `anchor A ΔH finite: ${f2(resA.dH.total)}`);
 assert(Math.abs(resA.dH.total - (-6.82)) < 0.30, `anchor A replays Loop-2 record −6.82 ± 0.30: ${f2(resA.dH.total)} (seeded 101)`);
@@ -206,6 +251,10 @@ assert(Math.abs(resB.dH.total) < Math.abs(resA.dH.total), `EPE removal shrinks |
 assert(scan.n === pocket.length && scan.rows.every((r) => Number.isFinite(r.ddG)), `scan table finite ×${scan.n}, sorted desc`);
 assert(maxAbs < 0.5, `CG scan small-effect bound max|ΔΔG| ${maxAbs.toFixed(3)} < 0.50`);
 assert(top3.some((r) => `${r.wtRes}${r.resSeq}` === "MET102"), `scan top-3 contains cavity liner MET102 (${top3.map((r) => r.label).join(", ")})`);
+assert(sasaB.dsasa > 100 && sasaB.dsasa < 250, `real ΔSASA BNZ-scale 100–250 Å²: ${sasaB.dsasa.toFixed(1)} ± ${sasaB.se.toFixed(1)} (dLig ${sasaB.dLig.toFixed(1)} + dProt ${sasaB.dProt.toFixed(1)})`);
+assert(Number.isFinite(sasaB.se) && sasaB.se > 0 && sasaB.se < 15, `solvent SE finite & small: ±${sasaB.se.toFixed(2)} (stride ${sasaB.stride}, ${sasaB.nHoloEval}+${sasaB.nApoEval} frames)`);
+assert(Math.abs(minusTdsSolvB) > 0.5, `solvent term nonzero: −TΔS_solv +${minusTdsSolvB.toFixed(2)} ± ${solvSEB.toFixed(2)}`);
+assert(Number.isFinite(dgRevB) && Math.abs(dgRevB - (resB.dG_estimate + minusTdsSolvB)) < 1e-9, `revised ΔG_est exact: ${dgRevB.toFixed(2)} (legacy ${f2(resB.dG_estimate)} + ${minusTdsSolvB.toFixed(2)})`);
 
 console.log(`\n=== calibration_4w52: ${passed} PASSED, ${failed} FAILED ===`);
 process.exit(failed ? 1 : 0);

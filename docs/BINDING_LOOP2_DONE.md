@@ -416,3 +416,441 @@ Stages 1–7); R5 addendum in `docs/BINDING_PHYSICS_R5.md` §7 points here.
 Verification at close-out: gate OPEN before (215) and after (215);
 `node tests/test_all.js` → 215/215 fast; `node --check` clean on all touched
 files; no UI changes (no new ids, DOM contract untouched, no curl target).
+
+## 15. Stage-1 deep-sampling follow-up (2026-09-12): 10 ps × 3 + χ-term + sidechain-only
+
+Prescription from §8 ((a) 10+ ps × ≥3 replicas, (b) pocket-χ torsion-Shannon
+term, (c) sidechain-only pocket entropy). New `scripts/test_pocket_entropy.mjs`
+(`test_thermo_heavy.mjs` untouched); additive thermo helpers in
+`src/analysis/thermodynamics.js` (`BACKBONE_ATOM_NAMES` /
+`isBackboneAtomName` / `splitPocketByBackbone`, `CHI_DEFS` /
+`pocketChiTorsions`, `chiEntropyDelta` with jackknife SE, `formatChiLine` +
+opt-in `p.chiTorsions → r.chi` passthrough — CG path bit-identical, no-χ
+callers get `r.chi === null` and byte-identical tables).
+
+Protocol ps: heavy dt = 0.001 ps = 1 fs (`src/integrator.js:_pickDt`,
+measured on this system), so LONG (`--long`/`--slow`, opt-in, never default)
+= 500 equil + 10000 production steps, stride 2 → 5000 frames/leg =
+**10.0 ps production + 0.5 ps equil** per leg × 3 seeded replicas
+(holo SEEDS 1001/2002/3003, apo +1000; `THERMO_CHI_SEED_BASE` override).
+PILOT (default, fast) = 50 + 600 → 300 frames/leg (0.60 ps), 1 replica.
+Pocket 106 heavy atoms (56 backbone N/CA/C/O + 50 sidechain CB-outward, 14 Cα;
+318 DOF) → LONG frames/DOF **15.7** (≥10 target).
+
+χ coverage (documented, ALA-free): 25 pocket residues → 16 with sidechain in
+pocket → **14 χ residues** (ALA98/99 skipped — CB but no rotor; 0 unresolved)
+→ **26 χ torsions** (14 χ1 + 11 χ2 + MET χ3: ILE78/100 ×2, LEU84/91/118/121/
+133 ×2, VAL87/103/111 ×1, TYR88 ×2, MET102 ×3, PHE114/153 ×2) → LONG
+frames/rotor **192** (target ~100).
+
+Per-replica LONG table (5000 f/leg, −TΔS kcal/mol):
+
+| rep | full | bb | sc (sidechain-only) | Cα | χ −TΔS ± jackSE | ΔH |
+|---|---|---|---|---|---|---|
+| 0 | −8.47 | −4.94 | −3.53 | −2.68 | +0.27 ± 0.30 (S_holo 0.0456 vs S_apo 0.0465) | −20.32 |
+| 1 | +9.53 | +5.88 | +3.65 | +1.57 | −0.18 ± 0.26 | −20.40 |
+| 2 | +19.23 | +13.79 | +5.44 | +4.76 | +0.62 ± 0.44 | −19.57 |
+| mean | **+6.76 (SD 14.06)** | +4.91 | **+1.85 (repSD 4.75)** | +1.22 | **+0.24 (±0.33)** | **−20.10** (LJ −7.60 / Coul 0.00 / HB 0.00 / desolv −12.50) |
+
+Block-convergence curve (replica-mean −TΔS, first-N frames):
+
+| N | f/DOF | fr/rot | full | bb | sc | ca | χ |
+|---|---|---|---|---|---|---|---|
+| 750 | 2.4 | 29 | −2.12 | −0.54 | −1.58 | −1.06 | +0.28 |
+| 1500 | 4.7 | 58 | −11.41 | −3.99 | −7.42 | −1.85 | +0.06 |
+| 3000 | 9.4 | 115 | +5.14 | +7.10 | −1.96 | +0.85 | +0.05 |
+| 5000 | 15.7 | 192 | +6.76 | +4.91 | +1.85 | +1.22 | +0.24 |
+
+Verdict: **NO — no converged positive-restriction signal separable from
+backbone rattle at 10 ps × 3** (no forced sign; either outcome publishable).
+Sampling floor dominates: replica SD 14.06 (full) / 4.75 (sc) ≫ means, and
+block signs flip through 5000 frames (sc −1.58→−7.42→−1.96→+1.85). χ is
+stable-positive across blocks but +0.24 ± 0.33 — consistent with zero (upper
+bound ~0.5 kcal/mol); backbone +4.91 exceeds sidechain +1.85 (sc−bb −3.06),
+so nothing is separable. Consistent with the 6000f pilot (full −4.78): both
+are variance-dominated with undetermined sign — now quantified at adequate
+conditioning. What remains precisely: (i) sampling floor — need ~10× longer
+or orthogonal enhanced sampling to shrink replica SD below ~2 kcal/mol;
+(ii) possible force-field ceiling — pocket-χ restriction genuinely ≤0.5
+kcal/mol at the 8 Å / ps scale while the backbone ligand-bath drives the net.
+ΔH stays the trustworthy observable (−20.10, tight over replicas, reproduces
+the §8 heavy −19.7 ± 0.3).
+
+Verification at close-out: gate OPEN before and after; `node
+tests/test_all.js` → 215/215 fast (~19 s, unchanged — new script in no tier,
+LONG opt-in only); PILOT 16/16 twice bit-identical (modulo the wall line);
+LONG 16/16 once (wall 1410 s); `node --check` clean on both touched files.
+No UI changes, no parameter retuning, zero deps.
+
+## 16. Stage-2 note (2026-09-12): thermo ligand picker — BNZ cavity default
+
+Pain (Stage-6 finding, §13): the thermo record path used ALL HETATM groups
+(BNZ+EPE) for the pocket COM + binding-energy attribution. Surface EPE pulls
+the all-mol COM ~10.8 Å off the benzene cavity (record pocket 11 residues
+ALA74/MET102…GLY110 surface loop vs BNZ cavity 14 residues
+ILE78/LEU84/…/LEU118) and inflates |ΔH| by −3.18 (row A −6.82 vs row B
+BNZ-only −3.64). History is NOT rewritten — the record stands; new runs
+default to the buffer-free cavity.
+
+What changed (additive only, zero deps, pocket 8 Å rule unchanged, no new
+top-level panels, Digit1-7 contract intact):
+- NEW `src/analysis/thermo_ligand.js` (helpers, JSDoc): `resolveThermoLigand`
+  (rule, stated: "auto" = BNZ-first fallback — all BNZ molecules when present,
+  else first group, else none; "all" = every group = record path; explicit
+  index or resName = that subset), `ligandAtomOffsets` /
+  `selectedLigandAtomIndices` (FF ref-suffix concatenation order),
+  `selectedLigandCom` / `pocketFromCom` (8 Å) / `sliceSelectedPositions`
+  (full-frame → selected-only slicing for energy recomputation),
+  `refreshThermoLigOptions` (rebuilds options, preserves choice, headless-safe).
+- `index.html` thermo subpanel: NEW `<select id="thermoLig">` (auto/cavity
+  BNZ-only default + per-group options + all) following the existing
+  subpanel/select pattern (+ one-line summary); registered in `src/ui.js`
+  (`thermoLig`, in-memory default auto, persist NOT required).
+- `src/analysis-panel.js`: handler reads the picker (headless-safe, default
+  auto), pocket COM from the SELECTED ligand only, ΔH attribution from the
+  SELECTED ligand only ("all"/full-coverage reuses the BindLog channel
+  bit-identically; a proper subset is recomputed per recorded frame with a
+  selected-only FF copying the live binding flags; apo leg built with the
+  subset), result caption names the ligand + pocket count. `all` reproduces
+  the Loop-2 record bit-for-bit.
+- `src/main.js`: `buildSystem` repopulates the picker via exported
+  `refreshThermoLigPicker()` (guarded, additive).
+
+Numbers (fast headless check, calibration protocol 2000 steps/stride 2,
+seeds 101/1101, charges + directional-HB — `/tmp/opencode/stage2_verify.mjs`):
+- Picker: auto → `auto-bnz`, BNZ #1 (6 atoms) PASS; "0" → BNZ, "1" → EPE #2
+  (15 atoms); all → both groups (21 atoms).
+- Pocket: auto n=14 (ILE78 LEU84 LYS85 VAL87 TYR88 ARG96 ALA98 ALA99 ILE100
+  MET102 VAL103 VAL111 ALA112 LEU118) vs all n=11 (ALA74 MET102 VAL103 PHE104
+  GLN105 MET106 GLY107 GLU108 THR109 GLY110 VAL111) — matches §13.
+- ΔH ALL (record) −6.82 ± 0.16 (LJ −1.88/Coul +1.04/HB −0.13/desolv −5.85)
+  replays row A ±0.30 PASS (Δ=0.00); AUTO/BNZ-only −3.64 ± 0.08 (LJ
+  −0.98/Coul 0.00/HB 0.00/desolv −2.66) replays row B PASS (Δ=0.00);
+  EPE-only −3.76 ± 0.17 (Coul +0.77 — the buffer-pollution signature);
+  EPE inflation ALL−BNZ = −3.18 confirmed.
+- Slice/recompute sanity: 200 ALL-trajectory frames sliced 21→6 atoms,
+  selected-only mean U_bind finite PASS.
+
+Verification at close-out: gate OPEN before (215, 98 ids) and after (215,
+99 ids — only +thermoLig); `node tests/test_all.js` → 215/215 fast (one
+flaky 201/1 run mid-session, then 215/215 twice + gate 215 — temperature-trial
+flake, not a code regression); `node --check` clean on all touched files;
+page + touched modules serve 200 (index.html, analysis-panel.js,
+thermo_ligand.js); no new top-level panels (8 unchanged).
+
+## 17. Stage-3 note (2026-09-13): real solvent burial — LCPO wired into holo−apo
+
+Pain (open debt from §13): the solvent term was dead — as-run ΔSASA = 0 (no
+contact-count series ever passed) → −TΔS_solv 0.00 with a ±50% swing of
+±0.00. The LCPO module (`src/physics/solvation/lcpo_sasa.js`: `lcpoSasa`,
+`capAreaDeriv`, `vdwRadiusFor`, `PROBE_RADIUS`) existed but was never wired
+into the holo−apo thermo legs.
+
+What changed (additive only, zero deps, JSDoc; existing ΔSASA = 0 callers
+unchanged when SASA absent; no new top-level panels; no new DOM ids):
+- NEW `src/analysis/thermo_sasa.js` (exports `THERMO_SASA_STRIDE = 10`
+  `:55`, `THERMO_SASA_CHUNK = 25` `:58`, `cgBeadExtendedRadius` `:65`,
+  `selectedLigandElements` `:75`, `ligandExtendedRadii`/`isolatedAreas`,
+  `frameLigandBurial` `:125`, `frameProteinSasa` `:171`,
+  `sasaBurial` `:219` + chunked `sasaBurialChunked` `:277`).
+  Method: ΔSASA = Δ_lig + Δ_prot with ΔSASA = ⟨apo⟩ − ⟨holo⟩ (positive =
+  burial). Δ_lig (dominant): per holo frame, free-ligand LCPO areas
+  (ligand-only subsystem, in-regime for the small molecule) × cross-burial
+  survival from protein neighbours
+  (`buried_a = A_free,a · (1 − Π_p max(0, 1 − C_pa/S_a))`, caps from
+  `capAreaDeriv`); Δ_prot: ⟨S_prot⟩ stripped-protein full-LCPO apo minus
+  holo (same regime both legs, self-burial cancels). SEs are SEMs over
+  evaluated frame means; dsasa SE = √(SE_lig² + SE_prot²), legs treated as
+  independent (documented). Why NOT full-complex LCPO totals (measured 4W52
+  CG BNZ seeds 101/1101): bead-scale P3/P4 fits are out of regime
+  (bound-ligand LCPO 419.8 > free 340.8 by 79 Å² — anti-burial inversion;
+  full SEP −49.0 ± 3.9 Å² unphysical; literal apo−holo totals −15.0 Å² —
+  apo keeps the pinned ligand per protocol). The cross-burial route is
+  monotonic by construction. Cost (documented `:40-44`): per holo frame one
+  ligand-only LCPO O(nL²) + O(nProt·nSel) cross distances; per
+  stripped-protein frame one full LCPO O(nProt²). CG 4W52 (164+6) ≈
+  0.3 ms/frame → 100 frames/leg sub-second; stride 10 keeps 10k-frame
+  recordings tractable; the chunked variant keeps the UI responsive.
+- `src/analysis/thermodynamics.js`: `SASA_GAMMA = 0.012` surfaced as a named
+  const `:24` (value unchanged); opt-in `p.sasa` override `:402-412` +
+  solvent path `:498-518` (`r.meta.sasa` carried; absent ⇒ legacy proxy
+  path bit-identical, ΔSASA = 0 default, `r.meta.sasa` null); real-burial
+  solvent table line `:562-569` (ΔSASA ± SE, method, stride, frame counts;
+  legacy line byte-identical otherwise). −TΔS_solv = GAMMA × ΔSASA with SE
+  (`solvSE = γ·se`; `dS_solv = −dsasa·γ/T`).
+- `src/analysis-panel.js` thermo handler `:295-365`: after the chunked apo
+  leg, computes SASA for recorded holo + relaxed apo via
+  `sasaBurialChunked` (chunked/async like the apo leg, progress to
+  `#thermoCaption` — `solvent SASA… d/t frames` — stale generations
+  discarded), protein blocks from both legs + SELECTED-ligand subset
+  (Stage-2 picker via `selectedLigandAtomIndices`/`selectedLigandElements`;
+  whole-tail-block fallback + honest note on layout mismatch; heavy mode
+  uses element-derived radii, CG the bead radius), renders the solvent line
+  with real numbers via `formatThermoTable` + caption
+  (`ΔSASA x.x ± y.y Å²`); SASA failure falls back to the legacy ΔSASA = 0
+  path with an honest note (never strands the report).
+- `scripts/calibration_4w52.mjs` re-run (`:191-225`, asserts `:254-257`):
+  real burial on the BNZ-only legs (seeds 101/1101, `SASA_STRIDE = 10`
+  `:70-71`, `sasaBurial` + `computeThermodynamics` sasa override, CG bead
+  radius 3.4 Å, BNZ 6-C selected elements).
+
+Numbers (BNZ-only, 1000 frames/leg → stride 10 → 100+100 evals, live):
+- ΔSASA **167.1 ± 3.5 Å²** (dLig 158.9 ± 2.6 + dProt 8.2 ± 2.4;
+  free-ligand ⟨S⟩ 340.8 Å²) — positive BNZ-scale burial (assert 100–250).
+  Stride-5 check: 167.3 ± 2.5 (Δ 0.2 Å² — subsampling-insensitive).
+- −TΔS_solv **+2.01 ± 0.04** (= γ·ΔSASA, γ = 0.012) — nonzero with SE
+  (assert > 0.5).
+- Revised anchor-B ΔG_est **−0.16** (legacy −2.17 + 2.01; assert exact to
+  1e-9) with the ±50% band on the REAL base: solvent [+1.00, +3.01],
+  ΔG [−1.17, +0.84], swing ±1.00.
+- Sign-convention flag (honest, open for physics review): the code gives
+  UNfavorable +2.01 (`dS_solv = −ΔSASA·γ/T`); the §13 illustrative row used
+  favorable −2.16 (−γ·ΔSASA). Hydrophobic release argues favorable, so a
+  sign review is owed — this stage reports the code-exact numbers and does
+  NOT silently flip physics (legacy ΔSASA = 0 callers are exactly 0 either
+  way). Absolute-ΔG reading additionally stays sampling-limited (replica SD
+  ±7.1, §13) — ranking-only use stands.
+
+Verification at close-out: gate OPEN before (215 PASSED, 99 ids) and after
+(215 PASSED, 99 ids); `node tests/test_all.js` → 215/215 fast before and
+after (~13 s); `node scripts/calibration_4w52.mjs` → 14/14 (10 legacy +
+4 new) with the burial block above; calibration log diff-clean twice
+(bit-identical, no RNG); `node --check` clean on all 8 touched files
+(calibration, test_all, thermodynamics, thermo_sasa, thermo_ligand,
+analysis-panel, ui, main). SLOW-tier total moves 245 → 249
+(Tier-0 32 + FAST 183 + SLOW 34: thermo 7 + heavy 13 + calibration 14);
+FAST/gate baseline untouched (still 215). No new top-level panels (8
+unchanged); no new DOM ids (all 99 ⊆ index.html, `src/ui.js` untouched
+this stage).
+
+## 18. Binding-Loop2 Stage-4 note (2026-09-13): ala-scan honest display — Option B
+
+Pain (open debt from §13e): the CG alanine-scan top-3 (TYR88 +0.014,
+MET102 +0.012, ILE100 +0.009, max|ΔΔG| 0.015) sit an order of magnitude
+below any plausible relaxation/convergence precision — the Cα-ENM
+perturbation (0.7× + 0.4 Å r0 shift) relaxes back and cancels in the
+holo−apo cycle with sidechains invisible. Verdict was prose-only
+("PARTIAL nominal, effectively NO"); nothing in code stopped a reader
+from quoting +0.014 as a hotspot ΔΔG.
+
+Option tried and rejected (measured, cheap): sidechain-heavy-atom-count
+scaling (Option A) — ddG × count (TYR×8, MET×4, ILE×4…) gives TYR88
+0.112 / MET102 0.048 / ILE100 0.037 with the SAME top-3 in the SAME
+order and unchanged 1/3 liner overlap. Arbitrary inflation with no new
+discriminating power — rejected as dishonest; documented here instead
+of shipped. (Buried-SASA / contact-persistence variants not pursued:
+same verdict class — multipliers on a cancelled number.)
+
+What shipped (Option B, formal ranking-only demotion; additive only,
+zero deps, JSDoc; no force-field retuning — display only; defaults
+unchanged except honest display):
+- `src/analysis/alanine_scanning.js`: NEW `ALA_DDG_NOISE_FLOOR = 0.05`
+  kcal/mol `:73` + pure helpers `isNoiseDdG` (non-finite → noise, never
+  claims signal on NaN) / `annotateScanNoise` (tags `{noise, noiseFloor}`
+  in place, deterministic, no RNG); `scanPocket` auto-tags rows
+  (`opts.noiseFloor` override, default 0.05); `formatMutationTable`
+  appends ` ~noise` per below-floor row plus a footer
+  `[ala-scan: |ΔΔG| < 0.05 kcal/mol ≈ noise — ranking only, no CG
+  hotspot resolution]`. Energies untouched — magnitudes identical.
+- `src/analysis-panel.js:412-415`: ala-scan header gains `(ranking only
+  — |ΔΔG| < 0.05 ≈ noise, no CG hotspot claim)` (hotspot-recall
+  disclaimer in caption; no new DOM ids).
+- NEW `tests/test_ala_noise_floor.js` (16 asserts, ~1 s, deterministic):
+  floor value, boundary/custom-floor/NaN flagging, synthetic tagging +
+  table flags, live 4W52 BNZ cavity (rCut 8 Å/maxN 12/relax 80):
+  finite ×12, max|ΔΔG| < floor, every row noise, ordering bit-identical
+  across two runs, top-3 still contains MET102, live table flagged.
+- `tests/test_all.js` FAST gains the suite (183 → 199 FAST, total
+  215 → 231); `scripts/wikiskill_gate.js` baseline 215 → 231.
+
+Top-3 before/after (4W52 BNZ-only, relax 80, live, deterministic twice):
+before TYR88:A +0.014 / MET102:A +0.012 / ILE100:A +0.009
+(max|ΔΔG| 0.0148); after IDENTICAL numbers, every row `~noise` +
+ranking-only footer. Hotspot verdict: 1/3 nominal (MET102 genuine T4L
+liner; TYR88/ILE100 not liners) but formally **NO resolution** — now
+encoded in code (`noise === true` ×12, table + caption disclaimers),
+not just prose. Honest resolution path stays open: heavy-mode explicit
+sidechain surgery (bench item, not this stage).
+
+Verification at close-out: gate OPEN before (215 PASSED, 99 ids) and
+after (231 PASSED, 99 ids); `node tests/test_all.js` → 231/231 fast
+(~16 s); new suite 16/16 twice bit-identical; live top-3 replayed
+twice bit-identical (TYR88 +0.014 / MET102 +0.012 / ILE100 +0.009);
+`node --check` clean on all 5 touched/new files (alanine_scanning,
+analysis-panel, test_ala_noise_floor, test_all, wikiskill_gate). No new
+top-level panels (8 unchanged); no new DOM ids (`src/ui.js` untouched).
+
+## 19. Stage-5 note (2026-09-13): second validation system — 4W52 EPE flexible ligand
+
+Pain (open debt): everything validated on 4W52/T4L only (rigid BNZ);
+the rotbonds flexible-ligand path (EPE 4 rotatable, chain 1) was
+unit-tested (`test_rotbonds` 17/17) but never end-to-end in-app.
+
+System choice: **4W52 EPE pocket — same protein, different ligand
+(cheapest)**. EPE (HEPES buffer, 15 atoms / 15 bonds) → **4 rotatable
+[[0,9],[3,6],[6,7],[9,10]]** (ring + S(=O)₃ fan excluded) vs BNZ rigid
+0. Same protein isolates the flexibility variable; crystal pose needs no
+placement; pocket differs honestly (EPE surface site 7 residues vs BNZ
+cavity 14), so this is a genuine second system. Rejected: a MOL2 library
+ligand with ≥2 rotatable bonds placed headlessly — measured on
+`src/ligandLib.js`, max is ethanolamine 1 (benzene/phenol/toluene/
+chlorobenzene/indole/imidazole/acetate/DMSO/caffeine all 0; methyl rotors
+excluded by the degree>1 rule), so no library ligand reaches ≥2.
+
+What shipped (additive only, zero deps, JSDoc; fast tier runtime
+unchanged; no new top-level panels; no new DOM ids — `src/ui.js`
+untouched):
+- NEW `scripts/validate_flexlig.mjs` (10 asserts, SLOW tier, seeded
+  501/1501, deterministic bit-identical twice, ~0.6 s < 60 s): EPE-only +
+  BNZ-only CG systems (charges + directional-HB), 500 steps / stride 2 →
+  250 frames/leg. Reports rotatable count, ligand torsion ΔS (locked 0 vs
+  sampled >0), ΔH component split, pocket residues, ΔSASA via the
+  `thermo_sasa.sasaBurial` helper (stride 10, CG bead radius).
+- `tests/test_all.js` SLOW_SUITES gains the suite (SLOW 34 → 44;
+  full `--slow` 231 + 44 = 275); FAST/gate baseline untouched (still 231;
+  `scripts/wikiskill_gate.js` unchanged — FAST-only gate).
+- `src/analysis-panel.js` thermo handler surfaces the rotatable count in
+  the ligand-note line (`(ligand … [N rotatable]; pocket …)` via NEW
+  `selectedRotatableCount` + `findRotatableBonds` import) — additive
+  display only (EPE → 4, BNZ → 0, all → 4); no physics change, no new ids.
+
+Numbers (live, seeded 501/1501, twice identical):
+- EPE **ΔS_lig 0.00305 NONZERO** end-to-end (`4 auto rotatable bonds
+  (4 torsions) [4 rotatable]`) vs locked 0.00000 vs **BNZ 0.00000 exactly**
+  (`rigid ligand (0 rotatable bonds) ⇒ 0 [0 rotatable]` — zero control).
+- EPE **ΔH −2.58 ± 0.13 (LJ −0.82 / Coul +1.68 / HB −0.36 / desolv −3.08)**
+  (BNZ control −3.38 ± 0.02: LJ −0.83 / Coul 0.00 / HB 0.00 / desolv −2.55;
+  EPE Coul +1.68 is the surface-site signature).
+- EPE pocket 7 @8Å: HIS31 LEU32 VAL103 PHE104 GLN105 MET106 GLY107
+  (BNZ cavity 14: ILE78 LEU84 … LEU118).
+- EPE **ΔSASA 429.6 ± 11.2 Å²** (dLig 430.0 ± 10.9 + dProt −0.3 ± 2.8;
+  free-ligand ⟨S⟩ 1372.9 Å²; 25+25 frames, stride 10, ~30 ms).
+- What it proves: the rotbond autoTorsions path is live end-to-end —
+  sampled flexible-ligand ΔS > 0 while the rigid control stays exactly 0.
+
+Verification at close-out: gate OPEN before (231 PASSED, 99 ids) and
+after (231 PASSED, 99 ids); `node tests/test_all.js` → 231/231 fast
+(~17 s, unchanged); `validate_flexlig` 10/10 twice bit-identical (~0.6 s);
+`node --check` clean on all 3 touched/new files (validate_flexlig,
+test_all, analysis-panel). No new top-level panels (8 unchanged); no new
+DOM ids (all 99 ⊆ index.html, `src/ui.js` untouched).
+
+## 20. Stage-6 note (2026-09-13): heavy-thermo smoke/full split — unblock --slow CI
+
+Pain (open debt from §§13/19): the SLOW tier carried the FULL heavy
+protocol (3 reps × 300 equil + 1500 production steps stride 2 → 750
+frames/leg, 6 legs × 1800 steps) at ~170–200 s, so every `--slow` CI run
+paid the manual-depth cost. FAST stayed 231 but SLOW was CI-hostile.
+
+What shipped (additive only, zero deps, no UI changes, FAST runtime
+unchanged):
+- `scripts/test_thermo_heavy.mjs`: NEW SMOKE mode via `--smoke` flag or
+  `HEAVY_SMOKE=1` env (either triggers; default with no flag/env stays
+  FULL). SMOKE = **1 replica × (50 equil + 300 production steps, stride
+  2 → 150 frames/leg = 0.30 ps production + 0.05 ps equil at heavy dt
+  0.001 ps = 1 fs)**. Same 13 asserts (setup 5 + pipeline 8:
+  finiteness/boundedness only — sign reported, NEVER asserted); frame-count
+  assert tracks `STEPS/STRIDE` so SMOKE expects 150/leg, FULL 750/leg.
+  Header/setup logs print `[SMOKE]`/`[FULL]` + protocol + ps; final line
+  reads `test_thermo_heavy (SMOKE|FULL)`. Cα message now reports
+  frames/DOF neutrally (no stale ≥10 claim). FULL path byte-logic
+  untouched (same seeds 1001/2002/3003, same EQUIL/STEPS/REPS when
+  unflagged).
+- `tests/test_all.js`: NEW `SLOW_FULL` (`--slow-full` | `--long` |
+  `--full` | `SLOW_FULL=1`; implies SLOW) + `runSuiteFile` forwards
+  `suite.args`/`suite.env`. Heavy entry carries `args: SLOW_FULL ? [] :
+  ["--smoke"]`, so `--slow` = SMOKE heavy, `--slow-full`/`--long` = FULL
+  heavy. Tier label prints `SLOW-SMOKE` vs `SLOW-FULL`. Skip message +
+  summary comment updated. Assert counts identical either way (heavy 13,
+  SLOW +44, totals 231/275).
+- `scripts/wikiskill_gate.js`: comment refreshed (FAST 231 baseline,
+  SLOW 44, `--slow` total 275); baseline check unchanged
+  (FAST-only gate stays 231).
+
+Numbers (live, this stage):
+- SMOKE `--smoke`: **13/13 in 12.4 s** (wall 12 s): rep0 −TΔS full
+  **−20.97** | bb −5.49 | sc −15.48 | Cα −3.14 | ΔH **−17.02** (LJ −7.73 /
+  Coul 0.00 / HB 0.00 / desolv −9.29); frames/DOF 0.5 UNDER-SAMPLED by
+  design (pipeline smoke only — verdict still NOT-RESTORED, §15).
+  Deterministic twice via `--smoke` + once via `HEAVY_SMOKE=1` —
+  bit-identical all three runs.
+- FULL (default, rerun this stage): **13/13 in 205 s** (3m24s):
+  [22.63, −24.27, 13.96] → mean 4.11; bb 8.96 / sc −4.85 / Cα 1.25;
+  ΔH mean −19.73 — replays the Stage-2 record (§9) exactly.
+- Tiers:
+
+| Tier | How to run | Suites (asserts) | Runtime measured |
+|---|---|---|---|
+| FAST (default, gate/CI) | `node tests/test_all.js` | Tier-0 (32) + FAST (199) = **231** | **~16 s** (weakint ~15 s dominates, unchanged) |
+| SLOW-SMOKE (fast CI) | `node tests/test_all.js --slow` or `SLOW=1` | FAST 231 + thermo (7, 3.5 s) + heavy SMOKE (13, 12.2 s) + calibration (14, 2.4 s) + flexlig (10, 0.6 s) = **275** | **~36 s** total (FAST 16.9 + SLOW 18.7) |
+| SLOW-FULL (manual) | `node tests/test_all.js --slow-full` or `--long` | same 275 asserts, heavy FULL | **~230 s** (FAST ~17 + FULL heavy ~205 + rest ~7) |
+
+How to run each: fast `node tests/test_all.js`; slow-smoke `node
+tests/test_all.js --slow`; slow-full `node tests/test_all.js
+--slow-full` (or `--long`); heavy alone SMOKE `node
+scripts/test_thermo_heavy.mjs --smoke` (or `HEAVY_SMOKE=1 node
+scripts/test_thermo_heavy.mjs`), FULL `node
+scripts/test_thermo_heavy.mjs`.
+
+Verification at close-out: gate OPEN before (231 PASSED, 99 ids) and
+after (231 PASSED, 99 ids); `node tests/test_all.js` → 231/231 fast
+(~16 s, unchanged); `--slow` → 275/275 in 36.1 s (SLOW-SMOKE tier 18.7
+s, heavy-smoke leg 12.2 s); FULL heavy rerun 13/13 in 205 s (untouched
+path re-verified live, not cited); `node --check` clean on all 3
+touched files (test_thermo_heavy, test_all, wikiskill_gate). No new
+top-level panels (8 unchanged); no new DOM ids (`src/ui.js` untouched).
+
+## 21. Stage-7 note (2026-09-13): thermo cancel UX + PMF 0-hill hint + wiki-path fix
+
+Three open UX debts from §§15–20 closed (additive only, zero deps, no new
+top-level panels, Digit1-7 contract intact, every new id in `src/ui.js`):
+
+(a) Thermo Cancel button — the Stage-5 generation counter
+(`invalidateThermo`, `src/analysis-panel.js:185`) could cancel a stale
+chunked run, but the UI exposed no Cancel control (button stayed disabled
+for the whole apo+SASA run with no way to abort). NEW
+`<button id="thermoCancelBtn">` in the thermo subpanel row
+(`index.html:307`, same `.row.btns` pattern, ships `disabled`) +
+registration (`src/ui.js:40`) + `setThermoRunning(running)` helper
+(`src/analysis-panel.js:197`, headless-safe with `getElementById`
+fallback) + click handler (`:210-214`: `invalidateThermo()` so stale
+`stepChunk`/SASA continuations return early, idle button state, caption
+`cancelled — thermo run cancelled by user.`). Cancel is enabled only
+while a run is in flight (`:333` apo leg start, `:382` SASA leg) and
+disabled otherwise (load idle, all three completion paths `:416,426,433`,
+`invalidateThermo` itself `:188` so rebuild also disarms it). Physics and
+defaults unchanged — display/control only.
+
+(b) PMF 0-hill hint — the BindViz PMF canvas drew a dead-end
+(`no metadynamics hills deposited yet`) with no convergence guidance when
+the BindLog carried events but zero funnel hills. NEW exported
+`PMF_NOHILL_HINT` (`src/capture/bindviz.js:229`):
+`no metadynamics hills — enable Funnel bias in Dynamics → Advanced
+sampling, run ≥ 50 hills for PMF convergence; timeline/energy live
+regardless`. Canvas draws the two-line form (`:259-262`, follows the
+`pmf-panel.js` empty pattern); `drawBindviz` reuses the existing
+`bindvizCaption` for the single-line form when `hasData && nHills === 0`
+(`src/main.js:150-167`, hill count null-safe, no new panels/ids). The
+≥50 bar matches the PMF panel convergence gate (`src/pmf-panel.js:81`,
+`nHills<50` collecting) — a display threshold, not a measured convergence
+claim. Null bindlog still takes the guarded D1 empty state.
+
+(c) Wiki-path fix — the gate verdict named `wiki/evolution/skill-impact.md`
+(relative, no such path from root) instead of the real
+`.wikiskill/wiki/evolution/skill-impact.md`. Fixed in the gate message
+(`scripts/wikiskill_gate.js:92`) and both stale refs in
+`.wikiskill/README.md:24,28`. `docs/BINDING_LOOP2_DONE.md:413` already
+named the real path.
+
+Verification at close-out: gate OPEN before (231 PASSED, 42 files clean,
+99 ids, stale path in message) and after (231 PASSED, 42 files clean,
+**100 ids**, correct path in output). `node tests/test_all.js` → 231/231
+fast; headless Stage-7 check (`/tmp/opencode/stage7_verify.mjs`) 15/15 —
+cancel pair idle/reset, start→cancel caption + button states, 0-hill
+canvas hint text, null-bindlog guard. `node --check` clean on all 5
+touched JS files; page + all 6 touched servables 200. One mid-session
+gate CLOSED flake (bindlog-integration HB temperature trial 13/1 —
+`0/30 negative HB samples at the exact native reference gate`;
+untouched physics, same flake class as §16) — failing suite alone 14/14,
+`test_all` 231/231, gate rerun OPEN. No new top-level panels (8
+unchanged); only +1 DOM id (`thermoCancelBtn`, ⊆ index.html).

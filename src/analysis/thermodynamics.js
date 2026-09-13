@@ -15,6 +15,14 @@
 
 const KB = 0.0019872041; // kcal/mol/K
 
+/**
+ * Hydrophobic burial scale for the solvent-entropy term (R4 scale, ±50% band).
+ * −TΔS_solv = SASA_GAMMA × ΔSASA. Stage-3 surfaces the previously inline
+ * 0.012 literal as a named const (value unchanged — legacy callers
+ * bit-identical).
+ */
+export const SASA_GAMMA = 0.012;
+
 import { findRotatableBonds, autoTorsions } from "./rotbonds.js";
 export { findRotatableBonds, autoTorsions };
 
@@ -171,6 +179,189 @@ export function torsionEntropy(frames, torsions, binDeg = 30) {
   return S;
 }
 
+/**
+ * Backbone heavy-atom names (N/CA/C/O). Everything else on a protein residue
+ * is sidechain (CB outward) — the same split scripts/test_thermo_heavy.mjs
+ * uses (BB set). Centralized here so pocket-entropy splits share one def.
+ */
+export const BACKBONE_ATOM_NAMES = new Set(["N", "CA", "C", "O"]);
+
+/**
+ * Test whether a heavy atom name belongs to the backbone.
+ * @param {string} atomName PDB atom name (e.g. "CA", "CG1")
+ * @returns {boolean}
+ */
+export function isBackboneAtomName(atomName) {
+  return BACKBONE_ATOM_NAMES.has(String(atomName ?? "").trim());
+}
+
+/**
+ * Split pocket atom indices into backbone vs sidechain (CB outward).
+ * Additive helper — same rule as the inline BB set in test_thermo_heavy.mjs.
+ * @param {Array<{atomName:string}>} atoms full atom records (protein block first)
+ * @param {number[]} pocketIdx protein atom indices in the pocket
+ * @returns {{bb:number[], sc:number[]}}
+ */
+export function splitPocketByBackbone(atoms, pocketIdx) {
+  const bb = [], sc = [];
+  for (const i of pocketIdx ?? []) {
+    (isBackboneAtomName(atoms?.[i]?.atomName) ? bb : sc).push(i);
+  }
+  return { bb, sc };
+}
+
+/**
+ * Pocket sidechain χ-torsion definitions by residue name (heavy atom names).
+ *
+ * χ1 is N–CA–CB–XG (XG = fourth atom, residue-specific); χ2+ extend outward.
+ * ALA has CB but no χ rotor and GLY has no CB — both map to [] (documented
+ * ALA-free coverage: they contribute Schlitter DOFs but zero χ rotors).
+ * PRO χ1 is ring-constrained (included; flagged in details via resName).
+ */
+export const CHI_DEFS = {
+  SER: [["N", "CA", "CB", "OG"]],
+  CYS: [["N", "CA", "CB", "SG"]],
+  THR: [["N", "CA", "CB", "OG1"]],
+  VAL: [["N", "CA", "CB", "CG1"]],
+  ILE: [["N", "CA", "CB", "CG1"], ["CA", "CB", "CG1", "CD1"]],
+  LEU: [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD1"]],
+  ASP: [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "OD1"]],
+  ASN: [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "OD1"]],
+  PHE: [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD1"]],
+  TYR: [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD1"]],
+  TRP: [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD1"]],
+  HIS: [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "ND1"]],
+  MET: [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "SD"], ["CB", "CG", "SD", "CE"]],
+  GLU: [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD"], ["CB", "CG", "CD", "OE1"]],
+  GLN: [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD"], ["CB", "CG", "CD", "OE1"]],
+  LYS: [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD"], ["CB", "CG", "CD", "CE"], ["CG", "CD", "CE", "NZ"]],
+  ARG: [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD"], ["CB", "CG", "CD", "NE"], ["CG", "CD", "NE", "CZ"]],
+  PRO: [["N", "CA", "CB", "CG"]],
+  ALA: [],
+  GLY: [],
+};
+
+/**
+ * Build absolute-index χ-torsion quadruplets for pocket sidechain residues.
+ *
+ * A residue participates when ≥1 of its sidechain (non-N/CA/C/O) atoms is in
+ * pocketAtomIdx; its χ quadruplets are resolved against the FULL atom table
+ * (all four atoms exist even when outside the 8 Å sphere — verified on 4W52:
+ * every pocket sidechain residue carries its complete heavy-atom set).
+ * Indices are protein-absolute, hence valid in both holo frames (protein +
+ * ligand block) and apo frames (protein-only).
+ * @param {Array} atoms full atom records { atomName, resName, chain, resSeq }
+ * @param {number[]} pocketAtomIdx protein atom indices defining the pocket
+ * @returns {{torsions:number[][], details:Array, coverage:object}}
+ */
+export function pocketChiTorsions(atoms, pocketAtomIdx) {
+  const torsions = [], details = [];
+  const coverage = {
+    nPocketResidues: 0, nSidechainResidues: 0, nChiResidues: 0, nChi: 0,
+    alaSkipped: 0, glySkipped: 0, unresolved: 0,
+  };
+  if (!atoms?.length || !pocketAtomIdx?.length) return { torsions, details, coverage };
+  // residue key → { resName, nameToIdx }
+  const resMap = new Map();
+  for (let i = 0; i < atoms.length; i++) {
+    const a = atoms[i];
+    if (!a || a.isLigand === true) continue;
+    const key = `${a.chain}|${a.resSeq}`;
+    let r = resMap.get(key);
+    if (!r) { r = { resName: String(a.resName ?? "").toUpperCase(), nameToIdx: new Map() }; resMap.set(key, r); }
+    if (!r.nameToIdx.has(a.atomName)) r.nameToIdx.set(a.atomName, i);
+  }
+  // pocket residues + sidechain subset (≥1 non-backbone pocket atom)
+  const pocketResKeys = new Set();
+  const scResKeys = new Set();
+  for (const i of pocketAtomIdx) {
+    const a = atoms[i];
+    if (!a) continue;
+    const key = `${a.chain}|${a.resSeq}`;
+    pocketResKeys.add(key);
+    if (!isBackboneAtomName(a.atomName)) scResKeys.add(key);
+  }
+  coverage.nPocketResidues = pocketResKeys.size;
+  coverage.nSidechainResidues = scResKeys.size;
+  for (const key of [...scResKeys].sort()) {
+    const r = resMap.get(key);
+    if (!r) continue;
+    if (r.resName === "ALA") { coverage.alaSkipped++; continue; }
+    if (r.resName === "GLY") { coverage.glySkipped++; continue; }
+    const defs = CHI_DEFS[r.resName] ?? null;
+    if (!defs || !defs.length) { coverage.unresolved++; continue; }
+    let kept = 0;
+    defs.forEach((names, di) => {
+      const idx = names.map((nm) => r.nameToIdx.get(nm));
+      if (idx.every((v) => Number.isInteger(v))) {
+        torsions.push(idx);
+        details.push({ resKey: `${key}|${r.resName}`, resName: r.resName, label: `chi${di + 1}`, names: [...names], idx: [...idx] });
+        kept++;
+      } else {
+        coverage.unresolved++;
+      }
+    });
+    if (kept) coverage.nChiResidues++;
+  }
+  coverage.nChi = torsions.length;
+  return { torsions, details, coverage };
+}
+
+/**
+ * Pocket-χ torsion-Shannon entropy difference (holo − apo) with jackknife SE.
+ *
+ * S per leg comes from torsionEntropy (30° bins, same KB as Schlitter); the
+ * SE is a deterministic B-block jackknife (leave-one-contiguous-block-out on
+ * BOTH legs, SE = √((B−1)/B · Σ(θb−θ̄)²) over the B leave-one-out ΔS values).
+ * No RNG involved — identical frames give identical numbers.
+ * @param {ArrayLike[]} holoFrames holo trajectory frames (flat 3n)
+ * @param {ArrayLike[]} apoFrames apo trajectory frames (flat 3n, protein-only)
+ * @param {number[][]} chiTorsions absolute-index χ quadruplets (protein-only)
+ * @param {object} [opts]
+ * @param {number} [opts.binDeg=30]
+ * @param {number} [opts.blocks=10]
+ * @returns {{holoS:number, apoS:number, dS:number, se:number, framesPerRotor:number, nChi:number, blocks:number}}
+ */
+export function chiEntropyDelta(holoFrames, apoFrames, chiTorsions, opts = {}) {
+  const binDeg = opts.binDeg ?? 30;
+  const nChi = chiTorsions?.length ?? 0;
+  const nH = holoFrames?.length ?? 0, nA = apoFrames?.length ?? 0;
+  const framesPerRotor = nChi ? Math.min(nH, nA) / nChi : 0;
+  if (!nChi || nH < 10 || nA < 10) {
+    return { holoS: 0, apoS: 0, dS: 0, se: 0, framesPerRotor, nChi, blocks: 0 };
+  }
+  const holoS = torsionEntropy(holoFrames, chiTorsions, binDeg);
+  const apoS = torsionEntropy(apoFrames, chiTorsions, binDeg);
+  const dS = holoS - apoS;
+  // jackknife blocks (each leave-one-out set keeps ≥10 frames per leg)
+  let B = Math.max(2, Math.min(opts.blocks ?? 10, Math.floor(Math.min(nH, nA) / 10)));
+  if (B < 2) return { holoS, apoS, dS, se: 0, framesPerRotor, nChi, blocks: 0 };
+  const thetas = [];
+  for (let b = 0; b < B; b++) {
+    const lo = Math.floor((b * nH) / B), hi = Math.floor(((b + 1) * nH) / B);
+    const hSub = [...holoFrames.slice(0, lo), ...holoFrames.slice(hi)];
+    const loA = Math.floor((b * nA) / B), hiA = Math.floor(((b + 1) * nA) / B);
+    const aSub = [...apoFrames.slice(0, loA), ...apoFrames.slice(hiA)];
+    if (hSub.length < 10 || aSub.length < 10) continue;
+    thetas.push(torsionEntropy(hSub, chiTorsions, binDeg) - torsionEntropy(aSub, chiTorsions, binDeg));
+  }
+  if (thetas.length < 2) return { holoS, apoS, dS, se: 0, framesPerRotor, nChi, blocks: thetas.length };
+  const mean = thetas.reduce((s, v) => s + v, 0) / thetas.length;
+  const se = Math.sqrt(((thetas.length - 1) / thetas.length) * thetas.reduce((s, v) => s + (v - mean) ** 2, 0));
+  return { holoS, apoS, dS, se, framesPerRotor, nChi, blocks: thetas.length };
+}
+
+/**
+ * Companion one-line formatter for the χ term (additive — call from
+ * formatThermoTable only when r.chi is present; existing lines untouched).
+ * @param {{holoS:number, apoS:number, dS:number, se:number, framesPerRotor:number, nChi:number}} chi
+ * @param {number} [T=300]
+ * @returns {string}
+ */
+export function formatChiLine(chi, T = 300) {
+  return `     chi     ${chi.dS >= 0 ? "+" : ""}${chi.dS.toFixed(4)} ± ${chi.se.toFixed(4)} kcal/mol/K  (−TΔS = ${(-T * chi.dS).toFixed(2)})  [${chi.nChi} rotors, ${chi.framesPerRotor.toFixed(0)} frames/rotor, S_holo ${chi.holoS.toFixed(4)} vs S_apo ${chi.apoS.toFixed(4)}]`;
+}
+
 function dihedral(f, a, b, c, d) {
   // signed dihedral (IUPAC convention, −180..180)
   const r = (i) => [f[3 * i], f[3 * i + 1], f[3 * i + 2]];
@@ -207,7 +398,20 @@ function dihedral(f, a, b, c, d) {
  *   Shorthand: p.ligandAtoms + p.ligandBonds (+ p.ligandStart | p.nProt as
  *   offset) is also accepted. Additive only: explicit p.torsions always wins;
  *   no ligand graph ⇒ legacy rigid-ligand path (ΔS_lig = 0), bit-identical.
- * @param {number} [p.dsasa] precomputed ΔSASA Å² (else contact-count × 10 Å² proxy)
+  * @param {number} [p.dsasa] precomputed ΔSASA Å² (else contact-count × 10 Å² proxy)
+  * @param {object} [p.sasa] Stage-3 real-burial override (e.g. sasaBurial()
+  *   from src/analysis/thermo_sasa.js): { dsasa, se?, dLig?, dProt?,
+  *   method?, stride?, nHoloEval?, nApoEval? }. When present with a finite
+  *   dsasa it overrides p.dsasa/contactCount; r.meta.sasa carries the
+  *   metadata and the solvent table line shows ΔSASA ± SE. Absent ⇒ legacy
+  *   proxy path bit-identical (ΔSASA = 0 default, r.meta.sasa null).
+ * @param {number[][]} [p.chiTorsions] pocket sidechain χ quadruplets
+ *   (absolute protein atom idx, e.g. from pocketChiTorsions). Opt-in Stage-1
+ *   follow-up: when supplied (and ≥10 frames/leg), r.chi carries the explicit
+ *   torsion-Shannon ΔS_chi (holo − apo) + jackknife SE + frames/rotor, reported
+ *   as an extra formatThermoTable line. Absent ⇒ r.chi is null, table and
+ *   dS.total/dG bit-identical (χ is diagnostic, NOT folded into the total —
+ *   it would double-count the Schlitter sidechain DOFs).
  */
 export function computeThermodynamics(p) {
   const T = p.T ?? 300, mass = p.mass ?? 110;
@@ -291,14 +495,33 @@ export function computeThermodynamics(p) {
   } else if (ligAuto) {
     ligNote = "rigid ligand (0 rotatable bonds) ⇒ 0";
   }
-  // ---- ΔS solvent (SASA proxy) ----
+  // ---- ΔS solvent (SASA burial; Stage-3 real-LCPO path is opt-in) ----
   let dS_solv = 0, dsasa = p.dsasa ?? null;
+  let sasa = null; // real-burial metadata (null ⇒ legacy proxy path, table untouched)
+  if (p.sasa && Number.isFinite(p.sasa.dsasa)) {
+    // Explicit real burial overrides the dsasa/contact-count proxy.
+    // Existing callers that pass no p.sasa keep the ΔSASA = 0 default.
+    dsasa = p.sasa.dsasa;
+    sasa = {
+      method: p.sasa.method ?? "lcpo-cross-burial",
+      se: p.sasa.se ?? 0,
+      dLig: p.sasa.dLig ?? null, dProt: p.sasa.dProt ?? null,
+      stride: p.sasa.stride ?? null,
+      nHoloEval: p.sasa.nHoloEval ?? null, nApoEval: p.sasa.nApoEval ?? null,
+    };
+  }
   if (dsasa === null) {
     // contact-count proxy: ΔSASA ≈ nContacts(holo) × 10 Å² (R1 §2 hydrophobic burial scale)
     // derive from holo frames if a contact count series exists; else 0 with note
     dsasa = p.contactCount ? p.contactCount * 10 : 0;
   }
-  dS_solv = -dsasa * 0.012 / T; // kcal/mol/K — favorable release (negative ΔG contribution)
+  dS_solv = -dsasa * SASA_GAMMA / T; // kcal/mol/K — favorable release (negative ΔG contribution)
+  // ---- ΔS_chi (explicit pocket sidechain torsion term, opt-in diagnostic) ----
+  // Additive only: no chiTorsions ⇒ null (table/total/dG untouched).
+  let chi = null;
+  if (p.chiTorsions?.length && p.holoFrames?.length >= 10 && p.apoFrames?.length >= 10) {
+    chi = chiEntropyDelta(p.holoFrames, p.apoFrames, p.chiTorsions, { binDeg: p.chiBinDeg ?? 30, blocks: p.chiBlocks ?? 10 });
+  }
   const dS_total = dS_pocket + dS_lig + dS_solv;
   const dG = dH.total - T * dS_total;
   return {
@@ -306,11 +529,13 @@ export function computeThermodynamics(p) {
     dS: { pocket: dS_pocket, ligand: dS_lig, solvent: dS_solv, total: dS_total },
     // Stage-1: absolute pocket entropies (diagnose holo-tightening vs apo-loosening).
     S_pocket: { holo: S_holo_pocket, apo: S_apo_pocket },
+    chi,
     dG_estimate: dG,
     meta: {
       T, framesPerDof, ligNote,
       rotatableBonds,
       dsasa, sasaScale: "0.012 kcal/mol/Å² (±50%)",
+      sasa,
       pocketResidues: p.pocketIdx?.length ?? 0,
       holoFrames: p.holoFrames?.length ?? 0, apoFrames: p.apoFrames?.length ?? 0,
       massModel,
@@ -334,7 +559,17 @@ export function formatThermoTable(r) {
   // when meta.rotatableBonds is known.
   const rotSuffix = Number.isFinite(r.meta?.rotatableBonds) ? ` [${r.meta.rotatableBonds} rotatable]` : "";
   L.push(`     ligand  ${r.dS.ligand.toFixed(4)}  (${r.meta.ligNote}${rotSuffix})`);
-  L.push(`     solvent ${r.dS.solvent.toFixed(4)}  (ΔSASA ${r.meta.dsasa} Å² × 0.012)`);
+  // Stage-3: real-burial solvent line (only when p.sasa was supplied; the
+  // legacy line below stays byte-identical for all existing callers).
+  if (r.meta.sasa) {
+    const sasaSE_T = (r.meta.sasa.se * SASA_GAMMA / r.meta.T).toFixed(4);
+    L.push(`     solvent ${r.dS.solvent.toFixed(4)} ± ${sasaSE_T}  (ΔSASA ${r.meta.dsasa.toFixed(1)} ± ${r.meta.sasa.se.toFixed(1)} Å² ${r.meta.sasa.method}, stride ${r.meta.sasa.stride}, ${r.meta.sasa.nHoloEval}+${r.meta.sasa.nApoEval} frames)`);
+  } else {
+    L.push(`     solvent ${r.dS.solvent.toFixed(4)}  (ΔSASA ${r.meta.dsasa} Å² × 0.012)`);
+  }
+  // Stage-1 follow-up: explicit pocket-χ line (diagnostic, not in the total).
+  // Additive: only when computeThermodynamics received p.chiTorsions.
+  if (r.chi && r.chi.nChi) L.push(formatChiLine(r.chi, r.meta.T));
   L.push(`ΔS total    ${r.dS.total.toFixed(4)} kcal/mol/K  (−TΔS = ${(-r.meta.T * r.dS.total).toFixed(2)})`);
   L.push(`ΔG estimate ${r.dG_estimate.toFixed(2)} kcal/mol  (±bootstrap SE on ΔH; ±50% on SASA term)`);
   if (r.meta.warning) L.push(`⚠ ${r.meta.warning}`);

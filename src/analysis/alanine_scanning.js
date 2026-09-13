@@ -56,6 +56,47 @@ export const ALA_R0_SHIFT = 0.4;
 export const ALA_R0_MIN = 3.2;
 
 /**
+ * Display noise floor for CG alanine-scan ΔΔG (kcal/mol).
+ *
+ * Stage-4 honest-display resolution (measure/honest-display only, no
+ * force-field retuning): the CG Cα-ENM perturbation (ALA_SPRING_SCALE +
+ * ALA_R0_SHIFT) largely relaxes back and cancels in the holo−apo cycle, so
+ * live 4W52 BNZ-cavity magnitudes are all |ΔΔG| < 0.02 — below any plausible
+ * relaxation/convergence precision. Rows with |ΔΔG| below this floor are
+ * flagged "~noise" by formatMutationTable: ranking-only, no hotspot
+ * resolution at CG. Heavy-mode explicit sidechain surgery is the honest
+ * resolution path (open bench item). Deterministic pure constant.
+ */
+export const ALA_DDG_NOISE_FLOOR = 0.05;
+
+/**
+ * Below-floor test for a scan ΔΔG (deterministic, no RNG).
+ * Non-finite inputs count as noise (never claim signal on NaN).
+ * @param {number} ddG  binding ΔΔG (kcal/mol)
+ * @param {number} [floor=ALA_DDG_NOISE_FLOOR]  noise floor (kcal/mol)
+ * @returns {boolean} true when |ΔΔG| < floor (ranking-only)
+ */
+export function isNoiseDdG(ddG, floor = ALA_DDG_NOISE_FLOOR) {
+  if (!Number.isFinite(ddG) || !Number.isFinite(floor)) return true;
+  return Math.abs(ddG) < floor;
+}
+
+/**
+ * Tag scan rows with honest-display noise fields (additive, in place).
+ * Sets r.noise (bool) + r.noiseFloor (floor used). Deterministic.
+ * @param {Array<object>} rows  scanPocket().rows
+ * @param {number} [floor=ALA_DDG_NOISE_FLOOR]
+ * @returns {Array<object>} same array (chainable)
+ */
+export function annotateScanNoise(rows, floor = ALA_DDG_NOISE_FLOOR) {
+  for (const r of rows) {
+    r.noise = isNoiseDdG(r.ddG, floor);
+    r.noiseFloor = floor;
+  }
+  return rows;
+}
+
+/**
  * @typedef {object} ScanSystem
  * @property {"cg"|"heavy"} mode
  * @property {object} sel      selectSystem() output (cg) or selectHeavy() output (heavy)
@@ -458,6 +499,7 @@ export function scanPocket(system, resIds, opts = {}) {
   const cache = {};
   const rows = resIds.map((id) => scanResidue(system, id, { ...opts, cache }));
   rows.sort((a, b) => b.ddG - a.ddG);
+  annotateScanNoise(rows, opts.noiseFloor ?? ALA_DDG_NOISE_FLOOR);
   return {
     rows,
     wtHolo: cache.wtHolo ? cache.wtHolo.energy : NaN,
@@ -519,15 +561,24 @@ export function pocketResidues(system, opts = {}) {
 
 /**
  * Fixed-width ΔΔG table for HUD / console / download.
+ * Honest display (Stage-4, Option B): rows with |ΔΔG| below the noise floor
+ * carry a "~noise" flag and the table ends with a ranking-only disclaimer
+ * (hotspot recall needs heavy-mode sidechains; CG magnitudes do not resolve
+ * hotspots). Pure display — input energies untouched, deterministic.
  * @param {Array<object>} rows  scanPocket().rows
+ * @param {object} [opts]
+ * @param {number} [opts.floor=ALA_DDG_NOISE_FLOOR]  noise floor (kcal/mol)
  * @returns {string}
  */
-export function formatMutationTable(rows) {
+export function formatMutationTable(rows, opts = {}) {
+  const floor = opts.floor ?? ALA_DDG_NOISE_FLOOR;
   const head = "mutation      ΔGmut_holo  ΔGmut_apo   ΔΔGbind  note";
   const lines = [head, "-".repeat(head.length)];
   for (const r of rows) {
     const f = (v) => (Number.isFinite(v) ? v.toFixed(2).padStart(10) : "       NaN");
-    lines.push(`${r.label.padEnd(12)}${f(r.dGmutHolo)}${f(r.dGmutApo)}${f(r.ddG)}  ${r.note}`);
+    const noise = (r.noise ?? isNoiseDdG(r.ddG, floor)) ? " ~noise" : "";
+    lines.push(`${r.label.padEnd(12)}${f(r.dGmutHolo)}${f(r.dGmutApo)}${f(r.ddG)}  ${r.note}${noise}`);
   }
+  lines.push(`[ala-scan: |ΔΔG| < ${floor.toFixed(2)} kcal/mol ≈ noise — ranking only, no CG hotspot resolution]`);
   return lines.join("\n");
 }

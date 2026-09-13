@@ -17,8 +17,41 @@ import { computeDCCM, renderDCCMHeatmap, topCorrelations, dccmPick, highlightCor
 import { trackPocketVolume, detectCryptic } from "./analysis/cryptic_pockets.js?v=10";
 import { runPullingEnsemble, jarzynskiFreeEnergy, koffSurrogate } from "./analysis/unbinding_smd.js?v=10";
 import { computeThermodynamics, formatThermoTable } from "./analysis/thermodynamics.js?v=10";
+import {
+  THERMO_LIG_AUTO, THERMO_POCKET_RCUT,
+  resolveThermoLigand, selectedLigandAtomIndices, selectedLigandCom,
+  pocketFromCom, sliceSelectedPositions, refreshThermoLigOptions,
+} from "./analysis/thermo_ligand.js?v=10";
+import {
+  THERMO_SASA_STRIDE, sasaBurialChunked, cgBeadExtendedRadius,
+  selectedLigandElements,
+} from "./analysis/thermo_sasa.js?v=10";
 import { ForceField } from "./forcefield.js?v=10";
 import { LangevinIntegrator } from "./integrator.js?v=10";
+import { findRotatableBonds } from "./analysis/rotbonds.js?v=10";
+
+/**
+ * Count rotatable bonds in the selected thermo ligand subset (Stage-5 display
+ * only — concatenated subset graph, same rule as the headless
+ * scripts/validate_flexlig.mjs EPE path; never throws, headless-safe).
+ * EPE → 4, BNZ → 0, all (BNZ+EPE, disconnected) → 4.
+ * @param {Array} subset resolved ligand subset (parseLigands molecules)
+ * @returns {number} rotatable-bond count (0 on any failure)
+ */
+function selectedRotatableCount(subset) {
+  try {
+    const atoms = [];
+    const bonds = [];
+    let off = 0;
+    for (const mol of subset ?? []) {
+      for (const a of mol?.atoms ?? []) atoms.push(a);
+      for (const b of mol?.bonds ?? []) bonds.push([b[0] + off, b[1] + off]);
+      off += mol?.atoms?.length ?? 0;
+    }
+    if (!atoms.length || !bonds.length) return 0;
+    return findRotatableBonds(atoms, bonds).count ?? 0;
+  } catch (_) { return 0; }
+}
 
 if (ui.anaBtn) ui.anaBtn.addEventListener("click", () => {
   if (recorder.count === 0) {
@@ -126,7 +159,7 @@ export function dccmTick(now) {
 // Paint the empty state once at startup (no-data, before any trajectory).
 try { drawDccmEmpty(); } catch (_) {}
 
-// ---- Thermodynamics ΔH/ΔS (Loop-2 S5, Stage-5 async) -----------------
+// ---- Thermodynamics ΔH/ΔS (Loop-2 S5, Stage-5 async, Stage-2 ligand picker) --
 // Holo leg = recorded trajectory (needs ≥30 frames); apo leg = internal
 // relaxation of a binding-off clone (same ENM, no ligand coupling).
 // Stage-5: the apo relaxation runs chunked (setTimeout slices) so the click
@@ -134,6 +167,14 @@ try { drawDccmEmpty(); } catch (_) {}
 // disabled during the run, and a generation counter cancels a stale run on
 // rebuild or on a fresh click. Final table render is identical
 // (formatThermoTable); defaults/numbers unchanged.
+// Stage-2 (ligand picker): pocket COM + binding-energy attribution come from
+// the SELECTED ligand only (#thermoLig, default auto → BNZ cavity). The
+// Loop-2 record path used BNZ+EPE (all HETATM): surface EPE pulls the
+// all-mol COM off the benzene cavity and inflates |ΔH| by −3.18 (row A
+// −6.82 vs row B BNZ-only −3.64; calibration_4w52.mjs, BINDING_LOOP2_DONE
+// §13). History is NOT rewritten — "all" reproduces the record bit-for-bit;
+// new runs default to the buffer-free BNZ cavity. Pocket rule unchanged
+// (8 Å). See src/analysis/thermo_ligand.js (BNZ-first fallback rule).
 /** Apo-relaxation steps per UI slice (Stage-5: keeps each slice < ~50 ms). */
 export const THERMO_CHUNK_STEPS = 150;
 let _thermoGen = 0;
@@ -144,7 +185,33 @@ let _thermoGen = 0;
 export function invalidateThermo() {
   _thermoGen++;
   try { if (ui.thermoBtn) ui.thermoBtn.disabled = false; } catch (_) {}
+  try { if (ui.thermoCancelBtn) ui.thermoCancelBtn.disabled = true; } catch (_) {}
 }
+/**
+ * Toggle the thermo run/cancel button pair (Stage-7 cancel UX: Cancel is
+ * enabled only while a chunked run is in flight, disabled otherwise).
+ * Additive + headless-safe (falls back to getElementById when ui.js captured
+ * null, e.g. headless import).
+ * @param {boolean} running true while the apo/SASA legs are in flight
+ */
+function setThermoRunning(running) {
+  try { if (ui.thermoBtn) ui.thermoBtn.disabled = !!running; } catch (_) {}
+  try {
+    const cb = ui.thermoCancelBtn
+      ?? (typeof document !== "undefined" ? document.getElementById("thermoCancelBtn") : null);
+    if (cb) cb.disabled = !running;
+  } catch (_) {}
+}
+// Idle state at load: Cancel disabled until a run starts (HTML also ships disabled).
+try {
+  const cb0 = typeof document !== "undefined" ? document.getElementById("thermoCancelBtn") : null;
+  if (cb0) cb0.disabled = true;
+} catch (_) {}
+if (ui.thermoCancelBtn) ui.thermoCancelBtn.addEventListener("click", () => {
+  invalidateThermo(); // bump generation → stale stepChunk/SASA continuations return early
+  setThermoRunning(false); // belt-and-braces idle state (invalidateThermo already resets)
+  setThermoCaption("cancelled — thermo run cancelled by user.");
+});
 function setThermoCaption(txt) {
   try {
     if (ui.thermoCaption) ui.thermoCaption.textContent = txt;
@@ -153,6 +220,28 @@ function setThermoCaption(txt) {
       if (el) el.textContent = txt;
     }
   } catch (_) {}
+}
+/**
+ * Refresh the thermo ligand picker from the live ligand list (Stage-2).
+ * Additive: called on buildSystem (see src/main.js) + lazily on click;
+ * in-memory default auto (persist NOT required); headless-safe.
+ * @returns {string} effective picker value ("auto" default)
+ */
+export function refreshThermoLigPicker() {
+  try {
+    const el = (ui.thermoLig)
+      || (typeof document !== "undefined" ? document.getElementById("thermoLig") : null);
+    return refreshThermoLigOptions(el, state.ligands ?? [], el?.value ?? THERMO_LIG_AUTO);
+  } catch (_) { return THERMO_LIG_AUTO; }
+}
+try { refreshThermoLigPicker(); } catch (_) {}
+/** Read the picker value with a headless-safe fallback (default auto). */
+function thermoLigValue() {
+  try {
+    const v = ui.thermoLig?.value
+      ?? (typeof document !== "undefined" ? document.getElementById("thermoLig")?.value : null);
+    return String(v ?? THERMO_LIG_AUTO) || THERMO_LIG_AUTO;
+  } catch (_) { return THERMO_LIG_AUTO; }
 }
 if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
   const myGen = ++_thermoGen;
@@ -164,38 +253,76 @@ if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
     }
     const ff = state.ff;
     const nProt = ff.nProt;
-    // ligand COM in ref → pocket residues
+    // Stage-2: pocket COM from the SELECTED ligand only (default auto→BNZ).
+    // Record path ("all") keeps the old all-mol COM bit-identically.
+    let thermoSel = thermoLigValue();
+    try { thermoSel = refreshThermoLigPicker() && thermoLigValue(); } catch (_) {}
+    const resolved = resolveThermoLigand(state.ligands ?? [], thermoSel);
+    const selAtomIdx = selectedLigandAtomIndices(state.ligands ?? [], resolved.molIdx);
+    // Stage-5 display only: rotatable-bond count for the selected ligand subset
+    // (EPE → 4, BNZ → 0) surfaced in the ligand-note line; no physics change.
+    const thermoRotCount = selectedRotatableCount(resolved.subset);
     let lcom = [0, 0, 0];
-    if (ff.nLigAtoms > 0) {
+    if (selAtomIdx.length > 0 && ff.nLigAtoms > 0) {
+      lcom = selectedLigandCom(ff.ref, nProt, selAtomIdx);
+    } else if (ff.nLigAtoms > 0) {
       for (let a = 0; a < ff.nLigAtoms; a++) {
         lcom[0] += ff.ref[3 * (nProt + a)] / ff.nLigAtoms;
         lcom[1] += ff.ref[3 * (nProt + a) + 1] / ff.nLigAtoms;
         lcom[2] += ff.ref[3 * (nProt + a) + 2] / ff.nLigAtoms;
       }
     } else lcom = centroidOf(ff.ref, nProt);
-    const pocketIdx = [];
-    for (let i = 0; i < nProt; i++) {
-      if (Math.hypot(ff.ref[3 * i] - lcom[0], ff.ref[3 * i + 1] - lcom[1], ff.ref[3 * i + 2] - lcom[2]) < 8.0) pocketIdx.push(i);
-    }
-    // holo frames from recorder; energies from BindLog if capture was on
+    const pocketIdx = pocketFromCom(ff.ref, nProt, lcom, THERMO_POCKET_RCUT);
+    // holo frames from recorder; energies from the SELECTED ligand only:
+    // "all" (or full-coverage single-ligand) reuses the BindLog channel
+    // bit-identically; a proper subset is recomputed per recorded frame with
+    // a selected-only FF copying the live binding flags (charges/hbMode).
     const holoFrames = recorder.frames.map((f) => Float32Array.from(f));
+    const totalLigAtoms = (state.ligands ?? []).reduce((s, m) => s + (m?.atoms?.length ?? 0), 0);
+    const coversAll = selAtomIdx.length === 0
+      || selAtomIdx.length === ff.nLigAtoms
+      || (totalLigAtoms > 0 && selAtomIdx.length === totalLigAtoms)
+      || resolved.mode === "all";
     const holoEnergies = [];
-    if (state.bindLog && state.bindLog.nEvents > 0) {
-      // collect the last 7-term energy snapshot per captured frame time
-      const perTime = new Map();
-      for (let i = 0; i < state.bindLog.nEvents; i++) {
-        if (state.bindLog.evType[i] !== 0) continue;
-        const t = state.bindLog.evTime[i];
-        if (!perTime.has(t)) perTime.set(t, new Array(7).fill(0));
-        perTime.get(t)[state.bindLog.evA[i] % 7] = state.bindLog.evX[i];
+    let holoEnergyNote = "";
+    if (coversAll) {
+      if (state.bindLog && state.bindLog.nEvents > 0) {
+        // collect the last 7-term energy snapshot per captured frame time
+        const perTime = new Map();
+        for (let i = 0; i < state.bindLog.nEvents; i++) {
+          if (state.bindLog.evType[i] !== 0) continue;
+          const t = state.bindLog.evTime[i];
+          if (!perTime.has(t)) perTime.set(t, new Array(7).fill(0));
+          perTime.get(t)[state.bindLog.evA[i] % 7] = state.bindLog.evX[i];
+        }
+        for (const row of perTime.values()) holoEnergies.push(row);
       }
-      for (const row of perTime.values()) holoEnergies.push(row);
+    } else {
+      try {
+        const ffSel = new ForceField(state.sel, {
+          rc: ff.rc ?? 10, gamma: ff.gamma ?? 2.0,
+          binding: {
+            on: true, holo: ff.holoOn ?? true,
+            charges: ff.chargesOn === true, hbMode: ff.hbMode ?? "off",
+          },
+        }, resolved.subset);
+        ffSel.trackTerms = true;
+        for (const frame of holoFrames) {
+          const sliced = sliceSelectedPositions(frame, nProt, selAtomIdx);
+          ffSel.compute(sliced);
+          holoEnergies.push([ffSel.bindLJU, ffSel.bindCoulU, ffSel.bindHBU, ffSel.desolvU, 0, 0, 0]);
+        }
+        holoEnergyNote = `\n(ligand ${resolved.label} — ΔH recomputed selected-only)`;
+      } catch (err) {
+        holoEnergyNote = `\n(note: selected-ligand recompute failed (${err?.message ?? err}) — ΔH skipped)`;
+      }
     }
-    // apo leg: internal relaxation with binding off (same count as before)
+    // apo leg: internal relaxation with binding off (same count as before;
+    // Stage-2: built with the SELECTED subset — "all" matches the old call).
     const nApo = Math.min(2000, Math.max(600, holoFrames.length * 4));
     let ffApo = null, integApo = null;
     try {
-      ffApo = new ForceField(state.sel, { rc: 10, gamma: 2.0, binding: { on: false } }, state.ligands ?? []);
+      ffApo = new ForceField(state.sel, { rc: 10, gamma: 2.0, binding: { on: false } }, resolved.subset.length ? resolved.subset : (coversAll ? (state.ligands ?? []) : resolved.subset));
       integApo = new LangevinIntegrator(ffApo.ref, ffApo, 110.0);
       integApo.setTemperature(300); integApo.setFriction(8.0);
     } catch (err) {
@@ -203,7 +330,7 @@ if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
       return;
     }
     const apoFrames = [];
-    try { if (ui.thermoBtn) ui.thermoBtn.disabled = true; } catch (_) {}
+    setThermoRunning(true); // thermoBtn off, Cancel on for the chunked run
     if (ui.analysisOut) ui.analysisOut.textContent = `Relaxing apo leg… 0/${nApo} steps (UI stays responsive).`;
     setThermoCaption(`relaxing apo… 0/${nApo} steps`);
     let done = 0;
@@ -218,28 +345,92 @@ if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
         }
         setThermoCaption(`relaxing apo… ${done}/${nApo} steps`);
         if (done < nApo) { setTimeout(stepChunk, 0); return; }
-        const res = computeThermodynamics({
-          holoFrames, apoFrames, holoEnergies,
-          pocketIdx, nProt, mass: 110, T: 300,
+        // Stage-3: real LCPO solvent burial over the recorded holo + relaxed
+        // apo frames (chunked like the apo leg — progress to #thermoCaption,
+        // stale generations discarded). Protein blocks are read from
+        // both legs; the SELECTED ligand subset (Stage-2 picker) supplies the
+        // cross-burial + free-ligand reference (see thermo_sasa.js method).
+        // Layout guard: CG frames pack protein + concatenated ligands from
+        // nProt; heavy frames offset the ligand block by ff.ligandStart. When
+        // the recorded tail block disagrees with the picker concatenation
+        // order, SASA degrades honestly to the whole tail block + note.
+        const ligStartHolo = ff.ligandStart ?? nProt;
+        const tailLen = holoFrames.length ? holoFrames[0].length / 3 - ligStartHolo : 0;
+        let sasaSel = selAtomIdx;
+        let sasaEls = selectedLigandElements(state.ligands ?? [], resolved.molIdx);
+        let sasaNote = "";
+        if (!Number.isInteger(tailLen) || tailLen < 0 || tailLen !== totalLigAtoms
+          || selAtomIdx.some((a) => a < 0 || a >= tailLen)) {
+          sasaSel = null; // whole tail block fallback
+          const tailAtoms = Array.isArray(ff.ligandAtoms) ? ff.ligandAtoms : [];
+          sasaEls = (tailAtoms.length === tailLen)
+            ? tailAtoms.map((a) => String(a?.element ?? "C").toUpperCase())
+            : new Array(Math.max(0, tailLen)).fill("C");
+          sasaNote = "\n(note: ligand layout differs from picker order — SASA over the full ligand block)";
+        }
+        const heavySasa = !!state.heavyMode;
+        const sasaOpts = {
+          nProt, ligStart: ligStartHolo, holoSel: sasaSel, selElements: sasaEls,
+          protRadius: heavySasa ? null : cgBeadExtendedRadius(ff),
+          protElements: (heavySasa && Array.isArray(ff.atoms))
+            ? ff.atoms.slice(0, nProt).map((a) => String(a?.element ?? "C").toUpperCase())
+            : null,
+          stride: THERMO_SASA_STRIDE,
+          chunkFrames: 25,
+          onProgress: (d, t) => setThermoCaption(`solvent SASA… ${d}/${t} frames`),
+        };
+        setThermoRunning(true); // keep Cancel armed across the SASA leg
+        setThermoCaption(`solvent SASA… 0 (stride ${THERMO_SASA_STRIDE})`);
+        sasaBurialChunked(holoFrames, apoFrames, sasaOpts).then((sasa) => {
+          if (myGen !== _thermoGen) return; // rebuilt / newer run
+          const res = computeThermodynamics({
+            holoFrames, apoFrames, holoEnergies,
+            pocketIdx, nProt, mass: 110, T: 300,
+            sasa: { dsasa: sasa.dsasa, se: sasa.se, dLig: sasa.dLig, dProt: sasa.dProt, method: sasa.method, stride: sasa.stride, nHoloEval: sasa.nHoloEval, nApoEval: sasa.nApoEval },
+          });
+          ui.analysisOut.textContent = formatThermoTable(res) +
+            `\n(ligand ${resolved.label} [${thermoRotCount} rotatable]; pocket ${pocketIdx.length} residues @8Å of selected COM)` +
+            (holoEnergyNote ||
+              (holoEnergies.length ? "" : "\n(note: BindLog capture was off — ΔH from recorded-frame recomputation skipped; run with BindLog on for the component split)")) +
+            sasaNote;
+          setThermoCaption(`ΔH/ΔS done — ${pocketIdx.length} pocket residues, ${holoFrames.length} holo frames (${resolved.label}), ΔSASA ${sasa.dsasa.toFixed(1)} ± ${sasa.se.toFixed(1)} Å².`);
+        }).catch((err) => {
+          if (myGen !== _thermoGen) return;
+          // SASA failure must not strand the thermo report: fall back to the
+          // legacy (ΔSASA = 0) path with an honest note.
+          try {
+            const res = computeThermodynamics({
+              holoFrames, apoFrames, holoEnergies,
+              pocketIdx, nProt, mass: 110, T: 300,
+            });
+            ui.analysisOut.textContent = formatThermoTable(res) +
+              `\n(ligand ${resolved.label} [${thermoRotCount} rotatable]; pocket ${pocketIdx.length} residues @8Å of selected COM)` +
+              `\n(note: real-SASA failed (${err?.message ?? err}) — solvent term is the legacy ΔSASA = 0)`;
+            setThermoCaption("thermo done (legacy solvent term — SASA failed).");
+          } catch (err2) {
+            try { ui.analysisOut.textContent = "⚠ " + (err2 && err2.message ? err2.message : String(err2)); } catch (_) {}
+            setThermoCaption("thermo failed — see report above.");
+          }
+        }).finally(() => {
+          if (myGen === _thermoGen) {
+            setThermoRunning(false);
+          }
         });
-        if (myGen !== _thermoGen) return; // rebuilt mid-compute
-        ui.analysisOut.textContent = formatThermoTable(res) +
-          (holoEnergies.length ? "" : "\n(note: BindLog capture was off — ΔH from recorded-frame recomputation skipped; run with BindLog on for the component split)");
-        setThermoCaption(`ΔH/ΔS done — ${pocketIdx.length} pocket residues, ${holoFrames.length} holo frames.`);
+        return;
       } catch (err) {
         if (myGen !== _thermoGen) return;
         try { ui.analysisOut.textContent = "⚠ " + (err && err.message ? err.message : String(err)); } catch (_) {}
         setThermoCaption("thermo failed — see report above.");
       } finally {
         if (myGen === _thermoGen) {
-          try { if (ui.thermoBtn) ui.thermoBtn.disabled = false; } catch (_) {}
+          setThermoRunning(false);
         }
       }
     };
     setTimeout(stepChunk, 0);
   } catch (err) {
     try { ui.analysisOut.textContent = "⚠ " + (err && err.message ? err.message : String(err)); } catch (_) {}
-    try { if (ui.thermoBtn && myGen === _thermoGen) ui.thermoBtn.disabled = false; } catch (_) {}
+    try { if (myGen === _thermoGen) setThermoRunning(false); } catch (_) {}
   }
 });
 function centroidOf(ref, n) {
@@ -272,7 +463,7 @@ if (ui.alaScanBtn) ui.alaScanBtn.addEventListener("click", () => {
     try {
       const { rows, wtHolo, wtApo } = scanPocket(sys, ids, { relaxSteps: sys.mode === "heavy" ? 25 : 80 });
       ui.analysisOut.textContent =
-        `Ala-scan (${sys.mode}): WT holo ${fmtE(wtHolo)} · WT apo ${fmtE(wtApo)} kcal/mol\n` +
+        `Ala-scan (${sys.mode}): WT holo ${fmtE(wtHolo)} · WT apo ${fmtE(wtApo)} kcal/mol (ranking only — |ΔΔG| < 0.05 ≈ noise, no CG hotspot claim)\n` +
         formatMutationTable(rows);
     } catch (err) {
       ui.analysisOut.textContent = "⚠ " + err.message;

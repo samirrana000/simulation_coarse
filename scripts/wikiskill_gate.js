@@ -49,9 +49,10 @@ check("node --check src/*.js", () => {
   return `${files.length + physicsFiles.length} files clean`;
 });
 
-/* 2. regression suite (Stage-4: grand total = Tier-0 32 + FAST 183 = 215;
- * Stage-6: SLOW tier is now 30 (thermo 7 + heavy 13 + calibration_4w52 10),
- * full --slow total 245 — gate still checks the FAST grand total only) */
+/* 2. regression suite (Stage-6: grand total = Tier-0 32 + FAST 199 = 231;
+ * SLOW tier is 44 (thermo 7 + heavy 13 smoke-or-full + calibration 14 +
+ * flexlig 10), full --slow/--slow-full total 275 — gate still checks the
+ * FAST grand total only, baseline 231) */
 check("tests/test_all.js baseline", () => {
   const out = execFileSync(process.execPath, [path.join(ROOT, "tests", "test_all.js")], {
     stdio: ["pipe", "pipe", "pipe"], encoding: "utf-8", timeout: 180000,
@@ -63,8 +64,8 @@ check("tests/test_all.js baseline", () => {
   const last = matches[matches.length - 1];
   const [passed, failed] = [Number(last[1]), Number(last[2])];
   if (failed > 0) throw new Error(`${failed} FAILED`);
-  if (passed < 215) throw new Error(`regression: ${passed} < 215 baseline (32 Tier-0 + 183 FAST)`);
-  return `${passed} PASSED, 0 FAILED (>= 215 baseline)`;
+  if (passed < 231) throw new Error(`regression: ${passed} < 231 baseline (32 Tier-0 + 199 FAST)`);
+  return `${passed} PASSED, 0 FAILED (>= 231 baseline)`;
 });
 
 /* 3. DOM contract: ui.js ids ⊆ index.html ids */
@@ -88,6 +89,6 @@ check("Hotkey contract (Digit1-7 vs panel count)", () => {
 });
 
 console.log(failures.length === 0
-  ? "\nGATE: OPEN — accept skill set (append verdict to wiki/evolution/skill-impact.md)"
+  ? "\nGATE: OPEN — accept skill set (append verdict to .wikiskill/wiki/evolution/skill-impact.md)"
   : `\nGATE: CLOSED — roll back skills, keep wiki (${failures.length} failure(s))`);
 process.exit(failures.length === 0 ? 0 : 1);

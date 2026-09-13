@@ -26,7 +26,7 @@ import { downloadText } from "./recorder.js?v=10";
 import { PoseScorer } from "./scorer.js?v=10";
 import { ui, state, viewer, recorder, initParamReadouts, updateSelSummary, updateRecStatus } from "./ui.js?v=10";
 import "./analysis-panel.js?v=10"; // side-effect: Analyze + Phase-4 workflow buttons
-import { dccmTick, drawDccmEmpty, invalidateThermo } from "./analysis-panel.js?v=10"; // steady ≤1 Hz DCCM empty redraw (P2)
+import { dccmTick, drawDccmEmpty, invalidateThermo, refreshThermoLigPicker } from "./analysis-panel.js?v=10"; // steady ≤1 Hz DCCM empty redraw (P2)
 import { applyMLToFF } from "./ml-tier.js?v=10";
 import { updatePMFPlot } from "./pmf-panel.js?v=10";
 import { initLigandPanel, updateMol2PlaceButton } from "./ligand-panel.js?v=10";
@@ -36,7 +36,7 @@ import { initSettingsModal, settingsState, workerPool, gpuAccelerator, persistPh
 import { RESPAStepper, splitForceField } from "./physics/integrators/respa.js?v=10";
 import { initNetworkPanel, updateNetworkPlot, networkPanelTick, networkModel, isLiveTrackingActive } from "./network-panel.js?v=10";
 import { BindLog } from "./capture/bindlog.js?v=10";
-import { renderInteractionTimeline, renderEnergyDecomposition, renderPmfFormation } from "./capture/bindviz.js?v=10";
+import { renderInteractionTimeline, renderEnergyDecomposition, renderPmfFormation, PMF_NOHILL_HINT } from "./capture/bindviz.js?v=10";
 
 // Initialize UI modals & panels
 initSettingsModal();
@@ -148,9 +148,22 @@ function drawBindviz() {
   if (ui.bindvizEnergy && bindvizFit(ui.bindvizEnergy)) renderEnergyDecomposition(ui.bindvizEnergy, hasData ? bl : null);
   if (ui.bindvizPmf && bindvizFit(ui.bindvizPmf)) renderPmfFormation(ui.bindvizPmf, hasData ? bl : null);
   if (ui.bindvizCaption) {
-    ui.bindvizCaption.textContent = hasData
-      ? `BindViz · ${bl.nEvents} events · ${bl.nFrames} frames (1 Hz live).`
-      : "Enable BindLog capture in Recording, run, then insights render live (1 Hz).";
+    // Stage-7: hill-aware caption reusing the existing bindvizCaption (no new
+    // panels). 0-hill BindLog still leaves timeline/energy live — only the PMF
+    // needs the funnel-convergence hint (PMF_NOHILL_HINT, nHills>=50 bar as in
+    // src/pmf-panel.js:81).
+    let nHills = -1;
+    try {
+      nHills = 0;
+      if (bl && bl.nEvents > 0 && bl.evType) {
+        for (let i = 0; i < bl.nEvents; i++) if (bl.evType[i] === 3) nHills++;
+      }
+    } catch (_) { nHills = -1; }
+    ui.bindvizCaption.textContent = !hasData
+      ? "Enable BindLog capture in Recording, run, then insights render live (1 Hz)."
+      : (nHills === 0
+        ? `BindViz · ${bl.nEvents} events · ${bl.nFrames} frames (1 Hz live). PMF: ${PMF_NOHILL_HINT}`
+        : `BindViz · ${bl.nEvents} events · ${bl.nFrames} frames (1 Hz live).`);
   }
 }
 /** Steady ≤1 Hz tick — no-data canvases redraw actionable text, live data redraws plots. */
@@ -571,6 +584,9 @@ export function buildSystem() {
   recorder.clear();
   updateRecStatus();
   updateSelSummary();
+  // Stage-2: repopulate the thermo ligand picker from the fresh ligand list
+  // (additive; in-memory default auto; preserves explicit choice when valid).
+  try { refreshThermoLigPicker(); } catch (_) {}
   // Loop-2 S4 (R6 §5): fresh BindLog per Build (clears frames + events).
   state.bindLog = new BindLog();
   state._lastContacts = null;

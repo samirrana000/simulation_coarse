@@ -34,6 +34,9 @@ function assert(condition, message) {
 // Stage-3 tiered integration (Loop-2 suites guarded by this harness).
 // FAST tier runs by default (must stay < ~60s for gate/CI).
 // SLOW tier is opt-in: `node tests/test_all.js --slow` or SLOW=1.
+// Stage-6 smoke/full split: --slow runs heavy in SMOKE mode
+// (1 rep × 50+300 steps, ~15-25s, fast CI); --slow-full (or --long)
+// runs heavy FULL (3 reps × 300+1500, ~200s, manual).
 // Suites are standalone scripts (call process.exit), so they run via
 // child_process with a timeout; child stdout is captured (piped) and only
 // a one-line lowercase summary is printed per suite — the single
@@ -41,11 +44,12 @@ function assert(condition, message) {
 // grand total below, which scripts/wikiskill_gate.js checks.
 // -----------------------------------------------------------------
 const __testAllDir = path.dirname(fileURLToPath(import.meta.url));
-const SLOW = process.argv.includes("--slow") || process.env.SLOW === "1";
+const SLOW_FULL = process.argv.includes("--slow-full") || process.argv.includes("--long") || process.argv.includes("--full") || process.env.SLOW_FULL === "1";
+const SLOW = process.argv.includes("--slow") || process.env.SLOW === "1" || SLOW_FULL;
 
 // Runtimes measured 2026-09-12 (linux, node): charges 0.1s, vsites 0.1s,
 // weakint ~15s, seeded 0.2s, bindviz 0.0s, bindlog 0.2s, bindlog-int 0.2s,
-// altloc-cleaner 0.1s, rotbonds 0.1s (Stage-4).
+// altloc-cleaner 0.1s, rotbonds 0.1s (Stage-4), ala-noise-floor ~1s (Loop-2 Stage-4).
 const FAST_SUITES = [
   { file: "test_charges.js", expect: 20, timeout: 60000 },
   { file: "test_virtual_sites.js", expect: 8, timeout: 60000 },
@@ -56,24 +60,35 @@ const FAST_SUITES = [
   { file: "../scripts/test_bindlog_integration.mjs", expect: 14, timeout: 60000 },
   { file: "test_altloc_cleaner.js", expect: 19, timeout: 60000 },
   { file: "test_rotbonds.js", expect: 17, timeout: 60000 },
+  { file: "test_ala_noise_floor.js", expect: 16, timeout: 60000 },
 ];
 
 // test_thermo: 7 asserts, ~60-120s seeded CG. test_thermo_heavy: 13 asserts,
-// ~200s+ heavy (6 legs × 1800 steps × ~20ms). Both deterministic via SEEDS.
-// calibration_4w52: 10 asserts, ~5s seeded CG (4W52 ΔG anchor + ala-scan).
+// FULL ~200s+ heavy (6 legs × 1800 steps × ~20ms), SMOKE ~15-25s
+// (2 legs × 350 steps). Both deterministic via SEEDS. SMOKE keeps the
+// same 13 asserts (finiteness/boundedness only, sign never asserted).
+// calibration_4w52: 14 asserts, ~6s seeded CG (4W52 ΔG anchor + ala-scan + Stage-3 real SASA burial).
+// validate_flexlig (Stage-5): 10 asserts, ~1s seeded CG (4W52 EPE flexible-ligand
+// second system: 4 rotatable, nonzero ΔS_lig vs BNZ zero control + real SASA).
+// Stage-6 tiers: FAST 231 untouched; --slow = SMOKE heavy + thermo +
+// calibration + flexlig (44 SLOW asserts, total 275); --slow-full/--long =
+// FULL heavy (same 44 asserts, ~200s heavy leg).
 const SLOW_SUITES = [
   { file: "../scripts/test_thermo.mjs", expect: 7, timeout: 600000 },
-  { file: "../scripts/test_thermo_heavy.mjs", expect: 13, timeout: 900000 },
-  { file: "../scripts/calibration_4w52.mjs", expect: 10, timeout: 600000 },
+  { file: "../scripts/test_thermo_heavy.mjs", expect: 13, timeout: 900000, args: SLOW_FULL ? [] : ["--smoke"] },
+  { file: "../scripts/calibration_4w52.mjs", expect: 14, timeout: 600000 },
+  { file: "../scripts/validate_flexlig.mjs", expect: 10, timeout: 600000 },
 ];
 
 /** Run one standalone suite script; return { passed, failed, secs }. */
 function runSuiteFile(suite) {
   const t0 = Date.now();
   let out = "";
+  const suiteArgs = suite.args || [];
+  const suiteEnv = { ...process.env, ...(suite.env || {}) };
   try {
-    out = execFileSync(process.execPath, [path.resolve(__testAllDir, suite.file)], {
-      encoding: "utf-8", timeout: suite.timeout, stdio: ["ignore", "pipe", "pipe"],
+    out = execFileSync(process.execPath, [path.resolve(__testAllDir, suite.file), ...suiteArgs], {
+      encoding: "utf-8", timeout: suite.timeout, stdio: ["ignore", "pipe", "pipe"], env: suiteEnv,
     });
   } catch (e) {
     out = (e.stdout || "") + (e.stderr || "");
@@ -309,13 +324,13 @@ async function runTests() {
   // -----------------------------------------------------------------
   runTier("FAST", FAST_SUITES);
   if (SLOW) {
-    runTier("SLOW", SLOW_SUITES);
+    runTier(SLOW_FULL ? "SLOW-FULL" : "SLOW-SMOKE", SLOW_SUITES);
   } else {
-    console.log("\n[SLOW] skipped (opt-in: `node tests/test_all.js --slow` or SLOW=1) — test_thermo (7, ~3s) + test_thermo_heavy (13, ~200s+) + calibration_4w52 (10, ~5s)");
+    console.log("\n[SLOW] skipped (opt-in: `node tests/test_all.js --slow` = SMOKE heavy ~20s, or `--slow-full`/`--long` = FULL heavy ~200s, or SLOW=1) — test_thermo (7, ~3s) + test_thermo_heavy SMOKE (13, ~15-25s) / FULL (13, ~200s+) + calibration_4w52 (14, ~6s) + validate_flexlig (10, ~1s)");
   }
 
   // -----------------------------------------------------------------
-  // SUMMARY (grand total: Tier-0 32 + FAST 183 [+ SLOW 30])
+  // SUMMARY (grand total: Tier-0 32 + FAST 199 = 231 [SLOW +44 → 275 smoke or full])
   // -----------------------------------------------------------------
   console.log("\n=================================================");
   console.log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

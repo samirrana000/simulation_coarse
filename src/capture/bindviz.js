@@ -221,6 +221,13 @@ export function renderEnergyDecomposition(canvas, bindlog, range = {}) {
 }
 
 /**
+ * Actionable 0-hill convergence hint shared by the PMF canvas (two-line form
+ * below) and the BindViz caption (single-line, via src/main.js drawBindviz).
+ * The nHills>=50 convergence bar matches the PMF panel (src/pmf-panel.js:81);
+ * 50 is a display threshold, not a measured convergence claim.
+ */
+export const PMF_NOHILL_HINT = "no metadynamics hills — enable Funnel bias in Dynamics → Advanced sampling, run ≥ 50 hills for PMF convergence; timeline/energy live regardless";
+/**
  * (c) PMF formation from hill events (well-tempered Gaussians).
  * hills: type 3 events, x = CV, y = height. Renders the PMF at the cursor time.
  */
@@ -240,7 +247,23 @@ export function renderPmfFormation(canvas, bindlog, opts = {}) {
     if (bindlog.evTime[i] > cursorT) break;
     hills.push([bindlog.evX[i], bindlog.evY[i]]);
   }
-  if (hills.length === 0) return drawEmpty(canvas, "no metadynamics hills deposited yet");
+  // Stage-7: actionable 0-hill convergence hint (P1 three-state, P2 steady).
+  // Funnel hills are the only PMF source; timeline/energy render from other
+  // event types regardless. Two-line form of PMF_NOHILL_HINT (single fillText
+  // would clip on the 280px canvas); follows the pmf-panel.js empty pattern.
+  if (hills.length === 0) {
+    try {
+      ctx.fillStyle = "#475569";
+      ctx.font = "11px ui-monospace, monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("no metadynamics hills — enable Funnel bias in Dynamics → Advanced sampling", W / 2, H / 2 - 6);
+      ctx.font = "10px ui-monospace, monospace";
+      ctx.fillStyle = "#334155";
+      ctx.fillText("run ≥ 50 hills for PMF convergence; timeline/energy live regardless", W / 2, H / 2 + 10);
+      ctx.textAlign = "left";
+    } catch (_) { /* headless: mock ctx still records fillText */ }
+    return;
+  }
 
   const binCount = opts.binCount ?? 60;
   const cvRange = opts.cvRange ?? null;
