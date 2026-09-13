@@ -21,8 +21,8 @@ axe-core audit for `index.html:1` and the settings modal.
   });
   ```
 
-- **Space toggles run** (`src/main.js:494` `if(e.code==="Space")`):
-  When no input/select/textarea is focused (`isEditing` guard `src/main.js:475`), pressing **Space** toggles `playBtn` (`index.html:254` `id="playBtn"`) Run/Pause. Prevents page scroll via `e.preventDefault()`.
+- **Space toggles run** (`src/main.js:894` `if(e.code==="Space")`):
+  When no input/select/textarea is focused (`isEditing` guard `src/main.js:886`) AND no natively-activatable element is focused (FP3 `activatesNatively`: BUTTON/A/SUMMARY — native Space wins there, so a keyboard user tabbed onto any other control is never hijacked; Space on a focused Run button still toggles via its native click), pressing **Space** toggles `playBtn` (`index.html:378` `id="playBtn"`) Run/Pause. Prevents page scroll via `e.preventDefault()`.
   ```js
   if (e.code === "Space") {
     e.preventDefault();
@@ -35,7 +35,9 @@ axe-core audit for `index.html:1` and the settings modal.
   `settingsBtn` → `pdbId` → `fetchBtn` → `fileInput` → preset links (`data-ex`) → `includeLig` → `mol2File` → `chainsInput` → `resFrom`/`resTo` → `buildBtn` → hetero buttons → `ligFilter` → `ligSelect` → `placeBtn`/`cancelPlace` → `placePocketBtn` → physics sliders (`rc`/`gamma`/`temp`/`fric`/`mass`/`motionGain`) → `rec` controls → `playBtn`/`resetBtn` → viewer checkboxes → modal `backendSelect` → `threadsInput` → `solventSelect` → modal `saveSettingsBtn` / `closeSettingsBtn`.
   Modal uses `aria-modal="true"` + `role="dialog"` + `aria-labelledby="settingsModalHeading"` (`index.html:280`); focus is restored to opener on close. No focus trap is needed because modal is the only dialog; Esc or backdrop click closes it (`src/settings-panel.js:74`).
 
-- **Other hotkeys** (`src/main.js:497`): `R` resets, `C` toggles recording, `Digit 1-7` toggles control panels — all gated by `isEditing` so they do not fire while typing.
+- **Other hotkeys** (`src/main.js:909+`): `R` resets, `C` toggles recording, `Digit 1-7` toggles control panels — all gated by `isEditing` so they do not fire while typing; Digit index derives from `e.code` (layout-independent, `src/main.js:926`).
+
+- **Focus visibility (FP3, `css/style.css:149`)**: `:focus-visible` accent outline on btn/a/summary/input/select/`#canvas` — mouse clicks stay ring-free, every Tab stop shows. **Canvas semantics (FP3, `index.html`)**: `#canvas` is `tabindex="0"` + `role="img"` with a viewer `aria-label`; all 6 data canvases + 2 dock strips carry `role="img"` + `aria-label` (display-only, no new tab stops).
 
 ## Axe audit — 0 violations
 

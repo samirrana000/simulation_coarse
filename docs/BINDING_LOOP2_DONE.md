@@ -852,5 +852,429 @@ touched JS files; page + all 6 touched servables 200. One mid-session
 gate CLOSED flake (bindlog-integration HB temperature trial 13/1 —
 `0/30 negative HB samples at the exact native reference gate`;
 untouched physics, same flake class as §16) — failing suite alone 14/14,
-`test_all` 231/231, gate rerun OPEN. No new top-level panels (8
+ `test_all` 231/231, gate rerun OPEN. No new top-level panels (8
 unchanged); only +1 DOM id (`thermoCancelBtn`, ⊆ index.html).
+
+## 22. FP1 note (2026-09-13): first-run UX — sample autoload, guided checklist, empty-state audit
+
+Pain: science-complete app, but a new user landed on an empty viewer and
+blank summaries with no path forward (Load → Build → Run → Analyze
+undiscoverable; `structSummary`/`selSummary`/`networkInfo` rendered blank).
+
+(a) Sample autoload — one-click `Load 4W52 sample` button (`index.html`
+Structure panel, id `sampleBtn` ⊆ `src/ui.js`). Reuses the existing
+`fetchPdb` path (local `./4w52.pdb` first, offline OK; RCSB/PDBe fallback)
+via the same preset mechanism as the `data-ex` links — no new blobs, no
+autoload on boot, so the default view is unchanged for returning users;
+emphasized (outline) only while empty (`updateGuide`, `src/main.js`).
+
+(b) Guided checklist — ONE collapsed subpanel in Structure (no new
+top-level panels; 8 unchanged, Digit1-7 intact) with 4 live steps
+(`guideStepLoad/Build/Run/Analyze`, all ⊆ `src/ui.js`). Pure state machine
+`fp1GuideState` (`src/ui.js`) maps existing state
+(parsed/built/steps+time/frames) to ✓/○; `updateGuide` (`src/main.js`)
+paints on build/run/stop clicks + ≤1 Hz `guideTick` in both tick branches
+(catches Analyze/frames with no new hooks).
+
+(c) Empty-state audit — every key canvas/caption now actionable when empty
+(viewer overlay + `#hud` point at the 1-click sample; timeline/scrub,
+`recStatus`, CV/E strips gained next-step hints; PMF/thermo/DCCM/BindViz/
+analysis captions already actionable, kept); fixed 3 dead/blank states
+(`structSummary`, `selSummary`, `networkInfo` was `""`).
+
+Verification at close-out: gate OPEN before (231 PASSED, 42 files clean,
+100 ids) and after (231 PASSED, 42 files clean, **105 ids**).
+`node tests/test_all.js` → 231/231 fast; headless FP1 check
+(`/tmp/opencode/fp1_guide_verify.mjs`) 16/16 — full Load→Build→Run→Analyze
+plus rebuild-reset, run twice. `node --check` clean on all 4 touched JS
+files; serve smoke: page + 4 modules + `4w52.pdb` 200, 5 FP1 ids present,
+8 top-level panels intact. Additive only, zero deps, defaults unchanged.
+
+## 23. FP2 note (2026-09-13): input robustness — failure classes with next-step copy
+
+Pain (open gap from FP1): input robustness — bad PDB text, missing/empty
+ligand, unparsable MOL2, clash-blast placement, and oversized systems threw
+raw `err.message` dumps (or blank states) instead of actionable messages.
+
+What shipped (additive only, zero deps, JSDoc; defaults unchanged; no new
+top-level panels — 8 unchanged, Digit1-7 intact; zero new DOM ids, so
+`src/ui.js` untouched and the DOM contract stays 105):
+
+- NEW `src/input_errors.js` (central validator, dependency-light: imports
+  only the existing `pdb.js`/`mol2.js` parsers): 9 frozen failure classes,
+  each message = what happened + the exact next click (every message carries
+  an imperative "Click" verb); mapped errors ARE `Error` instances
+  (`.code`/`.nextStep`/`.technical`), so existing `catch (err)` paths needed
+  no control-flow changes. `classifyInputError` is idempotent + total (never
+  throws, GENERIC fallback); `formatInputError` renders
+  `⚠ <actionable> (detail: <technical>)` — the single-line
+  summary/caption surfaces cannot host a `<details>` disclosure, so the
+  parenthetical is the collapsed-equivalent (primary copy stays actionable).
+  Pure guards: `validatePdbText` (EMPTY_PDB/NO_ATOM pre-check),
+  `safeParseCa/safeParseMol2/safeParseLigands` (never throw uncaught on
+  garbage — structured `{ ok, data, error }`), `checkSystemSize`,
+  `checkPlacement`. Thresholds (validators only, no physics):
+  `CLASH_RESIDUAL_THRESHOLD = 2.0` (unitless 1/minRatio; converged ⇒ ≤ ~1.18,
+  so > 2.0 = worst contact below 50% vdW sum) and the interactive state
+  limit `MAX_HEAVY_ATOMS = 20000` / `MAX_CA_BEADS = 5000` (~15×/30× headroom
+  over 4W52's 1308/164 — never fires on bundled systems).
+- Wiring (`src/main.js`: load pre-check + fetch/file/MOL2/build catch paths
+  now `formatInputError(classifyInputError(err))`, oversized-system guard
+  after selection; `src/ligand-panel.js`: all place guards + try/catch round
+  `placeLigand`, degenerate/over-threshold poses map to CLASH_HIGH while the
+  pose-kept behavior is unchanged) — reuses existing
+  structSummary/selSummary/mol2Info/ligPlaceInfo/hud surfaces only.
+- NEW `tests/test_input_errors.js` (75 asserts, ~0.1 s, deterministic):
+  frozen classes + thresholds, every class message/nextStep contains Click,
+  raw-throw → class mapping, classify totality (null/undefined/number/
+  object/novel), format primary/secondary contract, `validatePdbText`,
+  garbage matrix (safe parsers never throw), size/placement boundaries,
+  live 4W52 (164 Cα) + benzene.mol2 (6 atoms/6 bonds) + 4W52 ligands (2).
+  `tests/test_all.js` FAST gains the suite (274 FAST, total 306);
+  `scripts/wikiskill_gate.js` baseline 231 → 306.
+
+Failure-class table (input → message → next step):
+
+| Input | Code | Message (what) | Next step (exact click) |
+|---|---|---|---|
+| empty/null/non-string PDB text | EMPTY_PDB | Empty input — no PDB text to parse | Click “Load 4W52 sample (1 click)” or Fetch a PDB ID |
+| header-only/prose, no ATOM/HETATM | NO_ATOM | Not a PDB structure | Click “Load 4W52 sample (1 click)” or drop a valid .pdb |
+| HETATM-only (no Cα) | NO_CA | No Cα backbone to coarse-grain | Click “Load 4W52 sample”, or heavy mode → Build System |
+| empty/unparsable MOL2; place with no ligand | LIGAND_PARSE_FAIL | No usable molecules | Click Ligand MOL2 file → valid .mol2, or Place in Pocket (Auto) |
+| place with no structure/selection; bad pocket center | NO_POCKET | Protein selection empty | Click Build System (≥3 Cα), then Place in Pocket (Auto) |
+| residual > 2.0 / unconverged / degenerate pose | CLASH_HIGH | Steric overlap remains | Click Place in Pocket (Auto), or Random Surface |
+| nHeavy > 20000 or nCa > 5000 | SYSTEM_TOO_LARGE | Exceeds interactive state limit | Click Model & Selection → restrict Chains/range → Build System |
+| selection < 3 Cα beads (bonus class) | SELECTION_EMPTY | Need ≥3 Cα for bonded terms | Click Model & Selection → clear filter → Build System |
+| anything unrecognized | GENERIC | Failed, detail below | Click “Load 4W52 sample (1 click)” to restore known-good |
+
+Verification at close-out: gate OPEN before (231 PASSED, 42 files clean,
+105 ids) and after (**306 PASSED**, 43 files clean, 105 ids);
+`node tests/test_all.js` → 306/306 fast (~14 s, new suite 75/75 in 0.0 s);
+garbage matrix proof (live `node --input-type=module` check): empty →
+EMPTY_PDB, garbage prose → NO_ATOM, header-only → NO_ATOM, HETATM-only →
+NO_CA, bad MOL2 → LIGAND_PARSE_FAIL, clash 5.0 → CLASH_HIGH — all mapped
+(⚠ + Click), zero raw throws; `node --check` clean on all 6 touched/new
+files; serve smoke: page + `input_errors.js`/`main.js`/`ligand-panel.js`/
+`ui.js` + `4w52.pdb` + `benzene.mol2` all 200, 5 FP1 ids present, 8
+ top-level panels intact. No new top-level panels; no new DOM ids.
+
+## 24. FP3 note (2026-09-13): flake root-cause, browser matrix, a11y/keyboard audit
+
+Three QA debts from §§16/21 closed (additive only, zero deps, defaults
+unchanged; no top-level-panel changes — 8 unchanged; no new DOM ids, so
+`src/ui.js` untouched and the DOM contract stays 105):
+
+(a) Flake fix — root cause, not retry-hiding. The §§16/21 flake
+(bindlog-integration HB trial 13/1: `0/30 negative HB samples`, then 14/14
+alone) is unseeded-Langevin tail risk: at the exact native reference the
+directional-HB gate reads 0 by construction (physical), so negative HB
+samples appear only on thermal excursions during the 300-step run — usually
+~20/30, once 0/30. Same stochastic class as the `test_all.js` §8
+temperature block, which hid it with an up-to-10 unseeded-trial
+keep-first-in-band retry loop. Both now seeded (thermo-SEEDS family,
+`src/integrator.js` opt-in `{ seed }`, default path bit-identical):
+- `scripts/test_bindlog_integration.mjs:32-45`: single trajectory seeded
+  (`BINDLOG_SEED`, default 101, `BINDLOG_SEED_BASE` env override mirroring
+  `THERMO_SEED_BASE`). Seed survey (10 seeds) all gave ≥5/30 negatives;
+  seed 101 locks a representative 17/30. The `hbSeen > 0` bar is UNCHANGED
+  (no lowered standard); assert count stays 14/14 so the FAST gate
+  expectation is untouched.
+- `tests/test_all.js:300-324`: retry loop replaced by 3 seeded replicas
+  (`TEMP_SEEDS = [101, 202, 303]`) with a replica-mean assertion in the same
+  260–340 K band. Physics reason: the OU thermostat is exact in
+  distribution, but one 200-step kinetic-T sample carries O(1/√steps) noise
+  while the ensemble mean sits at the bath. Measured: reps
+  [299.9, 280.8, 330.4] → mean 303.7 K. Assert count unchanged (2 in §8).
+- 5-run record (final tree, consecutive): 14/14, 14/14, 14/14, 14/14, 14/14
+  (bit-identical 17/30 negatives each run); override check
+  `BINDLOG_SEED_BASE=202` → 14/14 (18/30, still passing with margin).
+
+(b) Cross-browser matrix — NEW `scripts/smoke_browsers.mjs` (node:http
+static server + dev-playwright, headless): per browser load → open the
+"Getting started" subpanel (real-user path; Playwright treats closed-details
+content as hidden for clickability) → Load 4W52 sample (local `./4w52.pdb`
+first, offline OK) → build (STATE: READY) → Run ~3.5 s → assert step > 0,
+HUD live `t =`, no ⚠ banner, zero uncaught page errors.
+
+| Browser | Version | Steps | HUD | Page errors | Verdict |
+|---|---|---|---|---|---|
+| Chromium (headless) | 151.0.7922.34 (playwright chromium-1234) | step 12115, t = 21.2 ps | live, clean | 0 | PASS |
+| Firefox (headless) | 153.0 (playwright firefox-1538) | step 11400, t = 19.9 ps | live, clean | 0 | PASS |
+| Safari | n/a (no WebKit engine on linux; no Safari binary, no playwright webkit build) | — | — | — | STATIC-ONLY: 200 on `/index.html`, `src/main.js`, `src/ui.js`, `src/integrator.js`, `src/seeded-rng.js`, `4w52.pdb`, `benzene.mol2`, `css/style.css`; real run owed on macOS |
+
+(c) A11y/keyboard audit — all 30 buttons already named (text or
+`aria-label="Close settings"`); Tab order is natural DOM (What-changed →
+Settings → panel summaries → inputs → viewer → canvas); the Digit1-7
+`isEditing` (INPUT/SELECT/TEXTAREA) guard already existed. Gaps fixed:
+- Visible focus: NEW `:focus-visible` accent outline for
+  btn/a/summary/input/select/#canvas (`css/style.css:149-157`; mouse clicks
+  stay ring-free, Tab always shows).
+- Canvas semantics (`index.html`): `#canvas:376` gains `tabindex="0"`
+  `role="img"` + viewer `aria-label`; 6 data canvases
+  (`:239,303,345,361-363`) + 2 dock strips (`:410,412`) gain `role="img"` +
+  `aria-label` (display-only, no new tab stops).
+- Tiny JS guards (`src/main.js:893-895,926` + same-shape fallback
+  `index.html:517`): Space no longer hijacks focused BUTTON/A/SUMMARY
+  (native activation wins; Space on a focused Run button still toggles via
+  its native click); Digit index derives from `e.code` (layout-independent;
+  `e.key` yields symbols with Shift held).
+- Keyboard spot-check (temp harness, both browsers, 16/16): Tab order sane
+  incl. canvas reachability; 2px focus ring on Tab focus; Digit1 while typing
+  leaves panels untouched and types "1"; Space on focused Fetch keeps native
+  behavior; Digit1 outside inputs toggles panel; zero page errors.
+
+Verification at close-out: gate OPEN before (306 PASSED, 43 files clean,
+105 ids) and after (**306 PASSED**, 43 files clean, 105 ids);
+`node tests/test_all.js` → 306/306 fast (seeded §8 mean 303.7 K);
+integration 5× 14/14 above; smoke 2/2 PASS above; `node --check` clean on
+all 4 touched JS files (test_bindlog_integration, test_all, main,
+smoke_browsers) + `index.html` parses. No new top-level panels
+(8 unchanged); no new DOM ids (`src/ui.js` untouched).
+
+## 25. FP4 note (2026-09-13): export/persistence — matrix audit, session save/load, roundtrip
+
+Pain (open gap from FP1–FP3): export/persistence — the BindLog BLG1 blob
+existed (`src/capture/bindlog.js:166` `toBinaryBlob`), PMF CSV + thermo
+table existed ad hoc (`src/analysis.js:619` `pmfCsv`,
+`src/analysis/thermodynamics.js:548` `formatThermoTable`), but no session
+save/load roundtrip and no documented export matrix (thermo TXT, BLG1,
+DCCM CSV, settings JSON had no one-click path).
+
+What shipped (additive only, zero deps, JSDoc; defaults unchanged; no new
+top-level panels — 8 unchanged, Digit1-7 intact; +6 DOM ids, all in
+`src/ui.js` ⊆ `index.html`):
+
+(a) Export-matrix audit — every exportable artifact now has a one-click
+button inside its existing subpanel, all downloads via the existing
+`downloadText`/blob pattern (`src/recorder.js:168`):
+
+| Artifact | Button | Format | Wiring |
+|---|---|---|---|
+| Trajectory XYZ / PDB | Download (`#dlBtn`, Recording) | `.xyz` / `.pdb` | pre-existing (`src/main.js` `recorder.buildFile`) |
+| Trajectory JSON | Download (`#dlBtn` + new `json` `#exportFmt` option) | `.json` (`trajectoryJson`) | `src/main.js` json branch → `src/session.js` `trajectoryJson` |
+| PMF | Export PMF (CSV) (`#anaPmfBtn`, PMF & Analysis) | `.csv` (`pmfCsv`) | pre-existing (`src/analysis-panel.js`) |
+| Thermo table | Export Thermo (TXT) (`#thermoDlBtn`, thermo subpanel) | `.txt` (cached `formatThermoTable`) | `src/analysis-panel.js` (`_lastThermoText` set on both success paths) |
+| BindLog | Export BindLog (BLG1) (`#bindlogDlBtn`, Recording) | `.blg1` (`toBinaryBlob`) | `src/main.js` → `src/session.js` `downloadBlob` |
+| DCCM | Export DCCM (CSV) (`#dccmDlBtn`, DCCM subpanel) | `.csv` (`dccmCsv` i,j,C) | `src/analysis-panel.js` (`_lastDccm` cache) |
+| Settings | Export Settings (JSON) (`#settingsDlBtn`, settings modal footer) | `.json` (`settingsJson`, sim.* keys) | `src/settings-panel.js` |
+| Session | Save Session (JSON) (`#sessSaveBtn`, Recording) + Load via `#sessFile` | `.json` (schema v1, §b) | `src/main.js` + NEW `src/session.js` |
+
+Empty-guarded throughout: thermo/DCCM/BindLog buttons render an actionable
+`⚠ … run first, then Export` hint to the existing `analysisOut`/`recStatus`
+surfaces when there is nothing to export (no silent empty files;
+`trajectoryJson([])` throws `No frames recorded yet`).
+
+(b) Session save/load — NEW `src/session.js` (headless-pure, imports only
+`src/input_errors.js`): `buildSession` / `serializeSession` /
+`validateSession` / `parseSession` + `dccmCsv` / `parseDccmCsv` /
+`trajectoryJson` / `settingsJson` / `downloadBlob` /
+`estimateFramesBytes`; `SESSION_VERSION = 1`,
+`SESSION_MAX_BYTES = 256 KiB`, `SESSION_FILE_MAX_BYTES = 1 MiB`.
+Schema `{version: 1, app, savedAt, pdbId, modelMode, chains, resFrom,
+resTo, includeLig, physicsLevel, ligand:{selected}, thermoLig,
+settings:{backend, numThreads, solventModel, saltM, epsIn, epsOut,
+sasaGamma, respaOn, respaOuterFs, chemicalNetworkOn},
+dynamics:{rc, gamma, temp, fric, mass, motionGain, bindPot, holoSprings},
+recording:{stridePs, maxFrames, exportFmt},
+recorderMeta:{count, spanPs, includeFrames:false, framesOmitted, note}}`.
+Load restores settings + pickers + caption (`applySession` in
+`src/main.js`: pdbId/model/chains/range/includeLig/physicsLevel (+persist),
+ligand + thermo pickers, settingsState + modal inputs, dynamics sliders,
+recording inputs, `canvasCaption` session note + `hud` confirm; file input
+reset so the same file re-loads). Load validation reuses input_errors
+codes: malformed JSON / bad version / bad enum → GENERIC, oversized file →
+SYSTEM_TOO_LARGE, empty → GENERIC.
+Limits (documented cutoff): full PDB text and full trajectory frames are
+NEVER persisted — `recorderMeta` carries counts only (`includeFrames`
+always false, no `frames` key); sessions serialize to ~1 KiB against the
+256 KiB cap; nothing session-shaped goes to localStorage (files only —
+`sim.physicsLevel` remains the single localStorage key).
+
+(c) Roundtrip test — NEW `tests/test_session_roundtrip.js` (46 asserts,
+~0.0 s, deterministic, no `Math.random`): save→load restores
+physicsLevel/picker/settings (L2/all/cpu/temp-300/exportFmt-json/count-42,
+no `frames` key, `< 256 KiB`); guards (empty/malformed→GENERIC, version
+99→GENERIC, `L9`→invalid + build-fallback L0, 1 MiB+1 B file→
+SYSTEM_TOO_LARGE, `estimateFramesBytes(500,164)` exact); BLG1 blob
+parse-back header ok (magic `BLG1`, version 1, `nF=3 n=4`, `nE=11`,
+roundtrip 3 frames/11 events); PMF CSV parse-back row count (header
+`# T=300, gamma=6, hills=5, V0=1660.54`, 96 data rows = `bins`, footer
+`hills,5`); DCCM CSV parse-back (4×4, diagonal 1, off-diag 1e-6);
+trajectory JSON + settings JSON parse-back (`sim.physicsLevel` L2).
+`tests/test_all.js` FAST gains the suite (320 FAST, total 352);
+`scripts/wikiskill_gate.js` baseline 306 → 352.
+
+Verification at close-out: gate OPEN before (306 PASSED, 43 files clean,
+105 ids) and after (**352 PASSED**, 44 files clean, **111 ids**);
+`node tests/test_all.js` → 352/352 fast (~13 s, new suite 46/46 in 0.0 s);
+`node --check` clean on all 8 touched/new files (session, ui, main,
+analysis-panel, settings-panel, test_session_roundtrip, test_all,
+wikiskill_gate); serve smoke: page + 6 JS modules + `4w52.pdb` +
+`benzene.mol2` + `css/style.css` all 200, 6 new ids present, 8 top-level
+panels intact. No new top-level panels; defaults unchanged; large-frame
+guard holds (sessions ~1 KiB, frames never embedded).
+
+## 26. FP5 note (2026-09-13): heavy-build progress UX + CG-interactive/heavy-offline workflow
+
+Pain (open gap from FP1–FP4): heavy mode costs ~77–85 ms/step (S7 pareto) and
+the O(n²) topology build ~30–60 ms on 4W52 (1308 atoms), so a synchronous
+heavy Build froze paint with no progress and no cancel. S7 decided ACCEPT CPU
+(no GPU port — binding terms stay CPU-only), so the fix is honest progress +
+a documented tiered workflow, never a frozen tab.
+
+Blocking points read before the change (`src/main.js`): `buildSystem` built
+the heavy FF synchronously (`new HeavyForceField`) and the hot-rebuild path
+did the same; the run loop already slices per-frame (`integ.advance(steps,
+14)`) with Pause as cancel, so only the build needed chunking. Existing UX
+reused: thermo chunked captions + `_thermoGen` cancel
+(`src/analysis-panel.js:183-218`), BindViz 1 Hz (`src/main.js` bindvizTick),
+`guideStep` checklist (`src/main.js` guideTick).
+
+What shipped (additive only, zero deps, JSDoc; defaults unchanged; no new
+top-level panels — 8 unchanged, Digit1-7 intact; +1 DOM id, in `src/ui.js`):
+
+- Chunked topology (`src/heavy.js`): `buildTopology` refactored into shared
+  `topologyBondRows` (row-range bond loop) + `findTopologyRings` +
+  `finishTopology` (angles/propers/ring-brace tail) with a sync wrapper that
+  is bit-identical; NEW `buildTopologyChunked` (`:475`, `chunkRows` default
+  128) runs the same rows in slices with `setTimeout(0)` yields, per-slice
+  `onProgress`, and cooperative `isCancelled()` polling (throws `heavy build
+  cancelled`). `HeavyForceField` takes an optional 4th `opts.topo` (prebuilt
+  topo skips the sync O(n²); absent → legacy path bit-identical, all 3-arg
+  callers untouched).
+- Build wiring (`src/main.js:540-600,680-778`): CG path stays fully
+  synchronous (fast, no flicker). Heavy prep (ligands/protonation) stays
+  sync, then `runHeavyBuildAsync` chunks topology (11 slices on 4W52) with
+  `Building heavy… topology d/n rows` captions to the reused `#selSummary`,
+  one short sync tail (FF assemble + first-eval integrator, each < ~500 ms),
+  then the shared `finishBuildCommon()` finalize (extracted verbatim — CG
+  and heavy share one finalize). Cancel is the thermo gen-counter pattern:
+  `invalidateHeavyBuild()` bumps `_heavyGen`; stale slices/continuations
+  return early without touching state/DOM. `setHeavyBuilding` disables
+  Build/Run/Reset during work and re-enables after (gen-guarded); NEW
+  `Cancel build` button (`index.html:112`, id `heavyCancelBtn` ⊆
+  `src/ui.js:19`, ships disabled, armed only mid-build).
+- NEW `src/heavy_progress.js` (headless-pure, zero deps):
+  `HEAVY_TOPO_CHUNK_ROWS = 128` (`:19`), `HEAVY_BUILD_CANCELLED` (`:22`),
+  `setHeavyButtons` (`:31`), `setHeavyCaption` + `heavyTopoCaption` (`:56`).
+- Choice documented: run slicing stays `advance(14)` (a single heavy
+  `ff.compute` is atomic — finer slicing infeasible without touching the
+  zero-alloc grid kernels; each step < 500 ms) with HUD 10 Hz + Pause as the
+  run progress/cancel; slider hot-rebuild stays sync (single slice, benign
+  ~100 ms race: build-start params win, retune after READY). No modal — the
+  chunked captions + disabled buttons are the progress surface (P1–P5).
+- Workflow doc (`docs/WORKFLOWS.md` §"CG-interactive / heavy-offline"):
+  L0/L1-interactive vs L2-heavy-offline table (ms from
+  `docs/pareto_frontier.csv` 2026-09-12 FULL: L0 0.237 / L1 0.235 /
+  L1+BindLog 0.216 / L2 84.8 / L3 83.1 / L2-full 85.5; ratio ≈ 400:1),
+  recommended budgets (CG minutes + stride 2 ps/200–500 frames; heavy in-tab
+  ≤ 1000 steps/≤ 100 frames; 1 ns heavy ≈ 1 day → headless scripts only),
+  export-then-analyze path (FP4 one-click matrix → `notebooks/`).
+
+Verification at close-out: gate OPEN before (352 PASSED, 44 files clean,
+111 ids) and after (**352 PASSED**, 45 files clean, **112 ids** — only
++heavyCancelBtn); `node tests/test_all.js` → 352/352 fast (untouched, FAST
+baseline stays 352); headless FP5 proof (`/tmp/opencode/fp5_heavy_proof.mjs`)
+18/18 — sync-vs-chunked topo bit-identical (1507 bonds / 1789 angles / 4160
+propers), 11 progress slices, heartbeat 5× mid-build (vs 0 sync), max slice
+6.4 ms (< 500), cancel throws + gen-counter newest-only finalize,
+button-pair transitions on stubs, `{topo}` FF energy bit-identical
+(−2106.29), single heavy step 14.9 ms (< 500); `node --check` clean on all
+touched files; serve smoke: page + all modules + `4w52.pdb` 200, new id
+present, 8 top-level panels intact.
+
+## 27. FP6 note (2026-09-13): methods/validation table + 1CRN negative control
+
+Pain (open gap from FP1–FP5): numbers scattered across §§8–21, R-docs,
+calibration, and the pareto CSV with no single methods/validation table;
+and every system was 4W52/T4L (BNZ rigid + EPE flexible) — no
+third/negative control, so the pipeline had never been shown to return
+null on a ligand-free system.
+
+What shipped (additive only, zero deps, analysis + docs, NO retuning;
+no UI changes — no new ids, `src/ui.js` untouched):
+
+(a) `docs/VALIDATION.md` (new, concise): trust boundary WITH numbers up
+front (ranking-only, NOT FEP: single-rep ΔG_est underbinds 2–3 kcal/mol
+with bootstrap ±0.16 ⊕ replica-SD ±7.1) + one methods table (system,
+protocol seeds/steps, observable, computed ± error,
+experimental/literature, verdict) covering 4W52-BNZ record
+(−6.82 ± 0.16) + BNZ-only true cavity (−3.64 ± 0.08, EPE inflation −3.18
+reported not corrected) + real SASA (ΔSASA 167.1 ± 3.5 → solvent +2.01 ±
+0.04 → revised ΔG −0.16 vs ITC −5.20 ± 0.20 / NMR −4.20 ± 0.10) + EPE
+flexible (ΔS_lig 0.00305 NONZERO vs BNZ exactly 0) + 1CRN null + heavy
+SMOKE/FULL/LONG + ala-scan (floor 0.05, all `~noise`, NO CG resolution)
++ Schlitter 0.20% / torsion kB·ln12 unit anchors + bench tiers (L0:L2 ≈
+400:1, Loop-2 ≈1.0× on heavy). Run-matrix + script refs included.
+
+(b) Negative control `scripts/validate_1crn_null.mjs` (new, 8 asserts,
+SLOW tier, seeded 701/1701 with `NULL_SEED_BASE` override, <1 s):
+1CRN crambin (46 Cα, 0 HETATM ligands — ligand-free by parse) apo-vs-apo
+CG (both legs binding-off, record protocol T300/ζ8.0/mass-110, 500 steps
+stride 2 → 250 frames/leg; zeros binding vectors by construction; pocket
+= COM-8Å 16 residues, no ligand COM exists). Asserts are
+finiteness/boundedness only — sign never asserted, zero never forced.
+`tests/test_all.js` SLOW_SUITES gains the suite (SLOW 44 → 52, full
+`--slow`/`--slow-full` 396 → 404); FAST/gate baseline untouched (352;
+`scripts/wikiskill_gate.js` comment refreshed, check unchanged).
+
+Numbers (live, seeded 701/1701, three runs bit-identical):
+- 1CRN **ΔH 0.00 ± 0.00** (|ΔH| < 0.5 null-scale bound vs 4W52 signal
+  −3.6/−6.8) — null returns null on the energy channel.
+- 1CRN **−TΔS_pocket +5.67** (bounded < 20, test_thermo bar) — honestly
+  nonzero: apo-vs-apo Schlitter noise floor (S_holo 1.429 vs S_apo 1.448),
+  same variance class as the §15 LONG finding, never a forced zero.
+- f/DOF 5.2 UNDER-SAMPLED by design (pipeline null-smoke only).
+
+Verification at close-out: gate OPEN before (352 PASSED, 45 files clean,
+112 ids) and after (352 PASSED, 45 files clean, 112 ids);
+`node tests/test_all.js` → 352/352 fast (~13 s, unchanged);
+`validate_1crn_null` 8/8 three runs bit-identical (<1 s);
+`node --check` clean on all 4 touched/new files (validate_1crn_null,
+test_all, wikiskill_gate, VALIDATION.md is docs-only). No new top-level
+panels (8 unchanged); no new DOM ids.
+
+## 28. FP7 note (2026-09-13): release closeout — CHANGELOG, version, license/citation, final gate
+
+Gap closed: Loop-2 → followup1-7 → FP1–FP6 shipped science + UX with no
+CHANGELOG/version, an unchecked license/citation surface, and no final
+gate record. Docs/metadata only — zero code-behavior changes (one
+display-only version-string bump; defaults, physics, panels untouched).
+
+(a) BEFORE baseline (working tree, pre-FP7): gate OPEN (45 files clean,
+352 PASSED / 0 FAILED ≥ 352 baseline, 112 ui ids, Digit1-7 vs 8 panels);
+FAST `node tests/test_all.js` → 352/352 in ~13.6 s. No `package.json` in
+this repo (confirmed by glob) — the version flow IS `src/version.js`
+(HUD prefix `src/main.js:1491`, `REMARK` provenance
+`src/recorder.js:117`, console badge); README had usage but no
+version/license/citation section; `LICENSE` (MIT, © 2026 Samir Rana) and
+`CITATION.cff` (`v1.0-jpcb`, Zenodo placeholder) present.
+
+(b) What shipped (additive, docs/metadata only, zero deps):
+- NEW `CHANGELOG.md`: releases phases1-5 → Loop-2 → stages1-7 →
+  followup1-7 → FP1–FP6 → 1.1.0-fp7 with commit hashes
+  (`7de5505`…`173ccad`; FP1–FP6 working tree), FAST lineage
+  32→179→215→231→306→352, SLOW lineage 199→245→249→275→404, one-line
+  key numbers per release, and the FP7 triple gate record.
+- Version `1.0.0-transform` → **`1.1.0-fp7`** (`src/version.js:13`,
+  BUILD_DATE → 2026-09-13): minor, not patch/major — Loop-2 + FP1–FP7
+  were backward-compatible additive-only (no breaking changes → no
+  major; seven finish-product increments → more than a patch). Display
+  only: HUD/REMARK follow automatically; static dock-footer line in
+  `index.html` (text only, zero new DOM ids, no panels touched).
+  `CITATION.cff` `v1.0-jpcb` archival tag intentionally untouched.
+- License/citation: README gains `## Version, license & citation`
+  (version pointer + MIT link + CFF/BibTeX/VALIDATION pointers +
+  ranking-only boundary); secret grep over `src scripts tests ml
+  index.html CITATION.cff` (api-key/secret/password/private-key/token
+  patterns) → zero hits.
+
+(c) VERIFY (all 2026-09-13, final tree): gate AFTER **OPEN** (45 files
+clean, 352 PASSED / 0 FAILED, 112 ids — footer adds zero ids); FAST
+**352/352 in ~13.4 s**; SLOW-SMOKE `--slow` **404/404 in ~29.5 s**
+(FAST 352 + SLOW 52: thermo 7 + heavy SMOKE 13 + calibration 14 +
+flexlig 10 + 1crn-null 8); `node --check` clean (`version.js`,
+`index.html` parses); serve smoke `/`, `src/main.js`,
+`src/version.js`, `4w52.pdb`, `CHANGELOG.md` all 200, footer
+`v1.1.0-fp7` string present in served HTML. No new top-level panels
+(8 unchanged); no new DOM ids (`src/ui.js` untouched).

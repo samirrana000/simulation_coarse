@@ -66,7 +66,21 @@
             <input id="mol2File" type="file" accept=".mol2" />
           </label>
           <div id="mol2Info" class="summary" style="display:none;margin:4px 0;padding:4px 8px;border:1px solid #334155;border-radius:4px;background:#0f172a;"></div>
-          <div id="structSummary" class="summary"></div>
+          <div id="structSummary" class="summary">No structure yet — Fetch a PDB above, drop a file, or 1-click the 4W52 sample below.</div>
+          <details class="subpanel" style="margin-top:6px;">
+            <summary>Getting started — 4-step checklist</summary>
+            <div class="subpanel-body">
+              <div class="row btns" style="margin-bottom:4px;">
+                <button id="sampleBtn" class="btn" type="button" style="flex:1;" title="Load the bundled T4L + benzene demo (local 4w52.pdb first, offline OK; RCSB/PDBe fallback)">Load 4W52 sample (1 click)</button>
+              </div>
+              <ol class="summary" style="margin:4px 0;padding-left:18px;line-height:1.6;">
+                <li id="guideStepLoad">○ Load — fetch a PDB, drop a file, or 1-click sample</li>
+                <li id="guideStepBuild">○ Build — Build System (auto after load)</li>
+                <li id="guideStepRun">○ Run — ▶ Run advances the simulation</li>
+                <li id="guideStepAnalyze">○ Analyze — ● Rec + Run, Stop, then Analyze Trajectory</li>
+              </ol>
+            </div>
+          </details>
         </div>
       </details>
 
@@ -95,6 +109,7 @@
             </label>
           </div>
           <button id="buildBtn" class="btn primary" style="width:100%;margin-top:4px;">Build System</button>
+          <button id="heavyCancelBtn" class="btn" type="button" style="width:100%;margin-top:4px;" disabled title="Cancel the running heavy build (coarse-grained: takes effect at the next topology slice)">Cancel build</button>
           
           <div id="heteroPanel" style="display:none;margin-top:10px;">
             <div class="lbl" style="font-weight:600;color:var(--txt);">Metals &amp; Hetero Atoms Detected</div>
@@ -105,7 +120,7 @@
             </div>
             <div id="heteroList" class="hetero-list"></div>
           </div>
-          <div id="selSummary" class="summary"></div>
+          <div id="selSummary" class="summary">No system built yet — load a structure first (Build runs automatically).</div>
         </div>
       </details>
 
@@ -222,7 +237,7 @@
             3D ligand pose, classifies it into S0–S3, and derives rates from the barriers (Kramers / detailed balance).
             The circles show residence probability; the glow marks the state your ligand is in right now.
           </p>
-          <canvas id="networkCanvas" class="live-canvas" style="width:100%;height:140px;background:#0f172a;border:1px solid #334155;border-radius:5px;"></canvas>
+          <canvas id="networkCanvas" class="live-canvas" role="img" aria-label="Chemical network kinetics plot: bulk, encounter, intermediate, and bound state probabilities" style="width:100%;height:140px;background:#0f172a;border:1px solid #334155;border-radius:5px;"></canvas>
           <div id="networkInfo" class="summary" style="margin-top:6px;"></div>
 
           <div class="row btns" style="margin-top:6px;">
@@ -271,6 +286,7 @@
             <select id="exportFmt">
               <option value="xyz">XYZ (multi-frame)</option>
               <option value="pdb">PDB (multi-MODEL)</option>
+              <option value="json">JSON (frames)</option>
             </select>
           </label>
           <label class="chk"><input id="bindlogOn" type="checkbox" /> BindLog capture (frames + energies + contacts)</label>
@@ -279,6 +295,16 @@
             <button id="recStopBtn" class="btn">Stop</button>
             <button id="dlBtn" class="btn" disabled>Download</button>
           </div>
+          <div class="row btns" style="margin-top:4px;">
+            <button id="bindlogDlBtn" class="btn" type="button" style="flex:1;" title="Download the BindLog capture as a BLG1 binary blob (dense frames + sparse events)">Export BindLog (BLG1)</button>
+          </div>
+          <div class="row btns" style="margin-top:4px;">
+            <button id="sessSaveBtn" class="btn" type="button" style="flex:1;" title="Save settings, picker, and recorder counts as a session JSON file (frames stay in memory)">Save Session (JSON)</button>
+          </div>
+          <label class="field" style="margin-top:4px;">
+            <span class="lbl">Session file (load)</span>
+            <input id="sessFile" type="file" accept=".json,application/json" />
+          </label>
           <div id="recStatus" class="summary">0 frames &middot; 0.00 ns recorded</div>
         </div>
       </details>
@@ -286,7 +312,7 @@
       <details class="panel">
         <summary>PMF &amp; Analysis</summary>
         <div class="panel-body">
-          <canvas id="pmfPlot" class="live-canvas" style="width:100%;height:140px;background:#0f172a;border:1px solid #334155;border-radius:5px;"></canvas>
+          <canvas id="pmfPlot" class="live-canvas" role="img" aria-label="Potential of mean force plot along the funnel collective variable" style="width:100%;height:140px;background:#0f172a;border:1px solid #334155;border-radius:5px;"></canvas>
           <div id="pmfCaption" class="caption mono">PMF: enable Funnel bias in Dynamics &rarr; Advanced sampling, then Run.</div>
           <div class="row btns" style="margin-top:6px;">
             <button id="anaBtn" type="button" class="btn primary" style="flex:1;">Analyze Trajectory</button>
@@ -305,6 +331,9 @@
               <div class="row btns">
                 <button id="thermoBtn" type="button" class="btn" style="flex:1;" title="ΔH−TΔS decomposition: holo recording vs internal apo relaxation">ΔH/ΔS Decomposition</button>
                 <button id="thermoCancelBtn" type="button" class="btn" disabled title="Cancel the running ΔH/ΔS apo relaxation">Cancel</button>
+              </div>
+              <div class="row btns" style="margin-top:4px;">
+                <button id="thermoDlBtn" type="button" class="btn" style="flex:1;" title="Download the last ΔH/ΔS table as TXT">Export Thermo (TXT)</button>
               </div>
               <div id="thermoCaption" class="caption mono" style="margin-top:4px;">Needs a recorded holo trajectory (● Rec, run, Stop). Apo leg runs automatically (binding off).</div>
               <div class="summary">Auto = BNZ cavity (buffer-free default); all = record path (BNZ+EPE, inflates |ΔH| by ≈3.2).</div>
@@ -328,7 +357,10 @@
               <div class="row btns">
                 <button id="dccmBtn" type="button" class="btn" style="flex:1;" title="Cross-correlation heatmap from recorded frames">DCCM Heatmap</button>
               </div>
-              <canvas id="dccmCanvas" class="live-canvas" style="width:100%;height:180px;background:#0f172a;border:1px solid #334155;border-radius:5px;margin-top:6px;"></canvas>
+              <div class="row btns" style="margin-top:4px;">
+                <button id="dccmDlBtn" type="button" class="btn" style="flex:1;" title="Download the last DCCM matrix as CSV (i,j,C)">Export DCCM (CSV)</button>
+              </div>
+              <canvas id="dccmCanvas" class="live-canvas" role="img" aria-label="Dynamic cross-correlation heatmap of residue motions" style="width:100%;height:180px;background:#0f172a;border:1px solid #334155;border-radius:5px;margin-top:6px;"></canvas>
               <div id="dccmCaption" class="caption mono">DCCM: record &ge; 3 frames, then compute.</div>
             </div>
           </details>
@@ -344,9 +376,9 @@
           <details class="subpanel" style="margin-top:8px;">
             <summary>Binding Insights (BindViz)</summary>
             <div class="subpanel-body">
-              <canvas id="bindvizTimeline" class="live-canvas" style="width:100%;height:140px;background:#0f172a;border:1px solid #334155;border-radius:5px;"></canvas>
-              <canvas id="bindvizEnergy" class="live-canvas" style="width:100%;height:140px;background:#0f172a;border:1px solid #334155;border-radius:5px;margin-top:6px;"></canvas>
-              <canvas id="bindvizPmf" class="live-canvas" style="width:100%;height:120px;background:#0f172a;border:1px solid #334155;border-radius:5px;margin-top:6px;"></canvas>
+              <canvas id="bindvizTimeline" class="live-canvas" role="img" aria-label="Binding interaction timeline: contact formation and hydrogen bond events over time" style="width:100%;height:140px;background:#0f172a;border:1px solid #334155;border-radius:5px;"></canvas>
+              <canvas id="bindvizEnergy" class="live-canvas" role="img" aria-label="Binding energy decomposition chart by physical term" style="width:100%;height:140px;background:#0f172a;border:1px solid #334155;border-radius:5px;margin-top:6px;"></canvas>
+              <canvas id="bindvizPmf" class="live-canvas" role="img" aria-label="Binding free energy profile from deposited metadynamics hills" style="width:100%;height:120px;background:#0f172a;border:1px solid #334155;border-radius:5px;margin-top:6px;"></canvas>
               <div id="bindvizCaption" class="caption mono">Enable BindLog capture in Recording, run, then insights render live (1 Hz).</div>
             </div>
           </details>
@@ -359,7 +391,7 @@
     <!-- ======================= RIGHT: VIEWER ======================= -->
     <section id="viewerCol">
       <div id="viewerWrap">
-        <canvas id="canvas"></canvas>
+        <canvas id="canvas" tabindex="0" role="img" aria-label="3D molecular viewer. Drag to rotate, wheel to zoom. Keyboard: Space runs or pauses, R resets."></canvas>
         <div id="toolbar">
           <button id="playBtn" class="btn primary" disabled>&#9654; Run</button>
           <button id="resetBtn" class="btn" disabled>&#8634; Reset</button>
@@ -375,7 +407,7 @@
             </div>
           </details>
         </div>
-        <div id="hud">Load a structure to begin &mdash; drag to rotate, wheel to zoom</div>
+        <div id="hud">Load a structure to begin — 1-click 4W52 sample in Structure · drag to rotate, wheel to zoom</div>
         <div id="canvasCaption" class="caption mono">No system — Load a PDB, Build, then Run. Ligand halo = white ring.</div>
         <div id="metricsHud" class="mono" aria-label="Live metrics">T — · Etot — · PMF — · DCCM —</div>
         <div id="ligandLegend" class="ligand-chip" style="display:none;">
@@ -393,11 +425,12 @@
         </div>
         <div class="dock-row">
           <span class="lbl">CV stream</span>
-          <canvas id="cvStrip" width="220" height="28" aria-label="CV time series"></canvas>
+          <canvas id="cvStrip" width="220" height="28" role="img" aria-label="CV time series"></canvas>
           <span class="lbl">E stream</span>
-          <canvas id="hudSpark" width="220" height="28" aria-label="Energy time series"></canvas>
+          <canvas id="hudSpark" width="220" height="28" role="img" aria-label="Energy time series"></canvas>
           <span id="dockHints" class="mono">[Space] run · [R] reset · [M] mutagenesis · [1-7] panels</span>
         </div>
+        <div class="dock-row"><span class="mono">simulation_coarse v1.1.0-fp7 (2026-09-13) · MIT License · cite via CITATION.cff (v1.0-jpcb)</span></div>
       </footer>
       <details class="panel" id="equations" style="display:none;">
         <summary>Energy model &amp; Biophysics</summary>
@@ -481,6 +514,7 @@
         </div>
       </div>
       <div class="modal-footer">
+        <button id="settingsDlBtn" class="btn" type="button" title="Download the sim.* settings as JSON">Export Settings (JSON)</button>
         <button id="saveSettingsBtn" class="btn primary" type="button">Save &amp; Apply</button>
       </div>
     </div>
@@ -500,8 +534,9 @@
         modal.style.display="none";
         if(btn) btn.focus();
         e.preventDefault();
-      } else if(e.code==="Space" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName||"")){
-        // Space toggles run — mirrors src/main.js:494
+      } else if(e.code==="Space" && !/INPUT|SELECT|TEXTAREA|BUTTON|A|SUMMARY/.test(document.activeElement?.tagName||"")){
+        // Space toggles run — mirrors src/main.js (FP3: skips natively-
+        // activatable BUTTON/A/SUMMARY so focused controls keep native Space)
         if(play && !play.disabled){ e.preventDefault(); play.click(); }
       }
     });

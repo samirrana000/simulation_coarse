@@ -412,7 +412,7 @@ export class Viewer {
       ctx.fillStyle = "#94a3b8";
       ctx.font = "12px sans-serif";
       ctx.textAlign = "left";
-      ctx.fillText("No system — load a PDB and click Build System", 12, 24);
+      ctx.fillText("No system — 1-click 4W52 sample (Structure) or load a PDB, then Build", 12, 24);
       ctx.fillStyle = "#475569";
       ctx.font = "10.5px sans-serif";
       ctx.fillText("Ligand atoms render vivid + white halo ring (see legend)", 12, 40);

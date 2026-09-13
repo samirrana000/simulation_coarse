@@ -9,6 +9,8 @@
  */
 
 import { ui, state } from "./ui.js?v=10";
+import { downloadText } from "./recorder.js?v=10";
+import { settingsJson } from "./session.js?v=10";
 import { GpuAccelerator } from "./gpu.js?v=10";
 import { WorkerPool } from "./worker-pool.js?v=10";
 import { initWebGPU, isSupported as isWebgpuSupported, webgpuStatus } from "./compute/webgpu_backend.js?v=10";
@@ -167,8 +169,7 @@ export function initSettingsModal() {
   }
 
   if (saveSettingsBtn) {
-    saveSettingsBtn.addEventListener("click", () => {
-      // Apply backend settings
+    saveSettingsBtn.addEventListener("click", () => {      // Apply backend settings
       const backendSel = document.getElementById("backendSelect");
       if (backendSel) settingsState.backend = backendSel.value;
 
@@ -225,4 +226,20 @@ export function initSettingsModal() {
       }
     });
   }
+
+  // FP4 export matrix: one-click settings JSON inside the existing modal
+  // footer (additive; downloadText pattern; defaults unchanged).
+  try {
+    const settingsDlBtn = (ui && ui.settingsDlBtn)
+      || (typeof document !== "undefined" ? document.getElementById("settingsDlBtn") : null);
+    if (settingsDlBtn) {
+      settingsDlBtn.addEventListener("click", () => {
+        try {
+          downloadText(settingsJson(settingsState), "settings_sim.json");
+        } catch (err) {
+          if (ui.hud) ui.hud.textContent = "⚠ " + (err?.message ?? String(err));
+        }
+      });
+    }
+  } catch (_) { /* headless */ }
 }

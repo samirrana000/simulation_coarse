@@ -47,7 +47,7 @@ export function updateNetworkPlot(force = false) {
     ctx.fillStyle = "#334155";
     ctx.fillText("The 4 binding macrostates appear here", w / 2, h / 2 + 10);
     const infoEl = document.getElementById("networkInfo");
-    if (infoEl) infoEl.textContent = "";
+    if (infoEl) infoEl.textContent = "Next: load the 4W52 sample (Structure) → Build → Run — live pose tracking drives S0–S3.";
     return;
   }
 

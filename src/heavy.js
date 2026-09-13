@@ -316,12 +316,20 @@ function elementFromName(name, rec) {
  * still passes). Validated on crambin 1CRN (3 SSBOND): tests/test_topology.js
  * asserts ≥3 S–S bonds recovered and no Ca–N 2.9 Å false bond.
  */
-export function buildTopology(atoms) {
+/**
+ * Bond double-loop over the row range [i0, i1): two heavy atoms i,j are
+ * bonded iff r_ij < BOND_SLACK*(r_cov(i)+r_cov(j)) AND r_ij < 2.2 Å.
+ * Shared by buildTopology (full range, sync) and buildTopologyChunked
+ * (row slices with event-loop yields) so both produce bit-identical output.
+ * @param {Array} atoms heavy-atom records
+ * @param {Array} bonds pair list to append [i, j] into
+ * @param {Array<Array<number>>} nbond adjacency lists to append into
+ * @param {number} i0 first row (inclusive)
+ * @param {number} i1 one-past-last row
+ */
+function topologyBondRows(atoms, bonds, nbond, i0, i1) {
   const n = atoms.length;
-  const bonds = [];
-  const nbond = Array.from({ length: n }, () => []);
-
-  for (let i = 0; i < n; i++) {
+  for (let i = i0; i < i1; i++) {
     const A = atoms[i];
     if (A.isMetal) continue;
     const rA = COVALENT_RADIUS[A.element] ?? 0.77;
@@ -338,7 +346,55 @@ export function buildTopology(atoms) {
       }
     }
   }
+}
 
+/**
+ * Ring detection: 5- and 6-membered rings whose cross-ring pairs become
+ * distance braces (shared by both topology builders).
+ * @param {number} n atom count
+ * @param {Array<Array<number>>} nbond adjacency lists
+ * @returns {Array<Array<number>>} detected rings (atom-index paths)
+ */
+function findTopologyRings(n, nbond) {
+  const rings = [];
+  const visited = new Set();
+  for (let start = 0; start < n; start++) {
+    const path = [start];
+    const inPath = new Set([start]);
+    const dfs = (node, parent) => {
+      for (const nbr of nbond[node]) {
+        if (nbr === parent) continue;
+        if (nbr === start) {
+          if (path.length === 5 || path.length === 6) {
+            const sortedKey = [...path].sort((a,b)=>a-b).join("-");
+            if (!visited.has(sortedKey)) {
+              visited.add(sortedKey);
+              rings.push([...path]);
+            }
+          }
+        } else if (!inPath.has(nbr) && path.length < 6) {
+          inPath.add(nbr);
+          path.push(nbr);
+          dfs(nbr, node);
+          path.pop();
+          inPath.delete(nbr);
+        }
+      }
+    };
+    dfs(start, -1);
+  }
+  return rings;
+}
+
+/**
+ * Angles + propers + ring braces from a finished bond graph (shared tail).
+ * @param {Array} atoms heavy-atom records
+ * @param {Array} bonds pair list (ring braces appended here)
+ * @param {Array<Array<number>>} nbond adjacency lists
+ * @returns {{bonds:Array, angles:Array, propers:Array, impropers:Array}}
+ */
+function finishTopology(atoms, bonds, nbond) {
+  const n = atoms.length;
   const angles = [];
   const angleSet = new Set();
   for (let j = 0; j < n; j++) {
@@ -373,39 +429,7 @@ export function buildTopology(atoms) {
 
   const impropers = [];
 
-  // Ring detection: find 5- and 6-membered rings to add cross-ring distance braces
-  const findRings = () => {
-    const rings = [];
-    const visited = new Set();
-    for (let start = 0; start < n; start++) {
-      const path = [start];
-      const inPath = new Set([start]);
-      const dfs = (node, parent) => {
-        for (const nbr of nbond[node]) {
-          if (nbr === parent) continue;
-          if (nbr === start) {
-            if (path.length === 5 || path.length === 6) {
-              const sortedKey = [...path].sort((a,b)=>a-b).join("-");
-              if (!visited.has(sortedKey)) {
-                visited.add(sortedKey);
-                rings.push([...path]);
-              }
-            }
-          } else if (!inPath.has(nbr) && path.length < 6) {
-            inPath.add(nbr);
-            path.push(nbr);
-            dfs(nbr, node);
-            path.pop();
-            inPath.delete(nbr);
-          }
-        }
-      };
-      dfs(start, -1);
-    }
-    return rings;
-  };
-
-  const detectedRings = findRings();
+  const detectedRings = findTopologyRings(n, nbond);
   for (const ring of detectedRings) {
     const len = ring.length;
     // Cross-ring distance restraints to rigidly maintain planar geometry
@@ -419,6 +443,55 @@ export function buildTopology(atoms) {
   }
 
   return { bonds, angles, propers, impropers };
+}
+
+export function buildTopology(atoms) {
+  const n = atoms.length;
+  const bonds = [];
+  const nbond = Array.from({ length: n }, () => []);
+
+  topologyBondRows(atoms, bonds, nbond, 0, n);
+
+  return finishTopology(atoms, bonds, nbond);
+}
+
+/**
+ * Chunked heavy-topology builder (FP5: heavy-build progress UX).
+ * Same bond loop as buildTopology, run in row slices of `chunkRows` with a
+ * `setTimeout(0)` yield between slices so progress captions paint and the
+ * event loop stays free (heartbeat timers fire mid-build). Angles/propers/
+ * ring braces run once at the end via the shared finishTopology tail, so the
+ * result is bit-identical to buildTopology. Cancellation is cooperative:
+ * `isCancelled()` is polled at every slice boundary (and once before the
+ * tail); on cancel it throws `Error("heavy build cancelled")`.
+ * Zero deps; sync tail slices stay < ~500 ms at bundled-system sizes.
+ * @param {Array} atoms heavy-atom records
+ * @param {object} [opts]
+ * @param {number} [opts.chunkRows=128] bond-loop rows per slice
+ * @param {(done:number, total:number) => void} [opts.onProgress] per-slice callback (never throws the build)
+ * @param {() => boolean} [opts.isCancelled] cooperative-cancel poll
+ * @returns {Promise<{bonds:Array, angles:Array, propers:Array, impropers:Array}>}
+ */
+export async function buildTopologyChunked(atoms, opts = {}) {
+  const chunkRows = Math.max(1, Math.floor(opts.chunkRows ?? 128));
+  const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
+  const isCancelled = typeof opts.isCancelled === "function" ? opts.isCancelled : null;
+  const n = atoms.length;
+  const bonds = [];
+  const nbond = Array.from({ length: n }, () => []);
+
+  for (let i0 = 0; i0 < n; i0 += chunkRows) {
+    if (isCancelled && isCancelled()) throw new Error("heavy build cancelled");
+    const i1 = Math.min(n, i0 + chunkRows);
+    topologyBondRows(atoms, bonds, nbond, i0, i1);
+    if (onProgress) {
+      try { onProgress(i1, n); } catch (_) { /* progress must never fail the build */ }
+    }
+    if (i1 < n) await new Promise((r) => setTimeout(r, 0));
+  }
+  if (isCancelled && isCancelled()) throw new Error("heavy build cancelled");
+
+  return finishTopology(atoms, bonds, nbond);
 }
 
 export function buildMetalCoordination(atoms) {
@@ -521,9 +594,15 @@ function improperAngleFlat(atoms, i, j, k, l) {
 
 /**
  * HeavyForceField — High performance all-atom heavy force field.
+ *
+ * FP5: optional 4th arg `opts.topo` accepts a prebuilt topology
+ * ({bonds, angles, propers, impropers} as in buildTopology, e.g. from the
+ * chunked buildTopologyChunked) and skips the internal buildTopology call.
+ * Absent → internal build, bit-identical to before (all existing 3-arg
+ * callers untouched).
  */
 export class HeavyForceField {
-  constructor(system, par = {}, ligands = []) {
+  constructor(system, par = {}, ligands = [], opts = {}) {
     const atoms = system.atoms;
     this.n = atoms.length;
     this.nProt = atoms.filter((a) => a.isProtein).length;
@@ -592,8 +671,8 @@ export class HeavyForceField {
     this.forces = new Float64Array(this.n * 3);
     this.energy = 0;
 
-    // Topology
-    const topo = buildTopology(atoms);
+    // Topology (FP5: prebuilt chunked topo skips the sync O(n²) build).
+    const topo = opts?.topo ?? buildTopology(atoms);
     const coordPairs = buildMetalCoordination(atoms);
     const L = buildLists(atoms, topo, coordPairs);
     this.bonds = new Float64Array(L.bonds);

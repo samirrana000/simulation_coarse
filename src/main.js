@@ -22,15 +22,18 @@ import { ForceField } from "./forcefield.js?v=10";
 import { Funnel } from "./funnel.js?v=10";
 import { LangevinIntegrator } from "./integrator.js?v=10";
 import { fetchPdb, parseCa, parseLigands, parseMol2, selectSystem, summarizeStructure } from "./pdb.js?v=10";
+import { classifyInputError, formatInputError, validatePdbText, checkSystemSize } from "./input_errors.js?v=10";
 import { downloadText } from "./recorder.js?v=10";
+import { buildSession, serializeSession, parseSession, trajectoryJson, downloadBlob } from "./session.js?v=10";
 import { PoseScorer } from "./scorer.js?v=10";
-import { ui, state, viewer, recorder, initParamReadouts, updateSelSummary, updateRecStatus } from "./ui.js?v=10";
+import { ui, state, viewer, recorder, initParamReadouts, updateSelSummary, updateRecStatus, fp1GuideState } from "./ui.js?v=10";
 import "./analysis-panel.js?v=10"; // side-effect: Analyze + Phase-4 workflow buttons
 import { dccmTick, drawDccmEmpty, invalidateThermo, refreshThermoLigPicker } from "./analysis-panel.js?v=10"; // steady ≤1 Hz DCCM empty redraw (P2)
 import { applyMLToFF } from "./ml-tier.js?v=10";
 import { updatePMFPlot } from "./pmf-panel.js?v=10";
 import { initLigandPanel, updateMol2PlaceButton } from "./ligand-panel.js?v=10";
-import { parseHeavy, HeavyForceField, selectHeavy, appendHeavyLigands } from "./heavy.js?v=10";
+import { parseHeavy, HeavyForceField, selectHeavy, appendHeavyLigands, buildTopologyChunked } from "./heavy.js?v=10";
+import { HEAVY_TOPO_CHUNK_ROWS, setHeavyButtons, setHeavyCaption, heavyTopoCaption } from "./heavy_progress.js?v=10";
 import { assignProtonationStates, applyProtonationStates } from "./chem/protonation.js?v=10";
 import { initSettingsModal, settingsState, workerPool, gpuAccelerator, persistPhysicsLevel, restorePhysicsLevelSelect } from "./settings-panel.js?v=10";
 import { RESPAStepper, splitForceField } from "./physics/integrators/respa.js?v=10";
@@ -101,14 +104,18 @@ function updateDockTimeline() {
   }
   if (ui.scrubLabel) {
     const cur = ui.scrub ? Number(ui.scrub.value) || 0 : 0;
-    ui.scrubLabel.textContent = `${recorder.count > 0 ? cur + 1 : 0} / ${recorder.count} frames`;
+    ui.scrubLabel.textContent = recorder.count > 0
+      ? `${cur + 1} / ${recorder.count} frames`
+      : "0 / 0 frames — ● Rec + Run to record";
   }
 }
 if (ui.scrub) {
   ui.scrub.addEventListener("input", () => {
     const i = Number(ui.scrub.value);
     const fr = recorder.getFrame(i);
-    if (ui.scrubLabel) ui.scrubLabel.textContent = `${recorder.count > 0 ? i + 1 : 0} / ${recorder.count} frames`;
+    if (ui.scrubLabel) ui.scrubLabel.textContent = recorder.count > 0
+      ? `${i + 1} / ${recorder.count} frames`
+      : "0 / 0 frames — ● Rec + Run to record";
     if (!fr || !state.integ || !viewer) return;
     if (fr.pos.length === state.integ.pos.length) {
       state.integ.pos.set(fr.pos);
@@ -262,6 +269,10 @@ if (ui.motionGain && ui.v_motionGain) {
 /*  Structure loading                                                  */
 /* ------------------------------------------------------------------ */
 async function loadStructure(text, sourceLabel) {
+  // FP2: pre-validate raw text so empty/garbage inputs get an actionable
+  // failure class (what + next click) instead of a raw parser dump.
+  const preErr = validatePdbText(text);
+  if (preErr) throw preErr;
   state.pdbText = text;
   let caErr = null, heavyErr = null;
   try {
@@ -278,7 +289,9 @@ async function loadStructure(text, sourceLabel) {
   }
 
   if (!state.parsed && !state.parsedHeavy) {
-    throw new Error(caErr?.message || heavyErr?.message || "No usable atoms found in PDB file.");
+    // FP2: map the raw parser failure to an actionable failure class
+    // (technical detail kept as secondary suffix by formatInputError).
+    throw classifyInputError(caErr || heavyErr || new Error("No usable atoms found in PDB file."));
   }
 
   state.libraryLigand = null;
@@ -304,8 +317,9 @@ if (ui.fetchBtn && ui.pdbId) {
     try {
       await loadStructure(await fetchPdb(id), `PDB ${id.toUpperCase()}`);
     } catch (err) {
-      if (ui.structSummary) ui.structSummary.textContent = "⚠ " + err.message;
-      if (ui.hud) ui.hud.textContent = "⚠ " + err.message;
+      // FP2: actionable copy primary, raw detail secondary (no raw dump).
+      if (ui.structSummary) ui.structSummary.textContent = formatInputError(err);
+      if (ui.hud) ui.hud.textContent = formatInputError(err);
     }
   });
 
@@ -324,6 +338,63 @@ document.querySelectorAll("[data-ex]").forEach((a) =>
   })
 );
 
+// FP1 — one-click 4W52 sample (first-run UX). Reuses the existing fetchPdb
+// path (local ./4w52.pdb first, offline OK; RCSB/PDBe fallback) via the
+// same preset mechanism as the data-ex links above. User-initiated only —
+// no autoload, so the default view is unchanged for returning users.
+if (ui.sampleBtn) {
+  ui.sampleBtn.addEventListener("click", () => {
+    if (ui.pdbId) ui.pdbId.value = "4W52";
+    if (ui.fetchBtn) ui.fetchBtn.click();
+    try { updateGuide(); } catch (_) { /* headless */ }
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  FP1 — guided checklist (Load → Build → Run → Analyze)               */
+/* ------------------------------------------------------------------ */
+// One collapsed subpanel in Structure (index.html); live ✓/○ driven by
+// existing state (parsed/built/steps+time/frames). Polled at ≤1 Hz from
+// tick (both branches) so Analyze/frames progress needs no new hooks;
+// direct calls below cover the click transitions.
+const GUIDE_LABELS = {
+  load: "Load — fetch a PDB, drop a file, or 1-click sample",
+  build: "Build — Build System (auto after load)",
+  run: "Run — ▶ Run advances the simulation",
+  analyze: "Analyze — ● Rec + Run, Stop, then Analyze Trajectory",
+};
+function readGuideInput() {
+  return {
+    hasPdb: !!(state.pdbText || state.parsed || state.parsedHeavy),
+    hasBuild: !!(state.ff && state.integ),
+    hasRun: !!state.running,
+    steps: state.integ ? (state.integ.steps ?? 0) : 0,
+    time: state.integ ? (state.integ.time ?? 0) : 0,
+    nFrames: recorder ? (recorder.count ?? 0) : 0,
+  };
+}
+export function updateGuide() {
+  let s;
+  try { s = fp1GuideState(readGuideInput()); } catch (_) { return; }
+  try {
+    const paint = (el, done, key) => { if (el) el.textContent = `${done ? "✓" : "○"} ${GUIDE_LABELS[key]}`; };
+    paint(ui.guideStepLoad, s.load, "load");
+    paint(ui.guideStepBuild, s.build, "build");
+    paint(ui.guideStepRun, s.run, "run");
+    paint(ui.guideStepAnalyze, s.analyze, "analyze");
+    // Guarded offer: emphasize the 1-click sample only while empty.
+    if (ui.sampleBtn) ui.sampleBtn.style.outline = s.load ? "" : "1px solid #38bdf8";
+  } catch (_) { /* headless */ }
+}
+let _lastGuideTick = 0;
+function guideTick(now) {
+  const t = now ?? 0;
+  if (t - _lastGuideTick < 1000) return;
+  _lastGuideTick = t;
+  updateGuide();
+}
+try { updateGuide(); } catch (_) { /* headless: paints defaults when DOM exists */ }
+
 if (ui.fileInput) {
   ui.fileInput.addEventListener("change", async () => {
     const f = ui.fileInput.files[0];
@@ -331,8 +402,9 @@ if (ui.fileInput) {
     try {
       await loadStructure(await f.text(), f.name);
     } catch (err) {
-      if (ui.structSummary) ui.structSummary.textContent = "⚠ " + err.message;
-      if (ui.hud) ui.hud.textContent = "⚠ " + err.message;
+      // FP2: actionable copy primary, raw detail secondary (no raw dump).
+      if (ui.structSummary) ui.structSummary.textContent = formatInputError(err);
+      if (ui.hud) ui.hud.textContent = formatInputError(err);
     }
   });
 }
@@ -353,7 +425,8 @@ if (ui.mol2File) {
     }
     try {
       const mols = parseMol2(await f.text());
-      if (!mols.length) throw new Error(`${f.name}: no usable molecules in MOL2 file`);
+      // FP2: empty MOL2 ⇒ actionable LIGAND_PARSE_FAIL (not a raw dump).
+      if (!mols.length) throw classifyInputError(new Error(`${f.name}: no usable molecules in MOL2 file`), { stage: "mol2" });
       state.mol2Ligands = mols;
       state.mol2Fn = f.name;
       const nAtoms = mols.reduce((s, m) => s + m.atoms.length, 0);
@@ -369,7 +442,8 @@ if (ui.mol2File) {
       state.mol2Ligands = null;
       state.mol2Fn = null;
       if (ui.mol2Info) {
-        ui.mol2Info.textContent = "⚠ " + err.message;
+        // FP2: actionable copy primary, raw detail secondary (no raw dump).
+        ui.mol2Info.textContent = formatInputError(classifyInputError(err, { stage: "mol2" }));
         ui.mol2Info.style.display = "block";
       }
       updateMol2PlaceButton();
@@ -461,8 +535,69 @@ function bindLogWanted() {
   } catch (_) { return false; }
 }
 
+/* ------------------------------------------------------------------ */
+/*  FP5 — chunked heavy build (progress + cancel, S7 ACCEPT-CPU follow-up) */
+/* ------------------------------------------------------------------ */
+// Heavy mode costs ~15 ms/step here (~77–85 ms/step on the S7 pareto
+// machine) and the O(n²) topology build ~30–60 ms on 4W52, so a synchronous
+// heavy Build froze paint. The run loop already slices per-frame
+// (advance(steps, 14) + Pause as cancel); the build did not. FP5 chunks the
+// build: ligand/protonation prep stays sync (fast), topology rows run via
+// buildTopologyChunked (setTimeout yields + per-slice captions), then one
+// short sync tail (FF assemble + first-eval integrator, each < ~500 ms).
+// Cancel is the thermo generation-counter pattern: invalidateHeavyBuild()
+// bumps _heavyGen; stale slices/continuations return early without touching
+// state or the DOM. CG path stays fully synchronous (fast, no flicker).
+let _heavyGen = 0;
+/**
+ * Cancel any in-flight chunked heavy build (e.g. on a fresh Build click,
+ * a model switch, or the Cancel-build button). Additive FP5 hook; safe to
+ * call when idle or headless. Mirrors invalidateThermo().
+ */
+export function invalidateHeavyBuild() {
+  _heavyGen++;
+  try { if (ui.buildBtn) ui.buildBtn.disabled = false; } catch (_) {}
+  try { if (ui.playBtn) ui.playBtn.disabled = false; } catch (_) {}
+  try { if (ui.resetBtn) ui.resetBtn.disabled = false; } catch (_) {}
+  try {
+    const cb = ui.heavyCancelBtn
+      ?? (typeof document !== "undefined" ? document.getElementById("heavyCancelBtn") : null);
+    if (cb) cb.disabled = true;
+  } catch (_) {}
+}
+/** Live control refs with a headless-safe fallback for the cancel button. */
+function heavyControls() {
+  let cancel = null;
+  try {
+    cancel = ui.heavyCancelBtn
+      ?? (typeof document !== "undefined" ? document.getElementById("heavyCancelBtn") : null);
+  } catch (_) { cancel = null; }
+  return { buildBtn: ui.buildBtn ?? null, playBtn: ui.playBtn ?? null, resetBtn: ui.resetBtn ?? null, cancelBtn: cancel };
+}
+/**
+ * Toggle Build/Run/Reset vs Cancel while a heavy build is in flight (FP5).
+ * @param {boolean} building true while chunked slices are running
+ */
+function setHeavyBuilding(building) {
+  try { setHeavyButtons(heavyControls(), building); } catch (_) {}
+}
+/** Progress line to the reused build-summary surface (#selSummary, no new ids). */
+function setHeavyCaptionText(txt) {
+  try {
+    const el = ui.selSummary
+      ?? (typeof document !== "undefined" ? document.getElementById("selSummary") : null);
+    setHeavyCaption(el, txt);
+  } catch (_) {}
+}
+if (ui.heavyCancelBtn) ui.heavyCancelBtn.addEventListener("click", () => {
+  invalidateHeavyBuild(); // bump generation → stale topo slices/continuations return early
+  setHeavyBuilding(false); // belt-and-braces idle state (invalidateHeavyBuild already resets)
+  setHeavyCaptionText("cancelled — heavy build cancelled by user. Click Build System to retry.");
+});
+
 export function buildSystem() {
   try { invalidateThermo(); } catch (_) {} // Stage-5: cancel in-flight thermo apo run
+  try { invalidateHeavyBuild(); } catch (_) {} // FP5: cancel in-flight heavy build (stale continuations abort)
   if (!state.parsed && !state.parsedHeavy) return;  if (!state.parsed && state.parsedHeavy && ui.modelMode) ui.modelMode.value = "heavy";
   state.heavyMode = ui.modelMode?.value === "heavy";
   const chains = parseParamChainIds();
@@ -487,10 +622,25 @@ export function buildSystem() {
     }
   } catch (err) {
     console.error("[buildSystem]", err);
-    if (ui.selSummary) ui.selSummary.textContent = "⚠ " + err.message;
-    if (ui.hud) ui.hud.textContent = "⚠ " + err.message;
+    // FP2: actionable copy primary, raw detail secondary (no raw dump).
+    if (ui.selSummary) ui.selSummary.textContent = formatInputError(err);
+    if (ui.hud) ui.hud.textContent = formatInputError(err);
     return;
   }
+
+  // FP2: oversized-system guard (interactive state limit). Within-limit
+  // systems (all bundled files) flow through untouched.
+  try {
+    const sizeErr = state.heavyMode
+      ? checkSystemSize({ nHeavy: state.sel?.atoms?.length ?? 0 })
+      : checkSystemSize({ nCa: state.sel?.beads?.length ?? 0 });
+    if (sizeErr) {
+      console.error("[buildSystem]", sizeErr);
+      if (ui.selSummary) ui.selSummary.textContent = formatInputError(sizeErr);
+      if (ui.hud) ui.hud.textContent = formatInputError(sizeErr);
+      return;
+    }
+  } catch (_) { /* validator never throws; build proceeds */ }
 
   // Loop-2 S7: physics-level selector feeds the FF flags (default L0 =
   // pre-Loop-2 baseline, bit-identical). CG consumes charges/hbMode,
@@ -532,8 +682,13 @@ export function buildSystem() {
         state.protonation = null;
       }
     }
-    state.ff = new HeavyForceField({ atoms: state.sel.atoms }, par, []);
-    workerPool.initSystem(state.ff);
+    // FP5: hand the final atom set to the chunked async builder (progress +
+    // cancel); the old system (if any) stays live until finalize swaps it.
+    const myGen = _heavyGen;
+    setHeavyBuilding(true);
+    setHeavyCaptionText(heavyTopoCaption(0, state.sel.atoms.length));
+    void runHeavyBuildAsync(myGen, par);
+    return;
   } else {
     state.ligands = [];
     if (state.libraryLigand) {
@@ -546,6 +701,63 @@ export function buildSystem() {
     state.ff = new ForceField(state.sel, par, state.ligands);
   }
 
+  finishBuildCommon();
+}
+
+/**
+ * Chunked heavy-build continuation (FP5): topology rows with progress +
+ * cooperative cancel, then one short sync tail (FF assemble + integrator
+ * first-eval, each < ~500 ms at bundled sizes), then the shared finalize.
+ * Never throws (all failures render to the reused summary surfaces); stale
+ * generations return early without touching state or the DOM.
+ * @param {number} myGen generation captured at handoff
+ * @param {object} par force-field params captured at handoff
+ */
+async function runHeavyBuildAsync(myGen, par) {
+  const n = state.sel?.atoms?.length ?? 0;
+  let topo = null;
+  try {
+    topo = await buildTopologyChunked(state.sel.atoms, {
+      chunkRows: HEAVY_TOPO_CHUNK_ROWS,
+      onProgress: (done, total) => { if (myGen === _heavyGen) setHeavyCaptionText(heavyTopoCaption(done, total)); },
+      isCancelled: () => myGen !== _heavyGen,
+    });
+  } catch (err) {
+    if (myGen !== _heavyGen) return; // superseded / cancelled — newer build owns the UI
+    console.error("[buildSystem][heavy-topology]", err);
+    if (ui.selSummary) ui.selSummary.textContent = formatInputError(err);
+    if (ui.hud) ui.hud.textContent = formatInputError(err);
+    if (myGen === _heavyGen) setHeavyBuilding(false);
+    return;
+  }
+  if (myGen !== _heavyGen) return;
+  try {
+    setHeavyCaptionText(`Building heavy… assembling force field (${n} atoms).`);
+    state.ff = new HeavyForceField({ atoms: state.sel.atoms }, par, [], { topo });
+    workerPool.initSystem(state.ff);
+    if (myGen !== _heavyGen) return;
+    setHeavyCaptionText("Building heavy… initializing integrator.");
+    // Paint + heartbeat before the ~15 ms first-eval slice below.
+    await new Promise((r) => setTimeout(r, 0));
+    if (myGen !== _heavyGen) return;
+    finishBuildCommon(); // integrator, funnel, viewer, recorder, summaries, READY
+  } catch (err) {
+    if (myGen !== _heavyGen) return;
+    console.error("[buildSystem][heavy]", err);
+    // FP2: actionable copy primary, raw detail secondary (no raw dump).
+    if (ui.selSummary) ui.selSummary.textContent = formatInputError(err);
+    if (ui.hud) ui.hud.textContent = formatInputError(err);
+  } finally {
+    if (myGen === _heavyGen) setHeavyBuilding(false);
+  }
+}
+
+/**
+ * Shared build finalize (CG sync path + heavy async continuation): fresh
+ * integrator, per-term accumulator flag, funnel, viewer, recorder/summaries.
+ * Extracted verbatim from buildSystem so both modes share one finalize.
+ */
+function finishBuildCommon() {
   state.integ = new LangevinIntegrator(state.ff.ref, state.ff, Number(ui.mass?.value || 110));
   // Loop-2 S4+S7: keep per-term accumulators on across rebuilds while
   // capturing (manual checkbox OR L2 full-rigor tier).
@@ -614,6 +826,7 @@ export function buildSystem() {
   if (ui.resetBtn) ui.resetBtn.disabled = false;
   state._prevPos = null;
   state.nanWarning = false;
+  try { updateGuide(); } catch (_) { /* headless */ } // FP1: Build ✓
 }
 
 initLigandPanel(buildSystem);
@@ -744,6 +957,7 @@ if (ui.playBtn) {
     if (!state.integ) return;
     state.running = !state.running;
     ui.playBtn.textContent = state.running ? "⏸ Pause" : "▶ Run";
+    try { updateGuide(); } catch (_) { /* headless */ } // FP1: Run ✓ (latches via steps/time)
   });
 }
 
@@ -796,7 +1010,14 @@ if (typeof window !== "undefined") {
 
     if (isEditing) return;
 
+    // FP3 a11y: Space must not hijack natively-activatable elements. When a
+    // <button>/<a>/<summary> has focus, Space already does the right thing
+    // (activate the button, follow/toggle natively) — stealing it for Run
+    // would break keyboard users tabbed onto any other control. (Space on a
+    // focused Run button still toggles via its native click.)
+    const activatesNatively = tag === "BUTTON" || tag === "A" || tag === "SUMMARY";
     if (e.code === "Space") {
+      if (activatesNatively) return;
       e.preventDefault();
       if (ui.playBtn && !ui.playBtn.disabled) ui.playBtn.click();
     } else if (e.code === "KeyR" && !e.ctrlKey && !e.metaKey) {
@@ -825,7 +1046,9 @@ if (typeof window !== "undefined") {
         ui.recBtn?.click();
       }
     } else if (/^Digit[1-7]$/.test(e.code)) {
-      const idx = parseInt(e.key, 10) - 1;
+      // FP3: index from e.code (layout-independent) — e.key yields symbols
+      // with Shift held (e.g. "!" for Digit1) and would misindex.
+      const idx = Number(e.code.slice(5)) - 1;
       const panels = document.querySelectorAll("#controls > .panel");
       if (panels[idx]) {
         panels[idx].open = !panels[idx].open;
@@ -843,12 +1066,14 @@ if (ui.recBtn) {
     if (!state.integ) return;
     recorder.start(state.integ.time, Number(ui.stridePs.value), Number(ui.maxFrames.value));
     ui.recBtn.classList.add("rec-on");
+    try { updateGuide(); } catch (_) { /* headless */ } // FP1: Analyze progress
   });
 }
 if (ui.recStopBtn) {
   ui.recStopBtn.addEventListener("click", () => {
     recorder.stop();
     ui.recBtn.classList.remove("rec-on");
+    try { updateGuide(); } catch (_) { /* headless */ } // FP1: frames landed → Analyze ✓
   });
 }
 // Loop-2 S4 (R6 §5): BindLog capture toggle — flips the FF per-term
@@ -878,11 +1103,187 @@ if (ui.dlBtn) {
         seed: (typeof state.seed !== "undefined" ? state.seed : 0),
         date: BUILD_DATE,
       };
+      // FP4: JSON trajectory export (new exportFmt option; XYZ/PDB path untouched).
+      if (fmt === "json") {
+        const text = trajectoryJson(recorder.frames, recorder.times, prov);
+        downloadText(text, `cg_traj_${recorder.count}frames.json`);
+        return;
+      }
       const text = recorder.buildFile(fmt, state.sel.beads, prov);
       const name = `cg_traj_${recorder.count}frames.${fmt}`;
       downloadText(text, name);
     } catch (err) {
       if (ui.recStatus) ui.recStatus.textContent = "⚠ " + err.message;
+    }
+  });
+}
+
+// FP4 export matrix + session save/load (additive; existing Recording panel
+// only — no new top-level panels). Session files carry settings/picker/counts;
+// full frames + PDB text are never persisted (counts only, see session.js).
+function collectSessionSnapshot() {
+  return {
+    pdbId: (ui.pdbId?.value ?? "").trim(),
+    modelMode: ui.modelMode?.value ?? "cg",
+    chains: ui.chainsInput?.value ?? "",
+    resFrom: ui.resFrom?.value === "" || ui.resFrom?.value == null ? null : Number(ui.resFrom.value),
+    resTo: ui.resTo?.value === "" || ui.resTo?.value == null ? null : Number(ui.resTo.value),
+    includeLig: ui.includeLig?.checked ?? true,
+    physicsLevel: ui.physicsLevel?.value ?? settingsState.physicsLevel ?? "L0",
+    ligand: { selected: ui.ligSelect?.value ?? "" },
+    thermoLig: ui.thermoLig?.value ?? "auto",
+    settings: { ...settingsState },
+    dynamics: {
+      rc: Number(ui.rc?.value ?? 10), gamma: Number(ui.gamma?.value ?? 2),
+      temp: Number(ui.temp?.value ?? 300), fric: Number(ui.fric?.value ?? 8),
+      mass: Number(ui.mass?.value ?? 110), motionGain: Number(ui.motionGain?.value ?? 1.3),
+      bindPot: ui.bindPot?.checked ?? true, holoSprings: ui.holoSprings?.checked ?? true,
+    },
+    recording: {
+      stridePs: Number(ui.stridePs?.value ?? 2), maxFrames: Number(ui.maxFrames?.value ?? 500),
+      exportFmt: ui.exportFmt?.value ?? "xyz",
+    },
+    recorderMeta: { count: recorder.count, spanPs: recorder.times.length > 1 ? recorder.times[recorder.times.length - 1] - recorder.times[0] : 0 },
+  };
+}
+
+/** Apply a validated session object to settings + pickers + caption (pure-DOM). */
+function applySession(sess) {
+  try {
+    if (typeof sess.pdbId === "string" && ui.pdbId) ui.pdbId.value = sess.pdbId;
+    if (sess.modelMode && ui.modelMode) ui.modelMode.value = sess.modelMode;
+    if (typeof sess.chains === "string" && ui.chainsInput) ui.chainsInput.value = sess.chains;
+    if (ui.resFrom) ui.resFrom.value = sess.resFrom ?? "";
+    if (ui.resTo) ui.resTo.value = sess.resTo ?? "";
+    if (typeof sess.includeLig === "boolean" && ui.includeLig) ui.includeLig.checked = sess.includeLig;
+    if (sess.physicsLevel && ui.physicsLevel) {
+      ui.physicsLevel.value = sess.physicsLevel;
+      try { persistPhysicsLevel(sess.physicsLevel); } catch (_) {}
+    } else if (sess.physicsLevel) {
+      try { persistPhysicsLevel(sess.physicsLevel); } catch (_) {}
+    }
+    if (sess.ligand && typeof sess.ligand.selected === "string" && ui.ligSelect) {
+      try {
+        const opt = [...ui.ligSelect.options].find((o) => o.value === sess.ligand.selected);
+        if (opt) ui.ligSelect.value = sess.ligand.selected;
+      } catch (_) {}
+    }
+    if (typeof sess.thermoLig === "string" && ui.thermoLig) {
+      try {
+        const opt = [...ui.thermoLig.options].find((o) => o.value === sess.thermoLig);
+        ui.thermoLig.value = opt ? sess.thermoLig : "auto";
+      } catch (_) {}
+    }
+    const st = sess.settings && typeof sess.settings === "object" ? sess.settings : {};
+    for (const k of ["backend", "solventModel", "saltM", "epsIn", "epsOut", "sasaGamma", "numThreads", "respaOn", "respaOuterFs", "chemicalNetworkOn"]) {
+      if (st[k] !== undefined) {
+        try { settingsState[k] = st[k]; } catch (_) {}
+      }
+    }
+    try {
+      const setVal = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined) el.value = String(v); };
+      const setChk = (id, v) => { const el = document.getElementById(id); if (el && typeof v === "boolean") el.checked = v; };
+      setVal("backendSelect", settingsState.backend);
+      setVal("threadsInput", settingsState.numThreads);
+      setVal("solventSelect", settingsState.solventModel);
+      setVal("saltInput", (settingsState.saltM * 1000).toFixed(0));
+      setVal("epsInInput", settingsState.epsIn);
+      setVal("epsOutInput", settingsState.epsOut);
+      setVal("sasaInput", settingsState.sasaGamma);
+      setChk("netToggleModal", settingsState.chemicalNetworkOn);
+      setChk("respaToggle", settingsState.respaOn);
+      setVal("respaOuter", settingsState.respaOuterFs);
+    } catch (_) { /* headless */ }
+    const dyn = sess.dynamics && typeof sess.dynamics === "object" ? sess.dynamics : {};
+    try {
+      const setPair = (id, numId, lblId, v) => {
+        if (!Number.isFinite(Number(v))) return;
+        const el = document.getElementById(id), num = numId ? document.getElementById(numId) : null;
+        const lbl = lblId ? document.getElementById(lblId) : null;
+        if (el) el.value = String(v);
+        if (num) num.value = String(v);
+        if (lbl) lbl.textContent = String(v);
+      };
+      setPair("rc", "rcNum", "v_rc", dyn.rc);
+      setPair("gamma", "gammaNum", "v_gamma", dyn.gamma);
+      setPair("temp", "tempNum", "v_temp", dyn.temp);
+      setPair("fric", "fricNum", "v_fric", dyn.fric);
+      setPair("mass", "massNum", "v_mass", dyn.mass);
+      setPair("motionGain", "motionGainNum", "v_motionGain", dyn.motionGain);
+      if (typeof dyn.bindPot === "boolean" && ui.bindPot) ui.bindPot.checked = dyn.bindPot;
+      if (typeof dyn.holoSprings === "boolean" && ui.holoSprings) ui.holoSprings.checked = dyn.holoSprings;
+    } catch (_) { /* headless */ }
+    const rec = sess.recording && typeof sess.recording === "object" ? sess.recording : {};
+    try {
+      if (Number.isFinite(Number(rec.stridePs)) && ui.stridePs) ui.stridePs.value = String(rec.stridePs);
+      if (Number.isFinite(Number(rec.maxFrames)) && ui.maxFrames) ui.maxFrames.value = String(rec.maxFrames);
+      if (typeof rec.exportFmt === "string" && ui.exportFmt) {
+        try {
+          const opt = [...ui.exportFmt.options].find((o) => o.value === rec.exportFmt);
+          if (opt) ui.exportFmt.value = rec.exportFmt;
+        } catch (_) {}
+      }
+    } catch (_) { /* headless */ }
+    try { onParamChange(false); } catch (_) { /* no live system yet */ }
+    const n = sess.recorderMeta && Number.isFinite(Number(sess.recorderMeta.count)) ? Number(sess.recorderMeta.count) : 0;
+    if (ui.canvasCaption) {
+      ui.canvasCaption.textContent = `Session loaded (${sess.pdbId || "custom"} · ${sess.physicsLevel || "L0"} · saved ${n} frame(s) in memory only — re-record after Build).`;
+    }
+    if (ui.hud) ui.hud.textContent = `Session loaded: ${sess.pdbId || "custom"} · physics ${sess.physicsLevel || "L0"} · picker + settings restored.`;
+  } catch (_) { /* apply never throws to the loader */ }
+}
+
+if (ui.bindlogDlBtn) {
+  ui.bindlogDlBtn.addEventListener("click", () => {
+    const bl = state.bindLog;
+    if (!bl || bl.nFrames === 0) {
+      if (ui.recStatus) ui.recStatus.textContent = "⚠ Nothing captured yet — enable BindLog capture, Run, then Export BindLog (BLG1).";
+      return;
+    }
+    try {
+      const buf = bl.toBinaryBlob();
+      const ok = downloadBlob(buf, `bindlog_${bl.nFrames}f_${bl.nEvents}e.blg1`);
+      if (ui.recStatus) {
+        ui.recStatus.textContent = ok
+          ? `${recorder.count} frames · BindLog BLG1 exported (${bl.nFrames} frames, ${bl.nEvents} events, ${(buf.byteLength / 1024).toFixed(1)} KiB).`
+          : "⚠ BindLog download needs a browser (headless: use toBinaryBlob directly).";
+      }
+    } catch (err) {
+      if (ui.recStatus) ui.recStatus.textContent = "⚠ " + (err?.message ?? String(err));
+    }
+  });
+}
+
+if (ui.sessSaveBtn) {
+  ui.sessSaveBtn.addEventListener("click", () => {
+    try {
+      const text = serializeSession(buildSession(collectSessionSnapshot()));
+      const id = ((ui.pdbId?.value ?? "").trim() || "custom").replace(/\W+/g, "_");
+      downloadText(text, `session_${id}_v1.json`);
+      if (ui.hud) ui.hud.textContent = `Session saved (${text.length} B, counts only — frames stay in memory).`;
+    } catch (err) {
+      if (ui.hud) ui.hud.textContent = formatInputError(err);
+    }
+  });
+}
+
+if (ui.sessFile) {
+  ui.sessFile.addEventListener("change", async () => {
+    const f = ui.sessFile.files && ui.sessFile.files[0];
+    if (!f) return;
+    try {
+      const text = await f.text();
+      const parsed = parseSession(text);
+      if (!parsed.ok) {
+        if (ui.hud) ui.hud.textContent = formatInputError(parsed.error);
+        if (ui.recStatus) ui.recStatus.textContent = formatInputError(parsed.error);
+        return;
+      }
+      applySession(parsed.data);
+    } catch (err) {
+      if (ui.hud) ui.hud.textContent = formatInputError(err);
+    } finally {
+      try { ui.sessFile.value = ""; } catch (_) {} // allow re-loading the same file
     }
   });
 }
@@ -1140,8 +1541,8 @@ function tick(now) {
         const cvLive = (state.funnel && Number.isFinite(state.funnel.lastCV)) ? state.funnel.lastCV : NaN;
         _pushHist(_cvHist, cvLive);
         _pushHist(_eHist, state.ff.energy);
-        _drawStrip(ui.cvStrip, _cvHist, "#E879F9", { empty: "CV —" });
-        _drawStrip(ui.hudSpark, _eHist, "#38BDF8", { empty: "E —" });
+        _drawStrip(ui.cvStrip, _cvHist, "#E879F9", { empty: "Run to stream CV" });
+        _drawStrip(ui.hudSpark, _eHist, "#38BDF8", { empty: "Run to stream E" });
       }
     } catch (_) { /* headless */ }
     updatePMFPlot(!!state.running);
@@ -1151,10 +1552,12 @@ function tick(now) {
     dccmTick(now);
     // Loop-2 S6 (R7 §4): BindViz ≤1 Hz — empty states or live plots (P2).
     bindvizTick(now);
+    guideTick(now); // FP1: ≤1 Hz checklist poll (catches steps/frames/Analyze)
   } else if (viewer) {
     viewer.render(null);
     try { dccmTick(now); } catch (_) {}
     try { bindvizTick(now); } catch (_) {}
+    try { guideTick(now); } catch (_) {} // FP1: empty-state emphasis while idle
   } else {
     console.warn("[viewer] not ready");
   }

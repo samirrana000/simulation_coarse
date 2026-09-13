@@ -10,9 +10,13 @@ const $ = (id) => (typeof document !== "undefined" ? document.getElementById(id)
 export const ui = {
   pdbId: $("pdbId"), fetchBtn: $("fetchBtn"), fileInput: $("fileInput"),
   structSummary: $("structSummary"), includeLig: $("includeLig"),
+  sampleBtn: $("sampleBtn"),
+  guideStepLoad: $("guideStepLoad"), guideStepBuild: $("guideStepBuild"),
+  guideStepRun: $("guideStepRun"), guideStepAnalyze: $("guideStepAnalyze"),
   mol2File: $("mol2File"), mol2Info: $("mol2Info"),
   chainsInput: $("chainsInput"), resFrom: $("resFrom"), resTo: $("resTo"),
   modelMode: $("modelMode"), buildBtn: $("buildBtn"), selSummary: $("selSummary"),
+  heavyCancelBtn: $("heavyCancelBtn"),
   heteroPanel: $("heteroPanel"), heteroList: $("heteroList"),
   heteroAll: $("heteroAll"), heteroMetals: $("heteroMetals"), heteroNone: $("heteroNone"),
   ligFilter: $("ligFilter"), ligSelect: $("ligSelect"),
@@ -24,6 +28,7 @@ export const ui = {
   stridePs: $("stridePs"), maxFrames: $("maxFrames"), exportFmt: $("exportFmt"),
   recBtn: $("recBtn"), recStopBtn: $("recStopBtn"), dlBtn: $("dlBtn"), recStatus: $("recStatus"),
   bindlogOn: $("bindlogOn"),
+  bindlogDlBtn: $("bindlogDlBtn"), sessSaveBtn: $("sessSaveBtn"), sessFile: $("sessFile"),
   playBtn: $("playBtn"), resetBtn: $("resetBtn"),
   showContacts: $("showContacts"), spheres: $("spheres"),
   showRibbon: $("showRibbon"), showHBonds: $("showHBonds"), showStates: $("showStates"),
@@ -39,12 +44,15 @@ export const ui = {
   alaScanBtn: $("alaScanBtn"), alaRes: $("alaRes"),
   thermoBtn: $("thermoBtn"), thermoCancelBtn: $("thermoCancelBtn"), thermoCaption: $("thermoCaption"),
   thermoLig: $("thermoLig"),
+  thermoDlBtn: $("thermoDlBtn"),
   dccmBtn: $("dccmBtn"), dccmCanvas: $("dccmCanvas"), dccmCaption: $("dccmCaption"),
+  dccmDlBtn: $("dccmDlBtn"),
   smdBtn: $("smdBtn"), crypticBtn: $("crypticBtn"),
   bindvizTimeline: $("bindvizTimeline"), bindvizEnergy: $("bindvizEnergy"),
   bindvizPmf: $("bindvizPmf"), bindvizCaption: $("bindvizCaption"),
   hud: $("hud"), canvas: $("canvas"), canvasCaption: $("canvasCaption"),
   metricsHud: $("metricsHud"),
+  settingsDlBtn: $("settingsDlBtn"),
   sysState: $("sysState"), topPdb: $("topPdb"), topEngine: $("topEngine"), topStep: $("topStep"),
   scrub: $("scrub"), scrubLabel: $("scrubLabel"), cvStrip: $("cvStrip"), hudSpark: $("hudSpark"),
 };
@@ -166,6 +174,28 @@ export function updateRecStatus() {
   if (!ui.recStatus) return;
   const n = recorder.frames.length;
   const ps = recorder.recordedPs;
-  ui.recStatus.textContent = `${n} frames · ${(ps / 1000).toFixed(2)} ns recorded`;
+  ui.recStatus.textContent = n === 0
+    ? `${n} frames · ${(ps / 1000).toFixed(2)} ns recorded — ● Rec + Run to record`
+    : `${n} frames · ${(ps / 1000).toFixed(2)} ns recorded`;
   if (ui.dlBtn) ui.dlBtn.disabled = n === 0;
+}
+
+/**
+ * FP1 — first-run checklist state machine (pure, headless-testable).
+ * Maps existing app state onto the 4 guided steps (Load → Build → Run →
+ * Analyze). No DOM access: `o` is a plain snapshot ({hasPdb/hasParsed,
+ * hasBuild/hasInteg, hasRun, steps, time, nFrames}); accepted aliases exist
+ * so headless harnesses can feed whichever shape is handy. Later steps
+ * require earlier ones (rebuild clears frames → Analyze unchecks).
+ * @param {object} [o] snapshot flags
+ * @returns {{load:boolean, build:boolean, run:boolean, analyze:boolean}}
+ */
+export function fp1GuideState(o = {}) {
+  const load = !!(o.hasPdb || o.hasParsed);
+  const build = !!(load && (o.hasBuild || o.hasInteg));
+  const steps = Number(o.steps ?? 0);
+  const time = Number(o.time ?? 0);
+  const run = !!(build && (o.hasRun || steps > 0 || time > 0));
+  const analyze = !!(build && Number(o.nFrames ?? 0) > 0);
+  return { load, build, run, analyze };
 }

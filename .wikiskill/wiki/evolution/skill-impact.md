@@ -68,3 +68,39 @@ cites the wiki pattern that motivated it and the gating outcome.
   changes; Stages 1–6 debts (heavy verdict NOT-restored, seeding, 215/245
   tiers, altloc+rotbonds, async thermo+persist, 4W52 anchor) all carried.
 
+---
+
+## Proposal 2026-09-13 #4 — FP7 release closeout (CHANGELOG + version + license/citation + final gate)
+
+- **Motivated by:** release-closeout gap after FP1–FP6 — no CHANGELOG/version,
+  unchecked license/citation surface, no final gate record (FP1 onboarding,
+  FP2 input_errors, FP3 seeded QA + browsers + a11y, FP4 session v1 +
+  exports 352, FP5 chunked heavy + workflow, FP6 VALIDATION.md + 1CRN null).
+- **Proposal:** Docs/metadata only, zero deps, no behavior changes: NEW
+  `CHANGELOG.md` (releases phases1-5 → Loop-2 → followup1-7 → FP1–FP6 with
+  hashes, FAST 32→179→215→231→306→352, key numbers one line each);
+  `src/version.js` 1.0.0-transform → 1.1.0-fp7 (minor: additive-only, no
+  breaking change; no package.json — version.js IS the flow) + static
+  dock-footer version line (text only, zero new ids); README
+  `## Version, license & citation`; secret grep; final triple gate record
+  in CHANGELOG + `docs/BINDING_LOOP2_DONE.md` §28.
+- **Validation plan:** baseline R_best = tests/test_all.js 352 PASSED +
+  gate OPEN before (measured 2026-09-13). Gate = `node
+  scripts/wikiskill_gate.js` (OPEN required) + FAST + SLOW-SMOKE green.
+- **Verdict:** ACCEPTED
+- **Gating numbers (2026-09-13):**
+  - Gate BEFORE: OPEN — 45 files clean, 352 PASSED / 0 FAILED, 112 ids
+  - Gate AFTER: OPEN — 45 files clean, 352 PASSED / 0 FAILED, 112 ids
+  - FAST: 352/352 (~13.6 s before, ~13.4 s after)
+  - SLOW-SMOKE `--slow`: 404/404 (~29.5 s; FAST 352 + SLOW 52)
+  - node --check: clean (version.js value-only bump; index.html parses)
+  - Serve: `/`, `src/main.js`, `src/version.js`, `4w52.pdb`,
+    `CHANGELOG.md` all 200; footer `v1.1.0-fp7` present in served HTML
+  - Secret grep (api-key/secret/password/private-key/token over src,
+    scripts, tests, ml, index.html, CITATION.cff): zero hits
+  - License/citation: LICENSE (MIT) present + README-cited; CITATION.cff
+    (v1.0-jpcb) present + README-cited; archival tag untouched
+- **Notes:** full record in `docs/BINDING_LOOP2_DONE.md` §28; no new
+  top-level panels (8 unchanged); no new DOM ids (`src/ui.js` untouched);
+  defaults unchanged.
+

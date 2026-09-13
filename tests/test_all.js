@@ -49,7 +49,8 @@ const SLOW = process.argv.includes("--slow") || process.env.SLOW === "1" || SLOW
 
 // Runtimes measured 2026-09-12 (linux, node): charges 0.1s, vsites 0.1s,
 // weakint ~15s, seeded 0.2s, bindviz 0.0s, bindlog 0.2s, bindlog-int 0.2s,
-// altloc-cleaner 0.1s, rotbonds 0.1s (Stage-4), ala-noise-floor ~1s (Loop-2 Stage-4).
+// altloc-cleaner 0.1s, rotbonds 0.1s (Stage-4), ala-noise-floor ~1s (Loop-2 Stage-4),
+// input-errors 0.1s (FP2), session-roundtrip 0.2s (FP4).
 const FAST_SUITES = [
   { file: "test_charges.js", expect: 20, timeout: 60000 },
   { file: "test_virtual_sites.js", expect: 8, timeout: 60000 },
@@ -61,6 +62,8 @@ const FAST_SUITES = [
   { file: "test_altloc_cleaner.js", expect: 19, timeout: 60000 },
   { file: "test_rotbonds.js", expect: 17, timeout: 60000 },
   { file: "test_ala_noise_floor.js", expect: 16, timeout: 60000 },
+  { file: "test_input_errors.js", expect: 75, timeout: 60000 },
+  { file: "test_session_roundtrip.js", expect: 46, timeout: 60000 },
 ];
 
 // test_thermo: 7 asserts, ~60-120s seeded CG. test_thermo_heavy: 13 asserts,
@@ -70,14 +73,17 @@ const FAST_SUITES = [
 // calibration_4w52: 14 asserts, ~6s seeded CG (4W52 ΔG anchor + ala-scan + Stage-3 real SASA burial).
 // validate_flexlig (Stage-5): 10 asserts, ~1s seeded CG (4W52 EPE flexible-ligand
 // second system: 4 rotatable, nonzero ΔS_lig vs BNZ zero control + real SASA).
-// Stage-6 tiers: FAST 231 untouched; --slow = SMOKE heavy + thermo +
-// calibration + flexlig (44 SLOW asserts, total 275); --slow-full/--long =
-// FULL heavy (same 44 asserts, ~200s heavy leg).
+// validate_1crn_null (FP6): 8 asserts, ~1s seeded CG (1CRN 46-res ligand-free
+// apo-vs-apo null: ΔH≈0 + bounded |−TΔS|, finiteness/boundedness only).
+// Stage-6 tiers: FAST 352 untouched by SLOW; --slow = SMOKE heavy + thermo +
+// calibration + flexlig + 1crn-null (52 SLOW asserts, total 404); --slow-full/--long =
+// FULL heavy (same 52 asserts, ~200s heavy leg).
 const SLOW_SUITES = [
   { file: "../scripts/test_thermo.mjs", expect: 7, timeout: 600000 },
   { file: "../scripts/test_thermo_heavy.mjs", expect: 13, timeout: 900000, args: SLOW_FULL ? [] : ["--smoke"] },
   { file: "../scripts/calibration_4w52.mjs", expect: 14, timeout: 600000 },
   { file: "../scripts/validate_flexlig.mjs", expect: 10, timeout: 600000 },
+  { file: "../scripts/validate_1crn_null.mjs", expect: 8, timeout: 600000 },
 ];
 
 /** Run one standalone suite script; return { passed, failed, secs }. */
@@ -294,21 +300,32 @@ async function runTests() {
   console.log("\n[8] Testing Langevin Dynamics Integration (Cα ENM & Heavy)...");
   const selCG = selectSystem(parsedCa);
   // Temperature fidelity tighten: 300±40 after 200 steps (was 100–600)
+  // FP3: seeded replicas (was: up-to-10 unseeded trials, keep-first-in-band
+  // retry-hiding). Physics reason: the OU thermostat's stationary variance is
+  // exact in distribution, but a single 200-step kinetic-T sample carries
+  // O(1/√DOF-step) noise, so one unseeded trial can tail out of band while
+  // the ensemble mean sits at the bath. Fixed SEEDS = [101, 202, 303] (thermo
+  // family, scripts/test_thermo.mjs) lock the streams; the assertion is the
+  // 3-replica mean in 260–340 K (same band, no lowered standard).
+  // Measured 2026-09-13 (linux, node): reps [299.9, 280.8, 330.4] → mean 303.7.
+  const TEMP_SEEDS = [101, 202, 303];
   let ffCG, integCG, tInst;
-  for (let trial = 0; trial < 10; trial++) {
-    const ffTrial = new ForceField(selCG, { rc: 10, gamma: 2.0 }, mols);
-    const integTrial = new LangevinIntegrator(ffTrial.ref, ffTrial, 110.0);
-    integTrial.setTemperature(300.0);
-    integTrial.setFriction(8.0);
-    for (let s = 0; s < 200; s++) integTrial.step();
-    const t = ffTrial.kineticTemp(integTrial.vel, integTrial.mass);
-    if (trial === 0 || (t > 260 && t < 340)) {
-      ffCG = ffTrial; integCG = integTrial; tInst = t;
-      if (t > 260 && t < 340) break;
+  {
+    const repT = [];
+    for (let rep = 0; rep < TEMP_SEEDS.length; rep++) {
+      const ffTrial = new ForceField(selCG, { rc: 10, gamma: 2.0 }, mols);
+      const integTrial = new LangevinIntegrator(ffTrial.ref, ffTrial, 110.0, { seed: TEMP_SEEDS[rep] });
+      integTrial.setTemperature(300.0);
+      integTrial.setFriction(8.0);
+      for (let s = 0; s < 200; s++) integTrial.step();
+      const t = ffTrial.kineticTemp(integTrial.vel, integTrial.mass);
+      repT.push(t);
+      if (rep === 0) { ffCG = ffTrial; integCG = integTrial; }
     }
-    if (trial === 9) { ffCG = ffTrial; integCG = integTrial; tInst = t; }
+    tInst = repT.reduce((a, b) => a + b, 0) / repT.length;
+    console.log(`  (seeded temp replicas [${repT.map((t) => t.toFixed(1)).join(", ")}] → mean ${tInst.toFixed(1)} K)`);
   }
-  assert(tInst > 260 && tInst < 340, `Cα Langevin temperature 300±40K after 200 steps (got ${tInst.toFixed(0)} K)`);
+  assert(tInst > 260 && tInst < 340, `Cα Langevin temperature 300±40K after 200 steps, 3-seed mean (got ${tInst.toFixed(0)} K)`);
   assert(Number.isFinite(ffCG.energy), `Total potential energy is stable (${ffCG.energy.toFixed(2)} kcal/mol)`);
   // Validate thermal = sqrt(KB*T*KCONV/m) per coordinate (Å/ps) — not counted in 32 but verified
   const expectedThermal = Math.sqrt(KB_KCAL * 300 * KCONV / 110);
@@ -326,11 +343,11 @@ async function runTests() {
   if (SLOW) {
     runTier(SLOW_FULL ? "SLOW-FULL" : "SLOW-SMOKE", SLOW_SUITES);
   } else {
-    console.log("\n[SLOW] skipped (opt-in: `node tests/test_all.js --slow` = SMOKE heavy ~20s, or `--slow-full`/`--long` = FULL heavy ~200s, or SLOW=1) — test_thermo (7, ~3s) + test_thermo_heavy SMOKE (13, ~15-25s) / FULL (13, ~200s+) + calibration_4w52 (14, ~6s) + validate_flexlig (10, ~1s)");
+    console.log("\n[SLOW] skipped (opt-in: `node tests/test_all.js --slow` = SMOKE heavy ~20s, or `--slow-full`/`--long` = FULL heavy ~200s, or SLOW=1) — test_thermo (7, ~3s) + test_thermo_heavy SMOKE (13, ~15-25s) / FULL (13, ~200s+) + calibration_4w52 (14, ~6s) + validate_flexlig (10, ~1s) + validate_1crn_null (8, ~1s)");
   }
 
   // -----------------------------------------------------------------
-  // SUMMARY (grand total: Tier-0 32 + FAST 199 = 231 [SLOW +44 → 275 smoke or full])
+  // SUMMARY (grand total: Tier-0 32 + FAST 320 = 352 [SLOW +52 → 404 smoke or full])
   // -----------------------------------------------------------------
   console.log("\n=================================================");
   console.log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

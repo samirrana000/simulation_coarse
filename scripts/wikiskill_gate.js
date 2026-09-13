@@ -49,10 +49,10 @@ check("node --check src/*.js", () => {
   return `${files.length + physicsFiles.length} files clean`;
 });
 
-/* 2. regression suite (Stage-6: grand total = Tier-0 32 + FAST 199 = 231;
- * SLOW tier is 44 (thermo 7 + heavy 13 smoke-or-full + calibration 14 +
- * flexlig 10), full --slow/--slow-full total 275 — gate still checks the
- * FAST grand total only, baseline 231) */
+/* 2. regression suite (FP4: grand total = Tier-0 32 + FAST 320 = 352;
+ * SLOW tier is 52 (thermo 7 + heavy 13 smoke-or-full + calibration 14 +
+ * flexlig 10 + 1crn-null 8), full --slow/--slow-full total 404 — gate still checks the
+ * FAST grand total only, baseline 352) */
 check("tests/test_all.js baseline", () => {
   const out = execFileSync(process.execPath, [path.join(ROOT, "tests", "test_all.js")], {
     stdio: ["pipe", "pipe", "pipe"], encoding: "utf-8", timeout: 180000,
@@ -64,8 +64,8 @@ check("tests/test_all.js baseline", () => {
   const last = matches[matches.length - 1];
   const [passed, failed] = [Number(last[1]), Number(last[2])];
   if (failed > 0) throw new Error(`${failed} FAILED`);
-  if (passed < 231) throw new Error(`regression: ${passed} < 231 baseline (32 Tier-0 + 199 FAST)`);
-  return `${passed} PASSED, 0 FAILED (>= 231 baseline)`;
+  if (passed < 352) throw new Error(`regression: ${passed} < 352 baseline (32 Tier-0 + 320 FAST)`);
+  return `${passed} PASSED, 0 FAILED (>= 352 baseline)`;
 });
 
 /* 3. DOM contract: ui.js ids ⊆ index.html ids */

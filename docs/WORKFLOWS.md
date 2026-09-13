@@ -24,3 +24,46 @@ L0 fast (CG isotropic, charges off) · L1 balanced (CG charges + directional
 H-bonds, ≈1.09×) · L2 full-rigor (L1 + heavy weakint + BindLog capture,
 ≈1.0× over tier base). L2 keeps BindLog capture on even with the Recording
 checkbox off. Full bench: `docs/pareto_frontier.csv`, `docs/BINDING_LOOP2_DONE.md`.
+
+## CG-interactive / heavy-offline (FP5)
+
+S7 decided ACCEPT CPU (no GPU port: Loop-2 binding terms stay CPU-only), so
+heavy mode stays ~400× slower per step than CG. The honest workflow is tiered:
+CG runs interactively in the tab; heavy runs short/offline with progress, then
+exports for analysis. Heavy builds are chunked (topology rows with progress
+captions + Cancel; Build/Run disabled during work) — the tab never freezes.
+
+### Expected cost (4W52, `docs/pareto_frontier.csv` 2026-09-12 FULL rows)
+
+| Tier | ms/step | dt (ps) | ≈ steps/s in tab¹ | ≈ ps/s in tab |
+|---|---|---|---|---|
+| L0 CG | 0.237 | 0.004 (no lig) / 0.0017 (lig) | ~3500 / ~3500 | ~14 / ~6 |
+| L1 CG+ | 0.235 | same as L0 | ~3500 | ~14 / ~6 |
+| L1 CG+ +BindLog | 0.216 | same as L0 | ~3500 | ~14 / ~6 |
+| L2 heavy | 84.8 | 0.001 | ~10 | ~0.01 |
+| L3 heavy+R3 | 83.1 | 0.001 | ~10 | ~0.01 |
+| L2 full-rigor | 85.5 | 0.001 | ~10 | ~0.01 |
+
+¹ Tick budget `advance(steps, 14)` caps compute at 14 ms/frame; CG fits
+~59 steps/frame, heavy fits ~1 step per several frames. Timings are
+machine-dependent (S7 §14: ±5% across runs on one machine); ratio ≈ 400:1
+holds across machines. L4 heavy+OBC2+RESPA (est 46.6) is unchanged by Loop 2.
+
+### Recommended budgets per tier
+
+| Tier | Use for | Recommended run | Recording |
+|---|---|---|---|
+| L0/L1 CG | interactive explore, placement, funnel/PMF collecting, thermo holo legs | minutes (10³–10⁴ steps) | stride 2 ps, 200–500 frames (0.4–1 ns) |
+| L2 heavy | short relaxations, pocket checks, single-point rigor | ≤ 1000 steps in-tab (seconds–minutes) | stride ≥ 2 ps, ≤ 100 frames |
+| heavy long sampling | thermo/SMD/pocket-entropy depth | headless scripts only (`test_thermo_heavy` pattern), never the tab | export, don't record live |
+
+A 1 ns heavy recording (10⁶ steps) is ~1 day at pareto speed — that is the
+offline case by design, not a bug.
+
+### Export-then-analyze path (FP4 matrix, one click each)
+
+Trajectory XYZ/PDB/JSON (`#dlBtn` + `#exportFmt`) · PMF CSV (`#anaPmfBtn`) ·
+Thermo TXT (`#thermoDlBtn`) · BindLog BLG1 (`#bindlogDlBtn`) · DCCM CSV
+(`#dccmDlBtn`) · Settings JSON (`#settingsDlBtn`) · Session JSON v1
+(`#sessSaveBtn` + `#sessFile`, counts only — frames stay in memory).
+Analyze offline in `notebooks/`; reload exact setups via session files.

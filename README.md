@@ -49,6 +49,10 @@ python3 -m http.server 8123
 
 ### The 4W52 binding demo (2 minutes)
 
+0. **First run?** Open **Structure → Getting started — 4-step checklist** and
+   click **Load 4W52 sample (1 click)** (works offline; the ✓/○ steps track
+   Load → Build → Run → Analyze live, and every empty panel tells you the
+   next step until data arrives).
 1. Leave **"Include ligands (HETATM + CONECT)"** checked.
 2. Type `4W52` in the **PDB ID** box and click **Fetch (RCSB / PDBe)**.
    (Alternatively drop a local `.pdb` file into **PDB file**.)
@@ -360,3 +364,18 @@ docs/PHYSICS_RIGOR.md + CHEMISTRY.md + GPU_RESPA.md + WORKFLOWS.md + UI_COCKPIT.
   puppeteer-core and the bundled Chrome.
 - The ML exporter runs in **heuristic mode** when the ESM weights are absent
   (`fair-esm` is not installed); it still produces a valid contact prior.
+
+---
+
+## Version, license & citation
+
+- **Version:** `1.1.0-fp7` (2026-09-13) — canonical constant in
+  `src/version.js` (this repo has no `package.json`; the constant feeds the
+  HUD prefix, trajectory `REMARK` provenance, and the dock footer). Release
+  history in `CHANGELOG.md`.
+- **License:** MIT — see [LICENSE](LICENSE) (© 2026 Samir Rana).
+- **Citation:** see [CITATION.cff](CITATION.cff) (`v1.0-jpcb`, Zenodo DOI
+  placeholder `10.5281/zenodo.XXXXXXX` until deposition) and
+  [docs/CITATION.md](docs/CITATION.md) for BibTeX; validation numbers in
+  [docs/VALIDATION.md](docs/VALIDATION.md). Trust boundary: ranking-only use —
+  NOT FEP, NOT absolute Kd.

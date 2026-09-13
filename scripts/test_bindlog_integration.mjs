@@ -31,7 +31,18 @@ const sel = selectSystem(parsed);
 const mols = parseLigands(pdbText);
 const par = { rc: 10, gamma: 2.0, temp: 300, binding: { on: true, holo: true, charges: true, hbMode: "directional" } };
 const ff = new ForceField(sel, par, mols);
-const integ = new LangevinIntegrator(ff.ref, ff, 110.0);
+// FP3: fixed seed (was unseeded Math.random). Root cause of the 13/1 flake
+// (`0/30 negative HB samples`): at the exact native reference the
+// directional-HB gate reads 0 by construction (physical), so negative HB
+// samples only appear on thermal excursions during the 300-step run. With
+// unseeded noise the excursion count is a tail-risk variable — usually
+// ~20/30, once 0/30. Seeded mulberry32 locks a representative stream
+// (seed 101 → 17/30 negative); the `hbSeen > 0` bar is unchanged (no
+// lowered standard). Override: BINDLOG_SEED_BASE env (mirrors the
+// THERMO_SEED_BASE pattern in scripts/test_thermo.mjs).
+const BINDLOG_SEED = Number(process.env.BINDLOG_SEED_BASE || 101);
+const integ = new LangevinIntegrator(ff.ref, ff, 110.0, { seed: BINDLOG_SEED });
+console.log(`[bindlog-integration] seeded Langevin (seed ${BINDLOG_SEED}, thermo-SEEDS family)`);
 integ.setTemperature(300);
 integ.setFriction(8.0);
 

@@ -11,6 +11,7 @@
 
 import { LIGAND_LIBRARY } from "./ligandLib.js?v=10";
 import { parseLibraryLigand, placeLigand, findPocketCenter } from "./placement.js?v=10";
+import { classifyInputError, formatInputError, createInputError, checkPlacement } from "./input_errors.js?v=10";
 import { ui, state, viewer } from "./ui.js?v=10";
 
 let _buildSystem = () => {};
@@ -69,8 +70,9 @@ export function updateMol2PlaceButton() {
 }
 
 function applyPlacedPose(mol, name, placed) {
-  if (!Number.isFinite(placed.residualClash)) {
-    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = "⚠ Placement failed (degenerate pose).";
+  // FP2: degenerate pose ⇒ actionable CLASH_HIGH (not a bare warning).
+  if (!placed || !Number.isFinite(placed.residualClash)) {
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(createInputError("CLASH_HIGH", "degenerate pose (non-finite residual)"));
     setPickMode(false);
     return;
   }
@@ -97,7 +99,12 @@ function applyPlacedPose(mol, name, placed) {
   const note = placed.converged
     ? `Placed ${name} — clash-free (residual ${placed.residualClash.toFixed(2)})`
     : `Placed ${name} — relaxed (residual ${placed.residualClash.toFixed(2)}, ${placed.iterations} iters)`;
-  if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = note;
+  if (ui.ligPlaceInfo) {
+    // FP2: over-threshold residual keeps the pose (legacy behavior) but the
+    // note becomes actionable (what + exact next click, detail secondary).
+    const clashErr = checkPlacement(placed);
+    ui.ligPlaceInfo.textContent = clashErr ? `${formatInputError(clashErr)} — pose kept (${note}).` : note;
+  }
   setPickMode(false);
 }
 
@@ -117,7 +124,8 @@ function getProteinCoordsAndSigma() {
 
 function placeAt(clientX, clientY) {
   if (!state.parsed && !state.parsedHeavy) {
-    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = "⚠ Load a structure first (Structure panel), then place.";
+    // FP2: actionable NO_POCKET (empty protein selection at place time).
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(createInputError("NO_POCKET", "place on viewer with no structure loaded"));
     setPickMode(false);
     return;
   }
@@ -127,7 +135,8 @@ function placeAt(clientX, clientY) {
   if (useMol2) {
     const mols = state.mol2Ligands;
     if (!mols || mols.length !== 1) {
-      if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = "⚠ Load a single-molecule MOL2 ligand before placing.";
+      // FP2: missing/empty ligand ⇒ actionable LIGAND_PARSE_FAIL.
+      if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(createInputError("LIGAND_PARSE_FAIL", "place MOL2 with no single-molecule ligand loaded"));
       setPickMode(false);
       return;
     }
@@ -136,8 +145,20 @@ function placeAt(clientX, clientY) {
   } else {
     const entry = selectedEntry();
     if (!entry) return;
-    mol = parseLibraryLigand(entry);
+    try {
+      mol = parseLibraryLigand(entry);
+    } catch (e) {
+      if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(classifyInputError(e, { stage: "place" }));
+      setPickMode(false);
+      return;
+    }
     name = entry.name;
+  }
+  // FP2: empty ligand molecule can never place — actionable, not a throw.
+  if (!mol || !mol.atoms || mol.atoms.length === 0) {
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(createInputError("LIGAND_PARSE_FAIL", `${name}: ligand has no atoms`));
+    setPickMode(false);
+    return;
   }
 
   state.libraryLigand = useMol2 ? null : mol;
@@ -150,45 +171,87 @@ function placeAt(clientX, clientY) {
 
   const target = viewer ? viewer.screenToWorld(clientX, clientY, { snapToBead: true }) : null;
   if (!target) {
-    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = "⚠ Could not resolve world point at cursor.";
+    // FP2: unresolvable pick point ⇒ GENERIC fallback (still actionable).
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(classifyInputError(new Error("Could not resolve world point at cursor."), { stage: "place" }));
     setPickMode(false);
     return;
   }
 
   const protein = getProteinCoordsAndSigma();
-  const placed = placeLigand(mol, target, { protein, seed: Math.floor(Math.random() * 1000) });
+  // FP2: empty protein at place time ⇒ NO_POCKET (not a raw downstream throw).
+  if (!protein.pos || protein.pos.length === 0) {
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(createInputError("NO_POCKET", "place on viewer with empty protein selection"));
+    setPickMode(false);
+    return;
+  }
+  let placed;
+  try {
+    placed = placeLigand(mol, target, { protein, seed: Math.floor(Math.random() * 1000) });
+  } catch (e) {
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(classifyInputError(e, { stage: "place" }));
+    setPickMode(false);
+    return;
+  }
   applyPlacedPose(mol, name, placed);
 }
 
 function placeInPocket() {
   if (!state.ff) {
-    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = "⚠ Load a structure first, then place.";
+    // FP2: actionable NO_POCKET (not a bare warning).
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(createInputError("NO_POCKET", "place in pocket with no built system"));
     return;
   }
 
   const entry = selectedEntry();
   const mol = state.mol2Ligands && state.mol2Ligands.length === 1 ? state.mol2Ligands[0] : parseLibraryLigand(entry);
   const name = state.mol2Ligands && state.mol2Ligands.length === 1 ? (state.mol2Fn || "MOL2") : (entry ? entry.name : "Ligand");
+  // FP2: empty ligand molecule can never place — actionable, not a throw.
+  if (!mol || !mol.atoms || mol.atoms.length === 0) {
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(createInputError("LIGAND_PARSE_FAIL", `${name}: ligand has no atoms`));
+    return;
+  }
 
   if (state.mol2Ligands && state.mol2Ligands.length === 1) state.libraryLigand = null;
   else state.libraryLigand = mol;
 
   _buildSystem();
   const protein = getProteinCoordsAndSigma();
+  // FP2: empty protein at place time ⇒ NO_POCKET (not a raw downstream throw).
+  if (!protein.pos || protein.pos.length === 0) {
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(createInputError("NO_POCKET", "place in pocket with empty protein selection"));
+    return;
+  }
   const pocketCenter = findPocketCenter(protein.pos, state.ff.nProt);
-  const placed = placeLigand(mol, pocketCenter, { protein, seed: 42 });
+  // FP2: no pocket (empty/degenerate center) ⇒ actionable, not a blind place.
+  if (!pocketCenter || pocketCenter.some((v) => !Number.isFinite(v))) {
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(createInputError("NO_POCKET", "pocket detector returned no center"));
+    return;
+  }
+  let placed;
+  try {
+    placed = placeLigand(mol, pocketCenter, { protein, seed: 42 });
+  } catch (e) {
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(classifyInputError(e, { stage: "place" }));
+    return;
+  }
   applyPlacedPose(mol, `${name} (Pocket)`, placed);
 }
 
 function placeRandomSurface() {
   if (!state.ff) {
-    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = "⚠ Load a structure first, then place.";
+    // FP2: actionable NO_POCKET (not a bare warning).
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(createInputError("NO_POCKET", "random-surface place with no built system"));
     return;
   }
 
   const entry = selectedEntry();
   const mol = state.mol2Ligands && state.mol2Ligands.length === 1 ? state.mol2Ligands[0] : parseLibraryLigand(entry);
   const name = state.mol2Ligands && state.mol2Ligands.length === 1 ? (state.mol2Fn || "MOL2") : (entry ? entry.name : "Ligand");
+  // FP2: empty ligand molecule can never place — actionable, not a throw.
+  if (!mol || !mol.atoms || mol.atoms.length === 0) {
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(createInputError("LIGAND_PARSE_FAIL", `${name}: ligand has no atoms`));
+    return;
+  }
 
   if (state.mol2Ligands && state.mol2Ligands.length === 1) state.libraryLigand = null;
   else state.libraryLigand = mol;
@@ -202,7 +265,13 @@ function placeRandomSurface() {
   const bz = protein.pos[3 * randBead + 2];
 
   const target = [bx + (Math.random() - 0.5) * 8.0, by + (Math.random() - 0.5) * 8.0, bz + (Math.random() - 0.5) * 8.0];
-  const placed = placeLigand(mol, target, { protein, seed: Math.floor(Math.random() * 1000) });
+  let placed;
+  try {
+    placed = placeLigand(mol, target, { protein, seed: Math.floor(Math.random() * 1000) });
+  } catch (e) {
+    if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(classifyInputError(e, { stage: "place" }));
+    return;
+  }
   applyPlacedPose(mol, `${name} (Surface)`, placed);
 }
 

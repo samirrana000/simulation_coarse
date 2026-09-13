@@ -17,6 +17,7 @@ import { computeDCCM, renderDCCMHeatmap, topCorrelations, dccmPick, highlightCor
 import { trackPocketVolume, detectCryptic } from "./analysis/cryptic_pockets.js?v=10";
 import { runPullingEnsemble, jarzynskiFreeEnergy, koffSurrogate } from "./analysis/unbinding_smd.js?v=10";
 import { computeThermodynamics, formatThermoTable } from "./analysis/thermodynamics.js?v=10";
+import { dccmCsv } from "./session.js?v=10";
 import {
   THERMO_LIG_AUTO, THERMO_POCKET_RCUT,
   resolveThermoLigand, selectedLigandAtomIndices, selectedLigandCom,
@@ -118,6 +119,9 @@ function setDccmCaption(txt) {
 
 let _dccmHasData = false;
 let _lastDccmEmpty = 0;
+// FP4: last successful exports (cached for one-click downloads; never frames).
+let _lastDccm = null; // {n, matrix, nFrames} from computeDCCM
+let _lastThermoText = ""; // formatThermoTable + ligand-note caption lines
 
 /** Three-state (P2) no-data: actionable empty DCCM with caption + legend key. */
 export function drawDccmEmpty(reason) {
@@ -388,11 +392,12 @@ if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
             pocketIdx, nProt, mass: 110, T: 300,
             sasa: { dsasa: sasa.dsasa, se: sasa.se, dLig: sasa.dLig, dProt: sasa.dProt, method: sasa.method, stride: sasa.stride, nHoloEval: sasa.nHoloEval, nApoEval: sasa.nApoEval },
           });
-          ui.analysisOut.textContent = formatThermoTable(res) +
+          _lastThermoText = formatThermoTable(res) +
             `\n(ligand ${resolved.label} [${thermoRotCount} rotatable]; pocket ${pocketIdx.length} residues @8Å of selected COM)` +
             (holoEnergyNote ||
               (holoEnergies.length ? "" : "\n(note: BindLog capture was off — ΔH from recorded-frame recomputation skipped; run with BindLog on for the component split)")) +
             sasaNote;
+          ui.analysisOut.textContent = _lastThermoText;
           setThermoCaption(`ΔH/ΔS done — ${pocketIdx.length} pocket residues, ${holoFrames.length} holo frames (${resolved.label}), ΔSASA ${sasa.dsasa.toFixed(1)} ± ${sasa.se.toFixed(1)} Å².`);
         }).catch((err) => {
           if (myGen !== _thermoGen) return;
@@ -403,9 +408,10 @@ if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
               holoFrames, apoFrames, holoEnergies,
               pocketIdx, nProt, mass: 110, T: 300,
             });
-            ui.analysisOut.textContent = formatThermoTable(res) +
+            _lastThermoText = formatThermoTable(res) +
               `\n(ligand ${resolved.label} [${thermoRotCount} rotatable]; pocket ${pocketIdx.length} residues @8Å of selected COM)` +
               `\n(note: real-SASA failed (${err?.message ?? err}) — solvent term is the legacy ΔSASA = 0)`;
+            ui.analysisOut.textContent = _lastThermoText;
             setThermoCaption("thermo done (legacy solvent term — SASA failed).");
           } catch (err2) {
             try { ui.analysisOut.textContent = "⚠ " + (err2 && err2.message ? err2.message : String(err2)); } catch (_) {}
@@ -483,6 +489,7 @@ if (ui.dccmBtn) ui.dccmBtn.addEventListener("click", () => {
   setTimeout(() => {
     try {
       const dcc = computeDCCM(recorder.frames, { nProt: sys.ff.nProt, ref: sys.ff.ref });
+      _lastDccm = dcc; // FP4: cache for Export DCCM (CSV)
       const cv = ui.dccmCanvas;
       if (cv) {
         cv.style.display = "block";
@@ -509,6 +516,7 @@ if (ui.dccmBtn) ui.dccmBtn.addEventListener("click", () => {
         `top pairs: ${top.map((t) => `(${t.i},${t.j}) ${t.c >= 0 ? "+" : ""}${t.c.toFixed(2)}`).join(" · ")}\n` +
         `click the heatmap to highlight a pair in the viewer.`;
     } catch (err) {
+      _lastDccm = null;
       ui.analysisOut.textContent = "⚠ " + err.message;
     }
   }, 20);
@@ -574,6 +582,34 @@ if (ui.crypticBtn) ui.crypticBtn.addEventListener("click", () => {
       `open ${(det.openFrac * 100).toFixed(1)}% · ${det.events.length} event(s)` +
       (det.events.length ? `: ${det.events.slice(0, 4).map((e) => `#${e.start}–${e.end} peak ${fmtE(e.peak)}`).join("; ")}` : "") +
       (topRes.length ? `\nprobe-accessible: ${topRes.map((r) => `#${r.index} ${(r.score * 100).toFixed(0)}%`).join(" · ")}` : "");
+  } catch (err) {
+    ui.analysisOut.textContent = "⚠ " + err.message;
+  }
+});
+
+// ---- FP4 export matrix: one-click downloads inside the existing subpanels --
+// (additive; all downloads via the existing downloadText/blob pattern; no new
+// top-level panels). Buttons cache the last successful computation above.
+if (ui.thermoDlBtn) ui.thermoDlBtn.addEventListener("click", () => {
+  if (!_lastThermoText) {
+    ui.analysisOut.textContent = "⚠ No thermo table yet — run ΔH/ΔS Decomposition first, then Export Thermo (TXT).";
+    return;
+  }
+  try {
+    downloadText(_lastThermoText.endsWith("\n") ? _lastThermoText : _lastThermoText + "\n", "thermo_decomposition.txt");
+  } catch (err) {
+    ui.analysisOut.textContent = "⚠ " + err.message;
+  }
+});
+
+if (ui.dccmDlBtn) ui.dccmDlBtn.addEventListener("click", () => {
+  if (!_lastDccm) {
+    ui.analysisOut.textContent = "⚠ No DCCM yet — record ≥ 3 frames, click DCCM Heatmap, then Export DCCM (CSV).";
+    return;
+  }
+  try {
+    const csv = dccmCsv(_lastDccm.matrix, _lastDccm.n);
+    downloadText(csv, `dccm_${_lastDccm.n}x${_lastDccm.n}_${_lastDccm.nFrames}frames.csv`);
   } catch (err) {
     ui.analysisOut.textContent = "⚠ " + err.message;
   }
