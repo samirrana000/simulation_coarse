@@ -117,7 +117,8 @@ export class Viewer {
     const beads = sel.beads || sel.atoms || [];
     const segments = sel.segments || [];
     this.n = ff.n || beads.length;
-    this.nProt = ff.nProt || this.n;
+    this.nProt = ff.nProt ?? this.n;
+    this.ligandStart = ff.ligandStart ?? this.nProt;
     this.heavy = !!sel.heavy;
     this.ligandBonds = ff.covalentBonds && ff.covalentBonds.length ? ff.covalentBonds
       : (ff.ligandBonds && ff.ligandBonds.length ? ff.ligandBonds : null);
@@ -149,12 +150,9 @@ export class Viewer {
 
     this.colors = new Array(this.n);
     if (this.heavy) {
-      // Class-before-element coloring (wiki P1): protein heavy atoms use muted
-      // CPK; ligand atoms (i >= nProt) use the vivid LIGAND_COLOR palette so
-      // ligand C is visually distinct from protein C.
       for (let i = 0; i < this.n; i++) {
         const el = (beads[i] && beads[i].element) ? beads[i].element.toUpperCase() : "C";
-        const isLigand = i >= this.nProt;
+        const isLigand = i >= this.ligandStart;
         this.colors[i] = isLigand
           ? (LIGAND_COLOR[el] || LIGAND_COLOR_DEFAULT)
           : (ELEMENT_COLOR[el] || ELEMENT_COLOR_DEFAULT);
@@ -585,7 +583,7 @@ export class Viewer {
     const baseR = this.drawSpheres ? 4.2 * (this.dpr || 1) * Math.sqrt(this.zoom) : 1.8 * (this.dpr || 1);
     for (const i of order) {
       const depth = Math.max(0.25, Math.min(1, 1 - pz[i] / (this.radius * 2.2)));
-      const isLig = i >= this.nProt;
+      const isLig = i >= this.ligandStart;
       const rScale = (this.heavy || isLig) ? (isLig ? 0.9 : 0.65) : 1.0;
       const persp = fov / Math.max(1e-3, fov + pz[i]);
       const r = Math.max(0.6, rScale * baseR * persp);

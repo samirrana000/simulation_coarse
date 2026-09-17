@@ -5,7 +5,10 @@
  * Run: node tests/test_ligand_colors.js
  */
 
+import { readFileSync } from "node:fs";
 import { Viewer } from "../src/viewer.js";
+import { ViewerGL } from "../src/viewer-gl.js";
+import { parseHeavy, selectHeavy, appendHeavyLigands, HeavyForceField } from "../src/heavy.js";
 
 function makeMockCtx() {
   return {
@@ -108,6 +111,50 @@ assert(
   JSON.stringify(viewer3.colors[3]) === JSON.stringify(LIGAND_H_DEFAULT),
   "unknown ligand element falls back to LIGAND_COLOR_DEFAULT"
 );
+
+const parsed = parseHeavy(readFileSync(new URL("../4hhb.pdb", import.meta.url), "utf8"));
+const protein = parsed.atoms.find((a) => a.isProtein && a.element === "C");
+const metal = parsed.atoms.find((a) => a.isMetal && a.element === "FE");
+const cofactor = parsed.atoms.find((a) => a.resName === "HEM" && a.element === "C");
+assert(!!protein && !!metal && !!cofactor, "4HHB supplies protein C, heme C and Fe metadata");
+const subset = { ...parsed, atoms: [protein, metal, cofactor] };
+
+for (const includePdbLigands of [true, false]) {
+  for (const withProtein of [true, false]) {
+    const selected = selectHeavy({
+      ...subset, atoms: subset.atoms.filter((a) => withProtein || !a.isProtein),
+    }, { includePdbLigands });
+    const actualFF = new HeavyForceField(selected);
+    for (const ViewerClass of [Viewer, ViewerGL]) {
+      const canvas = makeMockCanvas();
+      const renderer = new ViewerClass(canvas);
+      renderer.setSystem(selected, actualFF);
+      const actual = renderer.fallback || renderer;
+      const label = `${ViewerClass.name}, PDB ligands=${includePdbLigands}, protein=${withProtein}`;
+      const mi = selected.atoms.findIndex((a) => a.isMetal);
+      const ci = selected.atoms.findIndex((a) => a.resName === "HEM" && a.element === "C");
+      assert(actual.nProt === actualFF.nProt, `${label}: preserves protein count, including zero`);
+      assert(JSON.stringify(actual.colors[mi]) === JSON.stringify([200, 120, 60]), `${label}: Fe keeps metal element color`);
+      assert(JSON.stringify(actual.colors[ci]) === JSON.stringify(includePdbLigands ? LIGAND_C : PROTEIN_C), `${label}: heme C follows actual ligand metadata`);
+      let halos = 0;
+      canvas.getContext("2d").stroke = function () {
+        if (this.strokeStyle === "rgba(255, 255, 255, 0.95)") halos++;
+      };
+      renderer.showStates = false;
+      renderer.showHBonds = false;
+      renderer.render(actualFF.ref);
+      assert(halos === actualFF.nLigAtoms, `${label}: only actual ligand atoms receive white halos`);
+    }
+  }
+}
+
+const external = appendHeavyLigands(selectHeavy(subset, { hasExternalLigand: true }), [{
+  atoms: [{ element: "C", x: 0, y: 0, z: 0 }], bonds: [],
+}]);
+const externalFF = new HeavyForceField(external);
+viewer.setSystem(external, externalFF);
+assert(JSON.stringify(viewer.colors[externalFF.ligandStart]) === JSON.stringify(LIGAND_C), "external ligand C remains vivid after metals and cofactors");
+assert(JSON.stringify(viewer.colors[2]) === JSON.stringify(PROTEIN_C), "retained cofactor C is not relabeled as external ligand");
 
 if (fails === 0) console.log("\n=== PASS test_ligand_colors ===");
 else { console.error(`\n=== FAIL test_ligand_colors (${fails}) ===`); process.exit(1); }
