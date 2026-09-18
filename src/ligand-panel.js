@@ -11,6 +11,7 @@
 
 import { LIGAND_LIBRARY } from "./ligandLib.js?v=10";
 import { parseLibraryLigand, placeLigand, findPocketCenter } from "./placement.js?v=10";
+import { LIG_ELEMENT, LIG_ELEMENT_DEFAULT } from "./ff-params.js?v=10";
 import { classifyInputError, formatInputError, createInputError, checkPlacement } from "./input_errors.js?v=10";
 import { ui, state, viewer } from "./ui.js?v=10";
 
@@ -108,17 +109,41 @@ function applyPlacedPose(mol, name, placed) {
   setPickMode(false);
 }
 
-function getProteinCoordsAndSigma() {
-  const nProt = state.ff.nProt;
-  const protSigma = state.ff._protSigma
-    ?? (() => {
-        const s = new Float64Array(nProt);
-        for (let i = 0; i < nProt; i++) s[i] = state.ff._elem ? state.ff._elem[i].sigma : 3.8;
-        return s;
-      })();
+/**
+ * Build the placement collision set (exported for headless regression tests).
+ * See rev1-issue2 policy note inside.
+ */
+export function getProteinCoordsAndSigma() {
+  const ff = state.ff;
+  const nProt = ff.nProt;
+  // rev1-issue2 collision policy: clash set = indices [0, collEnd) with
+  // collEnd = ligandStart ?? nProt. In heavy mode this is protein + hetero
+  // (PDB ligands/cofactors/metals demoted to hetero while an external ligand
+  // is present — see heavy.js selectHeavy), EXCLUDING the incoming ligand
+  // slot [ligandStart, n) whose stale coords applyPlacedPose overwrites.
+  // CG ForceField has no ligandStart/hetero ⇒ collEnd = nProt (protein-only,
+  // unchanged legacy behavior).
+  const nTotal = ff.n ?? nProt;
+  const collEnd = Math.max(0, Math.min(ff.ligandStart ?? nProt, nTotal));
+  const posLen = Math.floor(state.integ.pos.length / 3);
+  const nColl = Math.max(0, Math.min(collEnd, posLen));
+  const sigma = new Float64Array(nColl);
+  for (let i = 0; i < nColl; i++) {
+    if (ff._elem?.[i] && Number.isFinite(ff._elem[i].sigma)) {
+      sigma[i] = ff._elem[i].sigma; // heavy: per-atom size incl. metals
+    } else if (ff._protSigma && i < ff._protSigma.length) {
+      sigma[i] = ff._protSigma[i];
+    } else if (i < nProt) {
+      sigma[i] = 3.8; // legacy CG protein-bead diameter
+    } else {
+      // hetero/existing-ligand beyond _protSigma: element-based fallback.
+      const el = state.sel?.atoms?.[i]?.element?.toUpperCase?.();
+      sigma[i] = ((el && LIG_ELEMENT[el]) || LIG_ELEMENT_DEFAULT).sigma;
+    }
+  }
   return {
-    pos: state.integ.pos.subarray(0, 3 * nProt),
-    sigma: protSigma,
+    pos: state.integ.pos.subarray(0, 3 * nColl),
+    sigma,
   };
 }
 
@@ -221,6 +246,8 @@ function placeInPocket() {
     if (ui.ligPlaceInfo) ui.ligPlaceInfo.textContent = formatInputError(createInputError("NO_POCKET", "place in pocket with empty protein selection"));
     return;
   }
+  // Cavity search stays protein-only (nProt) while clash relaxation uses the
+  // extended protein+hetero set in `protein` (rev1-issue2 explicit policy).
   const pocketCenter = findPocketCenter(protein.pos, state.ff.nProt);
   // FP2: no pocket (empty/degenerate center) ⇒ actionable, not a blind place.
   if (!pocketCenter || pocketCenter.some((v) => !Number.isFinite(v))) {

@@ -1278,3 +1278,48 @@ flexlig 10 + 1crn-null 8); `node --check` clean (`version.js`,
 `src/version.js`, `4w52.pdb`, `CHANGELOG.md` all 200, footer
 `v1.1.0-fp7` string present in served HTML. No new top-level panels
 (8 unchanged); no new DOM ids (`src/ui.js` untouched).
+
+## 29. Revolution-2 Issue-5 note (2026-09-18): deterministic coincident escape + placement-policy docs
+
+Pain: the coincident degenerate branch in `clashGrad` (`src/placement.js:89`)
+pushed a fixed `+x+y+z` diagonal (`Fx += 1, Fy += 1, Fz += 1`, `minRatio = 0`)
+— brittle when `+x+y+z` is walled in a dense hetero shell (net push walks
+into the wall while the step halves to `<1e-10`), and `minRatio = 0`
+reported `residualClash = Infinity` (non-finite degenerate pose) for a
+finite clash energy. Docs were stale on the
+`ligandStart`/`excludeFrom`/`bindingTermsActive`/live-terms/`rmsdLig`
+policies and carried pre-rev1-issue2 line numbers.
+
+What shipped (placement escape branch + docs + focused test only; no
+caller, kernel, UI, or gate changes):
+- `src/placement.js:89-104` (escape branch only): deterministic
+  index-hashed escape direction per `(ligand a, collider i)` with its torque
+  arm (rotation joins the escape), replacing the fixed diagonal. Fixed given
+  indices, so placement stays deterministic given `seed` (seed still owns
+  the initial SO(3) rotation, `src/placement.js:246`); `minRatio` floor
+  (`1e-3/rE`) keeps `residualClash` (`src/placement.js:220`) finite.
+- Policies (re-stated with correct line refs; see `docs/PLACEMENT.md`):
+  placeInPocket clashes hetero-inclusive (`getProteinCoordsAndSigma`,
+  `src/ligand-panel.js:116`, `collEnd = ligandStart ?? nProt`) while the
+  cavity search stays protein-only (`findPocketCenter(protein.pos,
+  state.ff.nProt)`, `src/ligand-panel.js:251`); slot exclusion via
+  `opts.excludeFrom` / `protein.excludeFrom` (`src/placement.js:157`);
+  hetero-excluded viewer pocket (`src/viewer.js:211`) and H-bond overlay
+  (`src/viewer.js:505`); RMSD split (`rmsd` protein-only `src/heavy.js:1395`,
+  `rmsdLig` `[ligandStart, n)` `src/heavy.js:1413`, legacy `rmsdAll`);
+  live per-term mirror without BindLog (`liveTermsWanted` et al.,
+  `src/main.js:571`) with the wiring descriptor `bindingTermsActive`
+  (`src/ff-binding.js:51`).
+- NEW `tests/test_rev2_issue5_placement_escape.js` (14 asserts, <1 s,
+  deterministic; NOT wired into `tests/test_all.js`, gate untouched):
+  single-atom coincident escape leaves off-diagonal (cos with `+x+y+z` −0.93
+  vs old exactly 1.0), still-coincident pose reports finite residual 3400
+  (old: `Infinity`) with honest `converged:false`, dense hetero cage
+  (octahedral ±2.5 A + coincident center) converges finite + bit-identical
+  twice, `placeLigand` same-seed bit-identical. Fails 2/14 on the pre-fix
+  tree (diagonal cos = 1.0, residual `Infinity`), passes 14/14 after.
+
+Verification at close-out: `node --check src/placement.js` clean; new
+suite 14/14 twice bit-identical; `node tests/test_placement_hetero.js`
+16/16 (hetero-aware collision set unaffected — no coincidence there);
+`git diff --check` clean. No new top-level panels; no new DOM ids.

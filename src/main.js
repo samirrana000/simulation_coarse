@@ -151,8 +151,27 @@ function bindvizFit(canvas) {
 function drawBindviz() {
   const bl = state.bindLog;
   const hasData = !!(bl && bl.nFrames > 0 && bl.nEvents > 0);
+  // Rev1/Issue4: energy canvas falls back to the live per-term mirror when the
+  // BindLog carries no energy events — normal Runs render per-term stripes
+  // without requiring the BindLog checkbox. Timeline/PMF still need capture
+  // (contacts/hills), so they keep the hasData gate.
+  let energyBl = hasData ? bl : null;
+  let energyLive = false;
+  if (energyBl) {
+    let hasEnergy = false;
+    try {
+      for (let i = 0; i < energyBl.nEvents; i++) if (energyBl.evType[i] === 0) { hasEnergy = true; break; }
+    } catch (_) { hasEnergy = true; }
+    if (!hasEnergy) energyBl = null;
+  }
+  if (!energyBl) {
+    try {
+      const view = liveTermsBindLogView();
+      if (view) { energyBl = view; energyLive = true; }
+    } catch (_) { energyBl = null; }
+  }
   if (ui.bindvizTimeline && bindvizFit(ui.bindvizTimeline)) renderInteractionTimeline(ui.bindvizTimeline, hasData ? bl : null);
-  if (ui.bindvizEnergy && bindvizFit(ui.bindvizEnergy)) renderEnergyDecomposition(ui.bindvizEnergy, hasData ? bl : null);
+  if (ui.bindvizEnergy && bindvizFit(ui.bindvizEnergy)) renderEnergyDecomposition(ui.bindvizEnergy, energyBl);
   if (ui.bindvizPmf && bindvizFit(ui.bindvizPmf)) renderPmfFormation(ui.bindvizPmf, hasData ? bl : null);
   if (ui.bindvizCaption) {
     // Stage-7: hill-aware caption reusing the existing bindvizCaption (no new
@@ -166,11 +185,13 @@ function drawBindviz() {
         for (let i = 0; i < bl.nEvents; i++) if (bl.evType[i] === 3) nHills++;
       }
     } catch (_) { nHills = -1; }
-    ui.bindvizCaption.textContent = !hasData
-      ? "Enable BindLog capture in Recording, run, then insights render live (1 Hz)."
-      : (nHills === 0
-        ? `BindViz · ${bl.nEvents} events · ${bl.nFrames} frames (1 Hz live). PMF: ${PMF_NOHILL_HINT}`
-        : `BindViz · ${bl.nEvents} events · ${bl.nFrames} frames (1 Hz live).`);
+    ui.bindvizCaption.textContent = !hasData && !energyLive
+      ? "Enable BindLog capture in Recording, run, then insights render live (1 Hz). Energy stripe is live without capture once running."
+      : (!hasData && energyLive
+        ? `Live per-term energies (no BindLog — ${state._liveTermsHist?.length ?? 0} samples, 1 Hz). Timeline/PMF need BindLog capture.`
+        : (nHills === 0
+          ? `BindViz · ${bl.nEvents} events · ${bl.nFrames} frames (1 Hz live). PMF: ${PMF_NOHILL_HINT}`
+          : `BindViz · ${bl.nEvents} events · ${bl.nFrames} frames (1 Hz live).`));
   }
 }
 /** Steady ≤1 Hz tick — no-data canvases redraw actionable text, live data redraws plots. */
@@ -499,7 +520,8 @@ function renderHeteroPanel(external) {
  * L1 adds CG salt-bridge charges (S1) + directional-HB virtual sites (S2).
  * L2 adds heavy weakint π/cation-π/halogen (S3) + BindLog per-term
  * accumulators (S4) on top. CG paths consume {charges, hbMode},
- * HeavyForceField consumes par.weak, both consume bindLog via
+ * HeavyForceField mirrors physicsLevel/charges/hbMode queryably (Rev3/Issue1,
+ * kernels unchanged) + consumes par.weak, both consume bindLog via
  * bindLogWanted(). All flags are enums/booleans (no units).
  * @type {Record<string, {charges:boolean, hbMode:string, weak:string, bindLog:boolean}>}
  */
@@ -513,7 +535,7 @@ const PHYSICS_LEVELS = {
  * Read the active physics level (guarded; headless/unknown → L0 baseline)
  * and persist it to settingsState.physicsLevel (in-memory, existing
  * settings pattern).
- * @returns {{charges:boolean, hbMode:string, weak:string, bindLog:boolean}} active tier spec
+ * @returns {{level:string, charges:boolean, hbMode:string, weak:string, bindLog:boolean}} active tier spec
  */
 function physicsLevelSpec() {
   let lvl = "L0";
@@ -522,7 +544,7 @@ function physicsLevelSpec() {
     if (PHYSICS_LEVELS[v]) lvl = v;
   } catch (_) { lvl = "L0"; }
   try { settingsState.physicsLevel = lvl; } catch (_) { /* headless */ }
-  return PHYSICS_LEVELS[lvl];
+  return { level: lvl, ...PHYSICS_LEVELS[lvl] };
 }
 
 /**
@@ -534,6 +556,86 @@ function bindLogWanted() {
     return (ui.bindlogOn?.checked === true) || physicsLevelSpec().bindLog === true;
   } catch (_) { return false; }
 }
+
+// Revolution 1 / Issue 4: live per-term mirror (HUD/bindviz without BindLog).
+// Problem: lj/coul/hb/desolv/pi/cpi/xb accumulators were filled only when
+// ff.trackTerms === true (BindLog capture on); a normal Run showed the scalar
+// U_bind but zeros in the energy channel. Fix (main.js ONLY, no FF kernel
+// change): keep the lightweight accumulators always on while a ligand is
+// present (a few float adds per cross pair — U/forces bit-identical, see
+// scripts/test_bindlog_integration.mjs) and mirror the last per-term vector
+// at HUD cadence (10 Hz) + render it into bindvizEnergy at ≤1 Hz when the
+// BindLog carries no energy events. BindLog event capture itself stays gated
+// on bindLogWanted() (no extra memory), so defaults stay backward compatible.
+const LIVE_TERMS_N = 120;
+/** Live mirror wants per-term data whenever a ligand is present (no checkbox). */
+function liveTermsWanted(ff) { return !!(ff && ff.nLigAtoms > 0); }
+/**
+ * Apply the live trackTerms policy: BindLog capture OR live mirror.
+ * @param {object} ff live force field
+ * @returns {boolean} effective trackTerms flag
+ */
+function applyLiveTrackTerms(ff) {
+  if (!ff) return false;
+  ff.trackTerms = bindLogWanted() || liveTermsWanted(ff);
+  return ff.trackTerms === true;
+}
+// Read the last per-term vector (always safe; missing fields → 0).
+function readLiveTerms(ff) {
+  if (!ff) return null;
+  const lj = Number(ff.bindLJU) || 0, coul = Number(ff.bindCoulU) || 0,
+    hb = Number(ff.bindHBU) || 0, desolv = Number(ff.desolvU) || 0,
+    pi = Number(ff.piU) || 0, cpi = Number(ff.cpiU) || 0, xb = Number(ff.xbU) || 0;
+  const b = Number(ff.bindingU);
+  return { lj, coul, hb, desolv, pi, cpi, xb, bindingU: Number.isFinite(b) ? b : (lj + coul + hb + desolv + pi + cpi + xb) };
+}
+/** Compact HUD fragment: scalar U_bind + live per-term split ("" when N/A). */
+function formatLiveTermsHUD(ff) {
+  if (!ff || !(ff.nLigAtoms > 0) || !Number.isFinite(ff.bindingU)) return "";
+  const t = readLiveTerms(ff);
+  const f2 = (v) => (Number.isFinite(v) ? v.toFixed(2) : "—");
+  let s = `U_bind = ${f2(t.bindingU)} (LJ ${f2(t.lj)} · Coul ${f2(t.coul)} · HB ${f2(t.hb)} · desolv ${f2(t.desolv)}`;
+  if (Math.abs(t.pi) > 1e-9 || Math.abs(t.cpi) > 1e-9 || Math.abs(t.xb) > 1e-9)
+    s += ` · π ${f2(t.pi)} · cπ ${f2(t.cpi)} · XB ${f2(t.xb)}`;
+  return s + ") kcal/mol  ·  ";
+}
+/**
+ * Refresh the HUD-cadence mirror (no extra ff.compute — reads last fields).
+ * @param {object} ff live force field
+ * @param {number} t sim time in ps
+ */
+function updateLiveTermsMirror(ff, t) {
+  if (!liveTermsWanted(ff)) return null;
+  const snap = readLiveTerms(ff);
+  if (!snap) return null;
+  state._liveTerms = snap;
+  const hist = (state._liveTermsHist ??= []);
+  const lastT = hist.length ? hist[hist.length - 1].t : -Infinity;
+  if (hist.length === 0 || t - lastT >= 0.09) {
+    hist.push({ t, ...snap });
+    if (hist.length > LIVE_TERMS_N) hist.shift();
+  }
+  return snap;
+}
+/**
+ * Synthetic BindLog view over the mirror history so the tested
+ * renderEnergyDecomposition renderer draws live per-term stripes without
+ * requiring the BindLog checkbox (same colors/legend, ≤1 Hz).
+ */
+function liveTermsBindLogView() {
+  const hist = state._liveTermsHist;
+  if (!hist || hist.length < 2) return null;
+  const n = hist.length, nE = n * 7;
+  const evTime = new Float64Array(nE), evType = new Uint8Array(nE),
+    evA = new Int32Array(nE), evX = new Float32Array(nE);
+  let k = 0;
+  for (let i = 0; i < n; i++) {
+    const h = hist[i], vals = [h.lj, h.coul, h.hb, h.desolv, h.pi, h.cpi, h.xb];
+    for (let c = 0; c < 7; c++, k++) { evTime[k] = h.t; evType[k] = 0; evA[k] = c; evX[k] = vals[c]; }
+  }
+  return { nEvents: nE, evTime, evType, evA, evX };
+}
+export { liveTermsWanted, applyLiveTrackTerms, readLiveTerms, formatLiveTermsHUD, updateLiveTermsMirror, liveTermsBindLogView };
 
 /* ------------------------------------------------------------------ */
 /*  FP5 — chunked heavy build (progress + cancel, S7 ACCEPT-CPU follow-up) */
@@ -644,12 +746,14 @@ export function buildSystem() {
 
   // Loop-2 S7: physics-level selector feeds the FF flags (default L0 =
   // pre-Loop-2 baseline, bit-identical). CG consumes charges/hbMode,
-  // HeavyForceField consumes par.weak (set below, ignored by CG).
+  // HeavyForceField mirrors physicsLevel/charges/hbMode queryably (Rev3/Issue1,
+  // kernels unchanged) and consumes par.weak for the S3 terms (ignored by CG).
   const physLvl = physicsLevelSpec();
   const par = {
     rc: Number(ui.rc?.value || 10),
     gamma: Number(ui.gamma?.value || 2),
     temp: Number(ui.temp?.value || 300),
+    physicsLevel: physLvl.level,
     binding: { on: ui.bindPot?.checked ?? true, holo: ui.holoSprings?.checked ?? true, charges: physLvl.charges, hbMode: physLvl.hbMode },
     weak: physLvl.weak === "on" ? "on" : "off",
   };
@@ -759,9 +863,11 @@ async function runHeavyBuildAsync(myGen, par) {
  */
 function finishBuildCommon() {
   state.integ = new LangevinIntegrator(state.ff.ref, state.ff, Number(ui.mass?.value || 110));
-  // Loop-2 S4+S7: keep per-term accumulators on across rebuilds while
-  // capturing (manual checkbox OR L2 full-rigor tier).
-  state.ff.trackTerms = bindLogWanted();
+  // Loop-2 S4+S7 + Rev1/Issue4: per-term accumulators stay on while a ligand
+  // is present (live HUD/bindviz mirror) or while capturing (manual checkbox
+  // OR L2 tier). U/forces bit-identical either way; only the event capture
+  // below still requires bindLogWanted().
+  applyLiveTrackTerms(state.ff);
 
   if (state.ff.nLigAtoms > 0) {
     state.funnel = new Funnel({
@@ -802,6 +908,9 @@ function finishBuildCommon() {
   // Loop-2 S4 (R6 §5): fresh BindLog per Build (clears frames + events).
   state.bindLog = new BindLog();
   state._lastContacts = null;
+  // Rev1/Issue4: fresh Build also clears the live per-term mirror (no stale stripes).
+  state._liveTerms = null;
+  state._liveTermsHist = [];
   // Phase 5 — reset dock + strips + DCCM empty state on rebuild.
   try {
     _cvHist.length = 0;
@@ -898,6 +1007,7 @@ function onParamChange(rebuildContacts = true) {
       rc: Number(ui.rc?.value || 10),
       gamma: Number(ui.gamma?.value || 2),
       temp: Number(ui.temp?.value || 300),
+      physicsLevel: physLvlHot.level,
       binding: { on: ui.bindPot?.checked ?? true, holo: ui.holoSprings?.checked ?? true, charges: physLvlHot.charges, hbMode: physLvlHot.hbMode },
       weak: physLvlHot.weak === "on" ? "on" : "off",
     };
@@ -919,8 +1029,10 @@ function onParamChange(rebuildContacts = true) {
     }
     state._prevPos = null;
     state.nanWarning = false;
-    // Loop-2 S4+S7: reapply the per-term accumulator flag on the rebuilt FF
-    state.ff.trackTerms = bindLogWanted();
+    // Loop-2 S4+S7 + Rev1/Issue4: reapply the live trackTerms policy on the
+    // rebuilt FF (accumulators stay on while a ligand is present for the HUD
+    // mirror; BindLog event capture still requires bindLogWanted()).
+    applyLiveTrackTerms(state.ff);
     state.integ.setTemperature(Number(ui.temp?.value || 300));
     state.integ.setFriction(Number(ui.fric?.value || 8));
 
@@ -1076,14 +1188,16 @@ if (ui.recStopBtn) {
     try { updateGuide(); } catch (_) { /* headless */ } // FP1: frames landed → Analyze ✓
   });
 }
-// Loop-2 S4 (R6 §5): BindLog capture toggle — flips the FF per-term
-// accumulator flag (default off → bit-identical hot path) and resets the
-// contact-diff baseline so form/break events only fire across the switch.
+// Loop-2 S4 (R6 §5) + Rev1/Issue4: BindLog capture toggle — flips the BindLog
+// event-capture path and reapplies the live trackTerms policy (accumulators
+// stay on while a ligand is present for the HUD mirror, so unchecking the box
+// never blanks the per-term HUD/energy stripe). Resets the contact-diff
+// baseline so form/break events only fire across the switch.
 if (ui.bindlogOn) {
   ui.bindlogOn.addEventListener("change", () => {
     // Loop-2 S7: effective flag is checkbox OR L2 tier (unchecking while L2
     // is active keeps capture on — the tier owns the flag until deselected).
-    if (state.ff) state.ff.trackTerms = bindLogWanted();
+    if (state.ff) applyLiveTrackTerms(state.ff);
     if (!bindLogWanted()) state._lastContacts = null;
     if (bindLogWanted() && state.funnel) {
       state.funnel.onHill = (cv, h) => state.bindLog && state.bindLog.pushHill(state.integ.time, cv, h);
@@ -1477,6 +1591,9 @@ function tick(now) {
       // debounce guard: if (now - lastHudUpdate < 100) skip HUD update this frame
       if (now - lastHudUpdate >= 100) {
         lastHudUpdate = now;
+        // Rev1/Issue4: refresh the live per-term mirror at the same 10 Hz HUD
+        // cadence (reads last ff fields — no extra compute, no checkbox).
+        try { updateLiveTermsMirror(ff, integ.time); } catch (_) { /* headless */ }
         // Phase 5 — Metrics merged into the single #hud line (one T, one E;
         // #metricsHud stays in DOM for contract but hidden via CSS).
         let pmfStr = "—";
@@ -1492,7 +1609,7 @@ function tick(now) {
           (state.nanWarning ? `⚠ NON-FINITE ENERGY — simulation auto-paused. Reset (⟲) to recover.  ·  ` : "") +
           `t = ${integ.time.toFixed(1)} ps (${(integ.time / 1000).toFixed(3)} ns)  ·  ` +
           `U = ${Number.isFinite(ff.energy) ? ff.energy.toFixed(1) : "NaN"} kcal/mol  ·  ` +
-          (ff.nLigAtoms > 0 ? `U_bind = ${ff.bindingU.toFixed(2)} kcal/mol  ·  ` : "") +
+          formatLiveTermsHUD(ff) +
           extra +
           `RMSD = ${ff.rmsd(integ.pos).toFixed(2)} Å  ·  ` +
           `T_inst = ${ff.kineticTemp(integ.vel, integ.mass).toFixed(0)} K  ·  ` +

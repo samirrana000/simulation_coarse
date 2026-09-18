@@ -168,8 +168,9 @@ export class Viewer {
       }
 
       if (ff.ligandAtoms && ff.ligandAtoms.length) {
-        for (let i = this.nProt; i < this.n; i++) {
-          const la = ff.ligandAtoms[i - this.nProt];
+        const ligStart = this.ligandStart ?? this.nProt;
+        for (let i = ligStart; i < this.n; i++) {
+          const la = ff.ligandAtoms[i - ligStart];
           const el = (la && la.element) ? la.element.toUpperCase() : "C";
           this.colors[i] = LIGAND_COLOR[el] || LIGAND_COLOR_DEFAULT;
         }
@@ -207,10 +208,11 @@ export class Viewer {
     }
     this.contactIdx = Uint32Array.from(pairs);
 
-    // Compute pocket center
-    if (this.n > this.nProt) {
+    // Compute pocket center — external-ligand COM only (hetero excluded via ligandStart)
+    const ligStartPc = this.ligandStart ?? this.nProt;
+    if (this.n > ligStartPc) {
       let px = 0, py = 0, pz = 0, count = 0;
-      for (let i = this.nProt; i < this.n; i++) {
+      for (let i = ligStartPc; i < this.n; i++) {
         px += r[3 * i]; py += r[3 * i + 1]; pz += r[3 * i + 2]; count++;
       }
       if (count > 0) this.pocketCenter = [px / count, py / count, pz / count];
@@ -499,15 +501,16 @@ export class Viewer {
       ctx.stroke();
     }
 
-    // 3. Dynamic Protein-Ligand Hydrogen Bonds
-    if (this.showHBonds && this.n > this.nProt) {
+    // 3. Dynamic Protein-Ligand Hydrogen Bonds (j-set = true ligand only, hetero excluded)
+    const ligStartHb = this.ligandStart ?? this.nProt;
+    if (this.showHBonds && this.n > ligStartHb) {
       ctx.lineWidth = (this.dpr || 1) * 1.5;
       ctx.strokeStyle = "#38bdf8";
       ctx.setLineDash([4, 3]);
       ctx.beginPath();
       for (let i = 0; i < this.nProt; i += 2) {
         const xi = pos[3 * i], yi = pos[3 * i + 1], zi = pos[3 * i + 2];
-        for (let j = this.nProt; j < this.n; j++) {
+        for (let j = ligStartHb; j < this.n; j++) {
           const dx = pos[3 * j] - xi, dy = pos[3 * j + 1] - yi, dz = pos[3 * j + 2] - zi;
           const d2 = dx * dx + dy * dy + dz * dz;
           if (d2 > 6.0 && d2 < 11.5) {

@@ -10,12 +10,111 @@
  * _binding(pos, f) signature, so no call site changes. The full physics
  * documentation lives on the class-method wrapper in forcefield.js.
  *
+ * Revolution 1 / Issue 3: L0 vs L1 wiring (kernels UNCHANGED — this note only
+ * makes the existing opt-in explicit):
+ *   L0 default (charges OFF, hbMode "off"): screened-Coulomb branch stays
+ *     dead (q1==0), H-bond is the legacy isotropic bead-flag term (P/Cp/Cn
+ *     beads only) — salt-bridge electrostatics + backbone directional H-bonds
+ *     are missing by design (fast baseline, disclosed via
+ *     ForceField.describePhysics() / bindingTermsActive()).
+ *   L1 opt-in (charges ON, hbMode "directional"): CG_FORMAL_CHARGES revive the
+ *     Coulomb branch; valid Cα-triplet virtual O-sites take the directional
+ *     HB path (PASS 1b) with the isotropic term kept only as fallback for
+ *     invalid sites. See forcefield.js:CG_PHYSICS_LEVELS/resolvePhysicsLevel.
+ *
  * Two-pass structure:
  *   Pass 1 — pair terms (LJ / electrostatics / H-bond), plus EEF1-lite
  *            occupancy-density accumulation and (a, j, r) recording.
  *   Pass 2 — burial fraction/energy per ligand atom, then desolvation
  *            forces over the recorded pairs.
  */
+
+/**
+ * Revolution 1 / Issue 3: read-only wiring descriptor for the binding kernel.
+ * Reports which cross terms CAN contribute given the ForceField flags — pure
+ * introspection, zero energy effect (kernels below untouched).
+ *
+ * Revolution 2 / Issue 2: fallback-aware — in directional mode the kernel
+ * keeps the legacy isotropic bead-flag term as fallback for invalid virtual
+ * sites (see PASS 1 branch: `valid` site → directional, else isotropic when
+ * `_protHB[i] && ligHB`). Reporting `isotropicHB:false` alone therefore lied
+ * about the live fallback branch. `isotropicHBFallback` / `hasInvalidFallback`
+ * is true when directional mode has at least one invalid/missing site, so the
+ * descriptor is truthful. `isotropicHB` keeps its primary-only meaning for
+ * backward compatibility; actual fallback energy is additionally gated by the
+ * `_protHB` / `_ligHB` bead flags.
+ * @param {object} ff ForceField instance (reads bindOn/nLigAtoms/chargesOn/hbMode/_vSites/nProt)
+ * @returns {{lj:boolean, desolv:boolean, coulomb:boolean,
+ *   directionalHB:boolean, isotropicHB:boolean,
+ *   isotropicHBFallback:boolean, hasInvalidFallback:boolean}}
+ */
+export function bindingTermsActive(ff) {
+  const hasPairs = !!(ff && ff.bindOn && ff.nLigAtoms > 0);
+  const isDirectionalMode = hasPairs && ff.hbMode === "directional";
+  // Revolution 3 / Issue 2: count valid vSites — directional is live only
+  // with >=1 valid site (zero-valid ⇒ no dir); fallback additionally gated
+  // on HB-capable beads on both sides (any(_protHB) && any(_ligHB)).
+  let nValid = 0;
+  let hasInvalid = false;
+  if (isDirectionalMode) {
+    const vs = ff._vSites;
+    if (!vs) {
+      hasInvalid = true;
+    } else {
+      const n = (ff && Number.isFinite(ff.nProt)) ? ff.nProt : vs.length;
+      for (let i = 0; i < n; i++) {
+        const s = vs[i];
+        if (s && s.valid) nValid++;
+        else hasInvalid = true;
+      }
+    }
+  }
+  const directional = isDirectionalMode && nValid >= 1;
+  let hasInvalidFallback = false;
+  if (hasInvalid) {
+    let anyProtHB = false;
+    const phb = ff ? ff._protHB : null;
+    if (phb) { for (let i = 0; i < phb.length; i++) { if (phb[i]) { anyProtHB = true; break; } } }
+    let anyLigHB = false;
+    const lhb = ff ? ff._ligHB : null;
+    if (lhb) { for (let i = 0; i < lhb.length; i++) { if (lhb[i]) { anyLigHB = true; break; } } }
+    hasInvalidFallback = anyProtHB && anyLigHB;
+  }
+  return {
+    lj: hasPairs,
+    desolv: hasPairs,
+    coulomb: hasPairs && ff.chargesOn === true,
+    directionalHB: directional,
+    // Legacy isotropic bead-flag term is the primary HB path unless directional
+    // takes over; in directional mode it survives only as fallback for beads
+    // whose virtual site is invalid (see PASS 1 branch below).
+    isotropicHB: hasPairs && ff.hbMode !== "directional",
+    isotropicHBFallback: hasInvalidFallback,
+    hasInvalidFallback,
+  };
+}
+
+/**
+ * One-line human-readable wiring summary (for logs/regression output).
+ * Revolution 2 / Issue 2: fallback-aware — reports `isoHB(fallback)` when the
+ * primary isotropic term is off but the directional-mode invalid-site fallback
+ * branch is live (see bindingTermsActive).
+ * @param {object} ff ForceField instance
+ * @returns {string} e.g. "L0: LJ+desolv+isoHB (coulomb OFF, directional OFF)"
+ */
+export function describeBindingTerms(ff) {
+  const t = bindingTermsActive(ff);
+  const lvl = (ff && ff.physicsLevel) || "L0";
+  const on = [];
+  if (t.lj) on.push("LJ");
+  if (t.desolv) on.push("desolv");
+  if (t.isotropicHB) on.push("isoHB");
+  else if (t.isotropicHBFallback) on.push("isoHB(fallback)");
+  if (t.coulomb) on.push("coulomb");
+  if (t.directionalHB) on.push("dirHB");
+  return `${lvl}: ${on.length ? on.join("+") : "no-binding"} `
+    + `(coulomb ${t.coulomb ? "ON" : "OFF"}, directional ${t.directionalHB ? "ON" : "OFF"})`;
+}
 export function binding(ff, pos, f) {
   ff.bindingU = 0;
   ff.desolvU = 0;

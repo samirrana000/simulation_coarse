@@ -592,6 +592,37 @@ function improperAngleFlat(atoms, i, j, k, l) {
   return Math.atan2(sin_phi, Math.max(-1, Math.min(1, cos_phi)));
 }
 
+// ── Revolution 3 / Issue 1: heavy physics-level mirror (queryable only) ────
+// Same tier semantics as ForceField/resolvePhysicsLevel (src/forcefield.js):
+// L0 (default) = charges OFF / hbMode "off"; L1/L2 = charges ON /
+// hbMode "directional". Heavy kernels already run full physics unconditionally
+// (assignCharges + GB + DirectionalHBond always on), so the resolver output is
+// stored queryably (physicsLevel/chargesOn/hbMode/describePhysics) and never
+// gates energy/force math. Explicit par.binding.charges/hbMode win over the
+// tier; unknown physicsLevel → L0. Pure + headless-safe; never throws.
+export const DEFAULT_PHYSICS_LEVEL = "L0";
+export const HEAVY_PHYSICS_LEVELS = {
+  L0: { charges: false, hbMode: "off" },
+  L1: { charges: true, hbMode: "directional" },
+  // Heavy slice of UI L2 == L1 for charges/hbMode (L2 adds weakint via
+  // par.weak + BindLog accumulators, consumed elsewhere).
+  L2: { charges: true, hbMode: "directional" },
+};
+/**
+ * Resolve the effective heavy binding flags from a HeavyForceField `par`.
+ * @param {object} [par] constructor params ({physicsLevel, binding:{charges,hbMode}})
+ * @returns {{level:string, charges:boolean, hbMode:string}}
+ */
+export function resolveHeavyPhysicsLevel(par = {}) {
+  const raw = par?.physicsLevel;
+  const level = (raw === "L1" || raw === "L2" || raw === "L0") ? raw : DEFAULT_PHYSICS_LEVEL;
+  const tier = HEAVY_PHYSICS_LEVELS[level] ?? HEAVY_PHYSICS_LEVELS.L0;
+  const b = par?.binding ?? {};
+  const charges = (b.charges === undefined) ? tier.charges : (b.charges === true);
+  const hbMode = b.hbMode ?? tier.hbMode;
+  return { level, charges, hbMode };
+}
+
 /**
  * HeavyForceField — High performance all-atom heavy force field.
  *
@@ -600,6 +631,14 @@ function improperAngleFlat(atoms, i, j, k, l) {
  * chunked buildTopologyChunked) and skips the internal buildTopology call.
  * Absent → internal build, bit-identical to before (all existing 3-arg
  * callers untouched).
+ *
+ * Revolution 3 / Issue 1: queryable physics-level mirror (no kernel change).
+ * Pre-fix the constructor ignored par.physicsLevel / par.binding.charges /
+ * par.binding.hbMode, so UI L1/L2 silently no-opped in heavy except the weak
+ * flag. The heavy kernels already run full physics (AMBER charges + GB +
+ * directional H-bonds always on), so these flags are stored queryably only
+ * (this.physicsLevel / chargesOn / hbMode + describePhysics()) and never
+ * gate energy/force math — U/forces are bit-identical across tiers.
  */
 export class HeavyForceField {
   constructor(system, par = {}, ligands = [], opts = {}) {
@@ -612,6 +651,16 @@ export class HeavyForceField {
     this.heteroAtoms = atoms.slice(this.nProt, this.ligandStart);
     this.gamma = par.gamma ?? 1.0;
     this.heavy = true;
+    // Revolution 3 / Issue 1: store the requested tier + mirror the CG
+    // binding flags queryably. Explicit par.binding.charges/hbMode win over
+    // the tier (same rule as ForceField/resolvePhysicsLevel); unknown levels
+    // fall back to L0. Queryable only — no kernel math reads these flags.
+    {
+      const _phys = resolveHeavyPhysicsLevel(par);
+      this.physicsLevel = _phys.level;
+      this.chargesOn = _phys.charges;
+      this.hbMode = _phys.hbMode;
+    }
 
     // Fast Spatial Grid for O(N) neighbor searches
     // G66 — Verlet skin 2Å, rebuild every 10 steps, 20% cut — aspirational target; currently rebuilds every step via SpatialGrid.build() with R_CUT=8.5Å (skin not yet implemented)
@@ -895,6 +944,31 @@ export class HeavyForceField {
     }
     this._obc2Radii = computeOBC2Radii(pos, intrinsic, {});
     return this._obc2Radii;
+  }
+
+  /**
+   * Revolution 3 / Issue 1: queryable physics-fidelity descriptor (read-only,
+   * headless-safe). Mirrors ForceField.describePhysics() so UI L1/L2 is
+   * observable in heavy instead of silently no-opping. No energy effect —
+   * pure introspection: the heavy kernels (charges + GB + directional H-bonds)
+   * run unconditionally, so coulombActive/directionalHBActive report the
+   * mirrored tier flags, not a kernel gate.
+   * @returns {{level:string, charges:boolean, hbMode:string,
+   *   coulombActive:boolean, directionalHBActive:boolean,
+   *   isSimplifiedDefault:boolean}}
+   */
+  describePhysics() {
+    return {
+      level: this.physicsLevel ?? DEFAULT_PHYSICS_LEVEL,
+      charges: this.chargesOn === true,
+      hbMode: this.hbMode,
+      coulombActive: this.chargesOn === true,
+      directionalHBActive: this.hbMode === "directional",
+      isSimplifiedDefault:
+        (this.physicsLevel ?? DEFAULT_PHYSICS_LEVEL) === "L0"
+        && !(this.chargesOn === true)
+        && this.hbMode === "off",
+    };
   }
 
   setFunnel(fn) { this.funnel = fn; }
@@ -1385,10 +1459,55 @@ export class HeavyForceField {
     return ke / (1.5 * this.n * KB_KCAL);
   }
 
+  /**
+   * RMSD to native, restricted to the protein heavy atoms (fold-stability
+   * metric). Mirrors ForceField.rmsd (protein-only): ligand/hetero drift is
+   * excluded so HUD RMSD is comparable across CG/heavy and ligand undocking
+   * does not read as fold instability. Use rmsdLig() for the ligand part and
+   * rmsdAll() for the legacy all-atom value.
+   */
   rmsd(pos) {
+    const nP = this.nProt;
+    if (!Number.isFinite(nP) || nP <= 0) return this.rmsdAll(pos);
     let s = 0;
-    for (let i = 0; i < pos.length; i++) {
-      const d = pos[i] - this.ref[i];
+    const r = this.ref;
+    const lim = Math.min(nP * 3, pos.length, r.length);
+    for (let i = 0; i < lim; i++) {
+      const d = pos[i] - r[i];
+      s += d * d;
+    }
+    return Math.sqrt(s / nP);
+  }
+
+  /**
+   * Ligand-only RMSD over the external-ligand block [ligandStart, n), no
+   * alignment. Returns 0 when no ligand is present. Hetero/cofactor atoms
+   * (protein..ligandStart) are excluded — same slice the HUD ligRMSD uses.
+   */
+  rmsdLig(pos) {
+    const nL = this.nLigAtoms;
+    if (!Number.isFinite(nL) || nL <= 0) return 0;
+    const start = (Number.isInteger(this.ligandStart) ? this.ligandStart : this.nProt) * 3;
+    let s = 0;
+    const r = this.ref;
+    const lim = Math.min(pos.length, r.length);
+    for (let i = start; i < lim; i++) {
+      const d = pos[i] - r[i];
+      s += d * d;
+    }
+    return Math.sqrt(s / nL);
+  }
+
+  /**
+   * Legacy all-atom RMSD (protein + hetero + ligand). Preserved for backward
+   * compatibility with callers/tests that need the old heavy rmsd number.
+   */
+  rmsdAll(pos) {
+    let s = 0;
+    const r = this.ref;
+    const lim = Math.min(pos.length, r.length);
+    for (let i = 0; i < lim; i++) {
+      const d = pos[i] - r[i];
       s += d * d;
     }
     return Math.sqrt(s / this.n);

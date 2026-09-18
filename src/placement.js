@@ -73,7 +73,7 @@ function rotExp(ox, oy, oz, R, out) {
   out[8] = E6 * r2 + E7 * r5 + E8 * r8;
 }
 
-function clashGrad(rel, ligSig, pp, ps, nProt, cx, cy, cz, margin, out) {
+function clashGrad(rel, ligSig, pp, ps, nColl, cx, cy, cz, margin, out) {
   const m = ligSig.length;
   let U = 0, Fx = 0, Fy = 0, Fz = 0, Tx = 0, Ty = 0, Tz = 0, minRatio = Infinity;
   for (let a = 0; a < m; a++) {
@@ -81,14 +81,26 @@ function clashGrad(rel, ligSig, pp, ps, nProt, cx, cy, cz, margin, out) {
     const rx = rel[a3], ry = rel[a3 + 1], rz = rel[a3 + 2];
     const ax = rx + cx, ay = ry + cy, az = rz + cz;
     const sL = ligSig[a];
-    for (let i = 0; i < nProt; i++) {
+    for (let i = 0; i < nColl; i++) {
       const i3 = 3 * i;
       const dx = ax - pp[i3], dy = ay - pp[i3 + 1], dz = az - pp[i3 + 2];
       const r2 = dx * dx + dy * dy + dz * dz;
       const rE = 0.5 * (ps[i] + sL);
       if (r2 < 1e-6) {
-        minRatio = 0;
-        Fx += 1.0; Fy += 1.0; Fz += 1.0;
+        // rev2-issue5: deterministic index-hashed escape (replaces the fixed
+        // +x+y+z diagonal, brittle when +x+y+z is walled in a dense hetero
+        // cage). Direction varies per (a,i) but is fixed given indices, so the
+        // full placement stays deterministic given seed. The minRatio floor
+        // keeps the residual (1/minRatio) finite instead of Infinity.
+        if (1e-3 / rE < minRatio) minRatio = 1e-3 / rE;
+        const h = ((a + 1) * 73856093 ^ (i + 1) * 19349663 ^ 0x9e3779b9) >>> 0;
+        const jx = ((h % 2001) - 1000) / 1000 || 0.317;
+        const jy = ((((h / 2001) | 0) % 2001) - 1000) / 1000 || -0.413;
+        const jz = ((((h / 4004001) | 0) % 2001) - 1000) / 1000 || 0.521;
+        const jl = Math.hypot(jx, jy, jz) || 1;
+        const ex = jx / jl, ey = jy / jl, ez = jz / jl;
+        Fx += ex; Fy += ey; Fz += ez;
+        Tx += ry * ez - rz * ey; Ty += rz * ex - rx * ez; Tz += rx * ey - ry * ex;
         U += 50.0;
         continue;
       }
@@ -123,7 +135,16 @@ function applyRot(R, ref, rel, m) {
 }
 
 /**
- * Relax a rigid ligand pose against the protein.
+ * Relax a rigid ligand pose against the collision set.
+ *
+ * Collision policy (rev1-issue2): `protein` is the FULL clash set, not
+ * necessarily protein-only. Legacy callers pass protein-only arrays
+ * ({ pos: 3*nProt, sigma: nProt }) — still supported. Heavy-mode callers
+ * pass the extended set (protein + hetero/PDB-ligand/cofactor/metal +
+ * existing-ligand atoms, sigma per atom from ff._elem). The incoming
+ * ligand's own slot must be excluded by the caller — either by truncating
+ * the arrays or via `opts.excludeFrom` / `protein.excludeFrom` (indices
+ * [excludeFrom, nTotal) are skipped; defaults to the full arrays).
  */
 export function relaxClash(pos, mol, protein, opts = {}) {
   const maxIters = opts.maxIters ?? 350;
@@ -132,7 +153,8 @@ export function relaxClash(pos, mol, protein, opts = {}) {
 
   const m = mol.atoms.length;
   const pp = protein.pos, ps = protein.sigma;
-  const nProt = pp.length / 3;
+  const nTotal = Math.min(pp.length / 3, ps.length);
+  const nColl = Math.max(0, Math.min(opts.excludeFrom ?? protein.excludeFrom ?? nTotal, nTotal));
 
   const ref = new Float64Array(3 * m);
   const rel = new Float64Array(3 * m);
@@ -158,7 +180,7 @@ export function relaxClash(pos, mol, protein, opts = {}) {
   R[0] = R[4] = R[8] = 1;
   rel.set(ref);
 
-  clashGrad(rel, ligSig, pp, ps, nProt, cx, cy, cz, clashMargin, grad);
+  clashGrad(rel, ligSig, pp, ps, nColl, cx, cy, cz, clashMargin, grad);
   let E = grad[0], minRatio = grad[7];
   let iter = 0, converged = minRatio >= clashMargin;
 
@@ -174,7 +196,7 @@ export function relaxClash(pos, mol, protein, opts = {}) {
       rotExp(step * Tx, step * Ty, step * Tz, R, Rn);
       applyRot(Rn, ref, rel, m);
       const ncx = cx + step * Fx, ncy = cy + step * Fy, ncz = cz + step * Fz;
-      clashGrad(rel, ligSig, pp, ps, nProt, ncx, ncy, ncz, clashMargin, grad);
+      clashGrad(rel, ligSig, pp, ps, nColl, ncx, ncy, ncz, clashMargin, grad);
 
       if (grad[0] < E) {
         E = grad[0]; minRatio = grad[7];
@@ -182,7 +204,7 @@ export function relaxClash(pos, mol, protein, opts = {}) {
         if (minRatio >= clashMargin) { converged = true; break; }
       } else {
         applyRot(R, ref, rel, m);
-        clashGrad(rel, ligSig, pp, ps, nProt, cx, cy, cz, clashMargin, grad);
+        clashGrad(rel, ligSig, pp, ps, nColl, cx, cy, cz, clashMargin, grad);
         step *= 0.5;
         if (step < 1e-10) break;
       }
@@ -206,6 +228,12 @@ export function relaxClash(pos, mol, protein, opts = {}) {
 
 /**
  * Place a ligand at a world-space target point with clash avoidance.
+ *
+ * `opts.protein` is the full collision set (see relaxClash): protein-only
+ * for legacy callers, or the extended protein+hetero/existing-ligand set
+ * built by ligand-panel getProteinCoordsAndSigma in heavy mode. The
+ * incoming ligand's own slot must already be excluded (or passed via
+ * `opts.excludeFrom`, forwarded to relaxClash).
  */
 export function placeLigand(mol, target, opts = {}) {
   const m = mol.atoms.length;
@@ -249,13 +277,16 @@ export function placeLigand(mol, target, opts = {}) {
 }
 
 /**
- * Automatically detect a prominent concave pocket / binding cavity center on the protein.
+ * Automatically detect a prominent concave pocket / binding cavity center.
  *
- * @param {Float64Array} protPos Protein coordinates (3 * nProt)
- * @param {number} nProt
+ * @param {Float64Array} protPos coordinates (3 * nProt or longer)
+ * @param {number} [nProt] atoms to scan. Defaults to the full array
+ *   (protPos.length / 3). Pass the protein-only count to restrict the
+ *   cavity search to protein beads while clashing against a longer
+ *   protein+hetero collision array (ligand-panel placeInPocket policy).
  * @returns {[number, number, number]} pocket center coordinates
  */
-export function findPocketCenter(protPos, nProt) {
+export function findPocketCenter(protPos, nProt = protPos.length / 3) {
   if (nProt === 0) return [0, 0, 0];
 
   // Calculate geometric center of mass (COM) and maximum radius

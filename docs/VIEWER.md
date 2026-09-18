@@ -106,9 +106,10 @@ Until then, `ViewerGL` remains a documented placeholder — honest about Canvas2
 
 ## Export & Placement References
 
-- Ligand placement ghost preview & pocket highlight: see `docs/PLACEMENT.md` (ghost preview, pocket highlight, snap).
+- Ligand placement ghost preview & pocket highlight: see `docs/PLACEMENT.md` (ghost preview, pocket highlight, snap; collision-set policy: hetero-inclusive clash vs protein-only cavity, `ligandStart`/`excludeFrom`, rev2-issue5 coincident escape).
+- Hetero-excluded viewer pocket/HB (`ligandStart`): `Viewer.setSystem` reads `ff.ligandStart ?? nProt` (`src/viewer.js:121`) and the pocket center uses only the external-ligand block `[ligandStart, n)` (`src/viewer.js:211` — hetero/cofactor atoms excluded, else protein COM); the dynamic protein–ligand H-bond overlay likewise pairs protein (`i < nProt`) with true ligand only (`j >= ligandStart`, `src/viewer.js:505`).
 - Trajectory exports XYZ/PDB/DCD: see `docs/EXPORT.md` (XYZ/PDB/DCD exports via `src/recorder.js`).
 
 ---
-*See `docs/LIMITATIONS.md:34` (Canvas2D vs WebGL limitation) and `src/viewer.js:303` / `src/viewer-gl.js:14` for source locations.*
+*See `docs/LIMITATIONS.md:34` (Canvas2D vs WebGL limitation) and `src/viewer.js:389` / `src/viewer-gl.js:14` for source locations.*
 

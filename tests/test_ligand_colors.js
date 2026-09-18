@@ -156,5 +156,55 @@ viewer.setSystem(external, externalFF);
 assert(JSON.stringify(viewer.colors[externalFF.ligandStart]) === JSON.stringify(LIGAND_C), "external ligand C remains vivid after metals and cofactors");
 assert(JSON.stringify(viewer.colors[2]) === JSON.stringify(PROTEIN_C), "retained cofactor C is not relabeled as external ligand");
 
+// pocketCenter = external-ligand COM only (hetero excluded via ligandStart)
+{
+  const ligStart = externalFF.ligandStart;
+  const n = externalFF.n;
+  let ex = 0, ey = 0, ez = 0;
+  for (let i = ligStart; i < n; i++) {
+    ex += externalFF.ref[3 * i]; ey += externalFF.ref[3 * i + 1]; ez += externalFF.ref[3 * i + 2];
+  }
+  const m = Math.max(1, n - ligStart);
+  ex /= m; ey /= m; ez /= m;
+  const pc = viewer.pocketCenter;
+  const close = Math.abs(pc[0] - ex) < 1e-9 && Math.abs(pc[1] - ey) < 1e-9 && Math.abs(pc[2] - ez) < 1e-9;
+  assert(close, `pocketCenter is external-ligand COM [${ex},${ey},${ez}] (hetero excluded)`);
+}
+
+// H-bond overlay j-set = true ligand only (hetero excluded)
+{
+  const hbCanvas = makeMockCanvas();
+  const hbViewer = new Viewer(hbCanvas);
+  hbViewer.setSystem(external, externalFF);
+  hbViewer.showStates = false;
+  hbViewer.showContacts = false;
+  hbViewer.drawRibbon = false;
+  hbViewer.drawSpheres = false;
+  hbViewer.showHBonds = true;
+  const hctx = hbCanvas.getContext("2d");
+  let hbSegs = 0;
+  const origLineTo = hctx.lineTo.bind(hctx);
+  hctx.lineTo = function (x, y) {
+    if (hctx.strokeStyle === "#38bdf8") hbSegs++;
+    return origLineTo(x, y);
+  };
+  const n = externalFF.n;
+  const posA = new Float64Array(n * 3);
+  posA[0] = 0; posA[1] = 0; posA[2] = 0;
+  posA[3] = 0; posA[4] = 0; posA[5] = 2.8;
+  posA[6] = 0; posA[7] = 0; posA[8] = 2.8;
+  posA[9] = 20; posA[10] = 0; posA[11] = 0;
+  hbViewer.render(posA);
+  assert(hbSegs === 0, `H-bond overlay ignores hetero atoms (0 segs, got ${hbSegs})`);
+  hbSegs = 0;
+  const posB = new Float64Array(n * 3);
+  posB[0] = 0; posB[1] = 0; posB[2] = 0;
+  posB[3] = 20; posB[4] = 0; posB[5] = 0;
+  posB[6] = 20; posB[7] = 0; posB[8] = 0;
+  posB[9] = 0; posB[10] = 0; posB[11] = 2.8;
+  hbViewer.render(posB);
+  assert(hbSegs === 1, `H-bond overlay draws true ligand contact (1 seg, got ${hbSegs})`);
+}
+
 if (fails === 0) console.log("\n=== PASS test_ligand_colors ===");
 else { console.error(`\n=== FAIL test_ligand_colors (${fails}) ===`); process.exit(1); }
