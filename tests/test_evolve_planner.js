@@ -61,6 +61,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -318,12 +319,33 @@ if (vec) {
     `once the authored queue is exhausted, \`next\` serves a GENERATED goal (${served?.id}) — the generated queue is reachable, not orphaned`
   );
 
-  // (c) The generated queue is deep enough to keep the loop fed for a
-  //     while, which is the whole point of a self-refilling queue.
-  assert(
-    goals.length >= PLAN_SIZE,
-    `the generated queue holds a full ${PLAN_SIZE}-goal plan, so the loop cannot run dry the moment the authored backlog closes`
-  );
+  // (c) The queue must be REFILLABLE, not permanently full.
+  //     This assertion used to demand the generated queue hold a full
+  //     15 goals at all times. That is wrong: closing goals is the entire
+  //     purpose of the loop, so the queue legitimately drains. The real
+  //     requirement is that `plan` can regenerate it — so this runs the
+  //     planner and asserts it produces a full plan from a drained queue.
+  const openNow = goals.filter((g) => g.status !== "closed" && g.status !== "rolled-back").length;
+  let refilled = 0;
+  try {
+    const out = execFileSync(process.execPath, [EVOLVE, "plan"], {
+      cwd: ROOT, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], timeout: 300000,
+      env: { ...process.env, EVOLVE_GATE_CHILD: "1" },
+    });
+    const gen = JSON.parse(fs.readFileSync(path.join(ROOT, "evolve", "queue", "generated.json"), "utf-8"));
+    refilled = (gen.goals || []).filter((g) => g.status !== "closed" && g.status !== "rolled-back").length;
+    assert(refilled >= PLAN_SIZE,
+      `\`plan\` refills a drained queue: ${openNow} open -> ${refilled} open after plan ` +
+      `(${PLAN_SIZE} required) — the loop cannot run dry, which is the whole point`);
+    // The plan summary goes to stderr; the machine-readable body to stdout.
+    // Assert on the JSON, not on log prose, so a log-format change cannot
+    // fail this test.
+    const summary = JSON.parse(out);
+    assert(summary.plan && summary.plan.emitted === PLAN_SIZE,
+      `plan reports what it emitted (emitted ${summary.plan?.emitted}, required ${PLAN_SIZE})`);
+  } catch (e) {
+    assert(false, `\`plan\` runs and refills the queue: ${String(e.message).slice(0, 140)}`);
+  }
 }
 
 assert(

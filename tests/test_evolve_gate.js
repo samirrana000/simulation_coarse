@@ -47,7 +47,7 @@ function assert(cond, msg) {
  * that genuinely needs a live suite run (the "must be able to fail" check on
  * the full path) uses a single non-fast call.
  */
-function gate(args = ["--json", "--fast"]) {
+function gate(args = ["--json", "--fast"], env = {}) {
   try {
     const out = execFileSync(process.execPath, [EVOLVE, "gate", ...args], {
       cwd: ROOT, encoding: "utf-8",
@@ -56,7 +56,7 @@ function gate(args = ["--json", "--fast"]) {
       // suite that invoked this test. Without it the gate recurses until the
       // stack dies. The child flag is an env var precisely because argv of the
       // grandparent is invisible to the gate.
-      env: { ...process.env, EVOLVE_GATE_CHILD: "1" },
+      env: { ...process.env, EVOLVE_GATE_CHILD: "1", ...env },
     });
     return { json: JSON.parse(out), code: 0 };
   } catch (e) {
@@ -82,11 +82,9 @@ const base = gate();
 //      (which is guaranteed to regress) rather than on whatever the current
 //      tree happens to be.
 {
-  const r = gate(["--fast"]); // no --json => real exit code
+  const r = gate(["--fast"], { EVOLVE_GATE_RBEST: "0" }); // no --json => real exit code
   assert(typeof r.code === "number", `gate exposes a real exit code (got ${r.code})`);
-  const closed = base.json.verdict.startsWith("CLOSED");
-  assert(closed ? r.code !== 0 : r.code === 0,
-    `D3: exit code matches the verdict (${base.json.verdict} -> exit ${r.code})`);
+  assert(r.code === 0, `D3: an OPEN gate exits 0 (exit ${r.code}, verdict ${r.json.verdict})`);
 }
 
 // D2 — the gate must see UNCOMMITTED src/ changes.
@@ -152,15 +150,26 @@ const base = gate();
   // NOTE: no --json here. --json is machine-readable-output mode and
   // deliberately does not set an exit code, so asking for it would blind
   // this probe to the very property it is testing.
+  // EVOLVE_GATE_RBEST pins the reference above the regressed score, so the
+  // CLOSED verdict is deterministic instead of depending on whatever R_best
+  // a previous run happened to leave behind. A probe may not write R_best,
+  // so this seam is the only honest way to exercise the exit path.
   const junk = withProbe(
     Array.from({ length: 3000 }, (_, i) => `export const junk_${i} = ${i};`).join("\n"),
-    () => gate(["--fast"])
+    () => gate(["--fast"], { EVOLVE_GATE_RBEST: String(base.json.score + 0.05) })
   );
   assert(junk.json.score < base.json.score,
     `D4: a regressing tree lowers the score (${base.json.score} -> ${junk.json.score})`);
   assert(junk.code !== 0,
     `D4: a regressing tree makes the gate exit non-zero (exit ${junk.code}) — ` +
     `a gate that prints 'roll back' and exits 0 cannot fail anything`);
+
+  // And the converse: a tree at its reference must exit 0, or the gate is
+  // merely inverted.
+  const ok = gate(["--fast"], { EVOLVE_GATE_RBEST: "0" });
+  assert(ok.code === 0,
+    `D4: a tree at or above its reference exits 0 (exit ${ok.code}) — the exit ` +
+    `code must be a verdict, not a constant`);
 }
 
 console.log(`=== test_evolve_gate: ${passed} PASSED, ${failed} FAILED ===`);

@@ -146,7 +146,13 @@ function runGate(opts = {}) {
     if (f > 0) r.notes.push(`tests FAIL: ${f}`);
   } catch (e) {
     r.parts.testPass = 0;
-    r.notes.push(`tests crashed: ${String(e.message).slice(0, 120)}`);
+    // A crashed or timed-out suite is a HARD failure, not a zero. Treating it
+    // as merely "0 points" let a broken tree be accepted as the new reference
+    // state: R_best was re-baselined from a run whose suite had crashed, and
+    // the gate then reported OPEN on that broken state. A measurement that
+    // did not happen must never become the baseline.
+    r.testsCrashed = true;
+    r.notes.push(`tests CRASHED (hard failure, cannot be a reference state): ${String(e.message).slice(0, 160)}`);
   }
 
   // 2b. coverage / anti-rot: every tests/test_*.js must be wired or in tests/manual/.
@@ -379,6 +385,13 @@ function cmdNext() {
 }
 
 function cmdGate() {
+  // EVOLVE_GATE_RBEST overrides the reference score for this run only. It
+  // exists so the exit-code path can be tested deterministically: a probe
+  // cannot (and must not) write R_best, so without a seam the only way to
+  // observe a CLOSED verdict would be to corrupt the real baseline.
+  if (process.env.EVOLVE_GATE_RBEST) {
+    state.R_best = Number(process.env.EVOLVE_GATE_RBEST);
+  }
   const r = runGate({ fast: process.argv.includes("--fast") });
   console.log(JSON.stringify({
     score: Number(r.score.toFixed(4)),
@@ -400,6 +413,10 @@ function cmdGate() {
   }, null, 2));
   // Compare at 4dp so float noise does not read as a regression.
   const r4 = Number(r.score.toFixed(4));
+  // A crashed suite is never OPEN, whatever the composite says: the
+  // measurement did not happen, so it cannot certify anything. Without this
+  // the gate reported OPEN on a tree whose suite had crashed.
+  const open = r4 >= state.R_best && !r.testsCrashed;
   // The high-water must advance whenever the suite grew, independently of
   // whether the composite moved. The old predicate compared the high-water
   // against a hardcoded 352 and could therefore never fire again after the
@@ -409,7 +426,9 @@ function cmdGate() {
                     r.testNumbers.passed > (state.testHighWater || 0));
   // Record the vector so `plan` can diff against it. The PREVIOUS vector
   // moves to prevGateVector: a regression is the loop's highest-value
-  // signal and it needs a baseline to be visible at all.
+  // signal and it needs a baseline to be visible at all. Probes are excluded
+  // (see isProbe below) so a test probe cannot fabricate a regression.
+  if (!(process.argv.includes("--fast") || process.env.EVOLVE_GATE_CHILD === "1")) {
   state.prevGateVector = state.gateVector || null;
   state.gateVector = {
     cycle: state.cycle,
@@ -417,7 +436,17 @@ function cmdGate() {
     parts: Object.fromEntries(Object.entries(r.parts).map(([k, v]) => [k, Number(v.toFixed(6))])),
     saturated: r.saturated,
   };
+  } // end !isProbe (vector recording)
   if (hwGrew) state.testHighWater = r.testNumbers.passed;
+
+  // A PROBE must never mutate the baseline it is measuring. The gate test
+  // plants junk files and calls the gate; without this guard those probes
+  // wrote their vectors into state, and the planner then diffed against a
+  // fabricated "current" tree and invented a phantom regression goal
+  // (P12: "bloat -0.0493", caused entirely by the test's own probe file).
+  // An instrument that rewrites its own reference is not measuring.
+  const isProbe = process.argv.includes("--fast") || process.env.EVOLVE_GATE_CHILD === "1";
+  if (!isProbe) {
   if (r4 > state.R_best) {
     state.R_best = r4;
     writeJson(STATE, state);
@@ -427,13 +456,14 @@ function cmdGate() {
     // not move; `plan` is useless without a baseline to diff against.
     writeJson(STATE, state);
   }
+  } // end !isProbe
   if (state.rBaselineNote) console.error(`[NOTE] ${state.rBaselineNote}`);
 
   // A gate that prints "roll back" and exits 0 cannot fail anything: in CI
   // it was decoration, not a gate. Exit non-zero when closed, unless the
   // caller asked for machine-readable output only (--json).
   if (process.argv.includes("--json")) return;
-  process.exit(r4 >= state.R_best ? 0 : 1);
+  process.exit(open ? 0 : 1);
 }
 
 function cmdDone(id, verdict, note = "") {
@@ -456,6 +486,13 @@ function cmdDone(id, verdict, note = "") {
   // question meaningful: "has anything got worse since we last accepted?"
   if (verdict === "ACCEPTED") {
     const g2 = runGate({ fast: process.argv.includes("--fast") });
+    if (g2.testsCrashed) {
+      // Never re-baseline onto a state whose suite could not be measured.
+      // This happened for real: a crashed suite scored 0.355, that became
+      // R_best, and every subsequent run then read OPEN on the broken tree.
+      console.error("[R_best NOT re-baselined: the test suite crashed — " +
+        "a state that could not be measured must not become the reference]");
+    } else {
     state.R_best = Number(g2.score.toFixed(4));
     state.gateVector = {
       cycle: state.cycle, score: state.R_best,
@@ -463,6 +500,7 @@ function cmdDone(id, verdict, note = "") {
       saturated: g2.saturated,
     };
     console.error(`[R_best re-baselined to ${state.R_best} on ACCEPT (cycle ${state.cycle})]`);
+    }
   }
   writeJson(STATE, state);
 

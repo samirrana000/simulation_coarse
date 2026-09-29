@@ -135,3 +135,21 @@ cites the wiki pattern that motivated it and the gating outcome.
 - **Motivated by:** P3-unsurfaced-value
 - **Verdict:** ACCEPTED
 - **Note:** planner derives 15 goals from 11 measured probes; it also exposed 4 defects in the gate itself, all fixed
+## Evolution 8 — P01 — scripts/validate_binding_physics_r1.mjs exits 1 and is wired into NO gate that can fail
+
+- **Horizon:** short (priority P0)
+- **Motivated by:** P3-unsurfaced-value, P5-ui-contract-fragility
+- **Verdict:** ACCEPTED
+- **Note:** R1 validator was unwired+red; docs/BINDING_PHYSICS_R1.md affirmatively false about implemented weak terms; now structurally asserted and gating
+## Evolution 9 — P15 — The syntax gate checks 66 files under src/ and ZERO of the 15 .mjs files that run the loop itself
+
+- **Horizon:** short (priority P0)
+- **Motivated by:** P3-unsurfaced-value, P6-node-gates-blind-to-dom
+- **Verdict:** ACCEPTED
+- **Note:** syntax gate 66 .js + 0 .mjs -> 145 files, per-extension counts, vacuity guard
+## Evolution 10 — P12 — 8 declared constants (SCREAMING_CASE = number) are defined in more than one src/ file
+
+- **Horizon:** mid (priority P1)
+- **Motivated by:** P5-ui-contract-fragility
+- **Verdict:** ACCEPTED
+- **Note:** found live k_B 5e-8 split in thermodynamics and 1.9e-4 Coulomb split in worker+GPU; single-sourced at CODATA 332.06371
