@@ -171,6 +171,8 @@ const queue = readJson(Q, { goals: [] });
 const HORIZON_ORDER = { short: 0, mid: 1, long: 2 };
 
 function nextGoal() {
+  // tolerate goals authored without an explicit status (default = open)
+  for (const g of queue.goals) if (!g.status) g.status = "open";
   const open = queue.goals.filter((g) => g.status === "open");
   open.sort((a, b) => {
     if (a.horizon !== b.horizon) return HORIZON_ORDER[a.horizon] - HORIZON_ORDER[b.horizon];

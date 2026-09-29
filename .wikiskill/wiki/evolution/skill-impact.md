@@ -104,3 +104,16 @@ cites the wiki pattern that motivated it and the gating outcome.
   top-level panels (8 unchanged); no new DOM ids (`src/ui.js` untouched);
   defaults unchanged.
 
+
+## Evolution 1 — S1 — Fix the silently-broken CI (npm test with no package.json)
+
+- **Horizon:** short (priority P0)
+- **Motivated by:** P5-ui-contract-fragility, P6-node-gates-blind-to-dom
+- **Verdict:** ACCEPTED
+- **Note:** syntax gate 1/67 -> 67/67, provably fails on planted error; npm test 352/0 exit 0
+## Evolution 2 — S5 — Cut repository bloat: 404MB data/coreset and 131MB .git
+
+- **Horizon:** short (priority P1)
+- **Motivated by:** P3-unsurfaced-value
+- **Verdict:** ACCEPTED
+- **Note:** tracked 427MB -> 15.6MB (96.3% drop), 1712 files hash-verified restorable, all benches pass with data absent
