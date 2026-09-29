@@ -8,14 +8,37 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Syntax check
-        run: node --check src/*.js src/physics/*.js
-      - name: Unit tests
-        run: npm test || node tests/test_all.js
+      - name: Syntax check (recursive src/)
+        # The old `node --check src/*.js src/physics/*.js` was a no-op:
+        # `node --check` takes ONE file and ignores the rest, so only
+        # src/analysis-panel.js was ever checked (1 of 67 modules).
+        # scripts/check.sh walks every .js under src/ and fails on the first
+        # syntax error.
+        run: npm run check
+      - name: Unit tests (FAST tier)
+        # No `|| node tests/test_all.js` fallback — that swallowed every
+        # npm test failure (including "no package.json") and made the step
+        # unable to go red.
+        run: npm test
       - name: GB finite-difference test
         run: node tests/test_gb_fd.js
       - name: Forces finite-difference test
         run: node tests/test_forces_fd.js
+      - name: DOM contract (ui.js ids subset of index.html)
+        # wiki pattern P6: Node gates are blind to the DOM. src/ui.js can
+        # reference an id that index.html never declares and every Node test
+        # still passes — this step is the only thing that catches it.
+        run: node scripts/wikiskill_gate.js
+      - name: Evolution gate (evolve/evolve.mjs)
+        # Runs the FAST suite again plus the weighted score (syntax + tests +
+        # DOM contract + bloat/science). Guarded by an existence test so a
+        # checkout without evolve/ does not fail the build.
+        run: |
+          if [ -f evolve/evolve.mjs ]; then
+            node evolve/evolve.mjs gate
+          else
+            echo "evolve/evolve.mjs absent — skipping evolution gate (npm test already covered)"
+          fi
       - name: Performance budget (J99 — CI warn, not fail)
         # CI budget warn: compares bench/perf.js meanMs vs bench/budget.json (heavy_compute_ms 2.0, cg_compute_ms 0.5, fps 30) and emits ::warning if exceeded
         run: |

@@ -3,3 +3,20 @@ __pycache__/
 .venv/
 .DS_Store
 node_modules/
+
+# ---------------------------------------------------------------------------
+# data/coreset/ — 1712 files, 398.79 MiB of SYBYL/X-Tool-exported PDBbind
+# complexes. Untracked (S5). Nothing in this repo reads it: the app loads
+# structures via src/pdb.js:fetchPdb(), which only probes ./<id>.pdb and
+# ./data/<id>.pdb; the ligand MOL2 comes from a user file-picker; and every
+# bench reads only the repo-root 4w52.pdb / 1crn.pdb / 1ubq.pdb / benzene.mol2.
+# Proof: node scripts/fetch_coreset.mjs --prove-unread
+#
+# RESTORE (offline, byte-exact, SHA256-verified against data/manifest.json):
+#   node scripts/fetch_coreset.mjs --restore-from <extracted-pdbbind-sybyl-tree>
+#   node scripts/fetch_coreset.mjs          # verify
+# RE-TRACK (if you add a bench that genuinely needs it):
+#   git add -f data/coreset
+# See data/README.md "Runtime data contract".
+# ---------------------------------------------------------------------------
+data/coreset/

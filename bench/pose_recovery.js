@@ -20,6 +20,7 @@ import { fileURLToPath } from "url";
 import { parseCa, selectSystem, parseLigands } from "../src/pdb.js";
 import { ForceField } from "../src/forcefield.js";
 import { LangevinIntegrator } from "../src/integrator.js";
+import { requireDataInputs } from "./require_inputs.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -74,6 +75,15 @@ function pocketCOM(ref, nProt, ligCOM0, rPocket = 8.0) {
 
 async function main() {
   console.log("=== F56 Pose recovery — 4W52 native ligand occupancy (CG holo, Langevin) ===");
+  // S5 preflight: 4W52 supplies the protein Cα, the BNZ ligand (parsed from
+  // HETATM) and the native ligand COM that the pose is scored against. All
+  // three come from one file, so a missing or modified 4w52.pdb invalidates
+  // every number below. data/coreset/** is untracked and unused by this bench.
+  requireDataInputs({
+    bench: "pose_recovery",
+    note: "4w52.pdb (sha256-verified via data/manifest.json) — Cα beads + BNZ ligand + native COM",
+    inputs: [{ names: ["4w52.pdb", "4W52.pdb"], why: "4W52 protein, BNZ ligand, and native ligand COM" }],
+  });
   const pdbText = readPdb("4w52.pdb");
   const parsed = parseCa(pdbText);
   const sel = selectSystem(parsed);

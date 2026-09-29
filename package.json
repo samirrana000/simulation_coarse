@@ -1,0 +1,19 @@
+{
+  "name": "simulation_coarse",
+  "version": "1.1.0-fp7",
+  "private": true,
+  "type": "module",
+  "description": "Browser coarse-grained protein MD simulator (C-alpha ENM + heavy-atom forcefield). Zero runtime dependencies by design.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node tests/test_all.js",
+    "test:slow": "node tests/test_all.js --slow",
+    "test:slow-full": "node tests/test_all.js --slow-full",
+    "check": "bash scripts/check.sh",
+    "gate": "node evolve/evolve.mjs gate",
+    "bench": "node bench/perf.js"
+  }
+}

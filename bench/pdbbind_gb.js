@@ -21,6 +21,7 @@ import { fileURLToPath } from "url";
 import { parseHeavy, HeavyForceField, selectHeavy, appendHeavyLigands } from "../src/heavy.js";
 import { parseMol2 } from "../src/mol2.js";
 import { findPocketCenter, placeLigand } from "../src/placement.js";
+import { requireDataInputs, requireAllTargetsComputed } from "./require_inputs.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -164,9 +165,26 @@ async function main() {
     { id: "1UBQ", files: ["1ubq.pdb", "1UBQ.pdb"] },
   ];
 
+  // S5 preflight: resolve the ENTIRE declared input set before any number is
+  // produced. data/coreset/** is untracked (398.79 MiB, zero readers — see
+  // data/README.md); this bench needs only the four repo-root presets below, so
+  // a missing preset aborts here instead of silently shrinking the average.
+  // 4w52.pdb is hash-checked against data/manifest.json.
+  requireDataInputs({
+    bench: "pdbbind_gb",
+    note: "4w52.pdb (sha256-verified via data/manifest.json), 1crn.pdb, 1ubq.pdb, benzene.mol2",
+    inputs: [
+      { names: ["4w52.pdb", "4W52.pdb"], why: "4W52 T4L+benzene ΔG target" },
+      { names: ["1crn.pdb", "1CRN.pdb"], why: "1CRN apo control ΔG target" },
+      { names: ["1ubq.pdb", "1UBQ.pdb"], why: "1UBQ apo control ΔG target" },
+      { names: ["benzene.mol2"], why: "benzene placed into apo pockets for 1CRN/1UBQ" },
+    ],
+  });
+
   const results = [];
   const preds = [];
   const exps = [];
+  const failures = [];
 
   for (const t of targets) {
     try {
@@ -176,11 +194,17 @@ async function main() {
       exps.push(r.expDG);
       console.log(`${r.pdbId} (${r.file})  n=${r.n} (prot ${r.nProt}+lig ${r.nLig})  U=${r.U.toFixed(1)}  bindingU=${r.bindingU.toFixed(2)}  sasaU=${r.sasaU.toFixed(1)}  predΔG=${r.predDG.toFixed(2)}  expΔG=${r.expDG.toFixed(2)}  err=${r.err.toFixed(2)} kcal/mol`);
     } catch (e) {
-      console.error(`${t.id} failed:`, e.message);
-      results.push({ pdbId: t.id, error: e.message, predDG: NaN, expDG: EXP_DG[t.id] ?? NaN });
-      console.log(`${t.id} error: ${e.message}`);
+      // Collect, do not report: an RMSE over a subset is not a result. The
+      // historical behaviour printed "PASS: RMSE <2.5" over 2 of 3 PDBs with
+      // exit 0 when 1ubq.pdb was absent — RMSE flattered itself (1.53 -> 0.96)
+      // because the worst target had been dropped. See bench/require_inputs.js
+      // and ROADMAP.md section 1.
+      failures.push({ pdbId: t.id, error: e.message });
+      console.error(`${t.id} failed: ${e.message}`);
     }
   }
+
+  requireAllTargetsComputed("pdbbind_gb", failures, targets.length);
 
   // RMSE and Pearson
   let rmse = NaN;
