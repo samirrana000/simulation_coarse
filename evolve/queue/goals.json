@@ -1,0 +1,175 @@
+{
+  "_meta": {
+    "cycle": 1,
+    "thesis": "Make simulation_coarse modular, bloat-free, and usable by a working scientist. Bloat is a defect; overclaiming is a defect; an unrunnable test is a defect.",
+    "gate": "node evolve/evolve.mjs gate",
+    "rule": "One goal = one agent call. Do not read the whole repo; read only the goal's read_only list."
+  },
+  "goals": [
+    {
+      "id": "S1",
+      "horizon": "short",
+      "priority": 0,
+      "title": "Fix the silently-broken CI (npm test with no package.json)",
+      "thesis": ".github/workflows/check.yml:19 runs `npm test || node tests/test_all.js`. There is no package.json, so npm test exits non-zero, the `||` swallows it, and the real suite still runs. Worse: `node --check src/*.js src/physics/*.js` never sees src/chem, src/compute, src/analysis, src/capture, src/physics/*/ subdirs. CI is green while most of the codebase is unchecked. Fix: add package.json with test/check/bench scripts and make CI use the recursive checker.",
+      "acceptance": "package.json exists with scripts.test -> tests/test_all.js; CI syntax-checks ALL src/**/*.js recursively; `npm test` exits 0; green locally.",
+      "read_only": [".github/workflows/check.yml", "tests/test_all.js", "src/version.js", "README.md#Development notes"],
+      "touch": ["package.json", ".github/workflows/check.yml", "scripts/check.sh"],
+      "patterns": ["P5-ui-contract-fragility", "P6-node-gates-blind-to-dom"]
+    },
+    {
+      "id": "S2",
+      "horizon": "short",
+      "priority": 0,
+      "title": "Delete the two dead stub modules that ship warnings on load",
+      "thesis": "src/scorer-onnx.js is a pure stub: every entry point console.warns 'ONNX scorer not yet implemented' and falls back to JSON. src/viewer-gl.js is an honest placeholder that never renders. Both are imported into the module graph, so every user pays a console warning for a feature that does not exist. The project's own rule (P3, ROADMAP.md §1) is: never claim aspirational stubs as wins. Remove them and update every reference.",
+      "acceptance": "scorer-onnx.js and viewer-gl.js deleted; zero dangling imports (grep + node --check all); zero 'not yet implemented' console.warn in src/; README/CHANGELOG updated to say the capability is absent, not pending.",
+      "read_only": ["src/scorer-onnx.js", "src/viewer-gl.js", "src/scorer.js", "docs/SCORER.md", "docs/VIEWER.md"],
+      "touch": ["src/", "docs/SCORER.md", "docs/VIEWER.md", "README.md", "CHANGELOG.md"],
+      "patterns": ["P3-unsurfaced-value"]
+    },
+    {
+      "id": "S3",
+      "horizon": "short",
+      "priority": 1,
+      "title": "Close the test gap: 49 test files, only ~13 actually gated",
+      "thesis": "tests/ holds 49 test_*.js files but tests/test_all.js FAST_SUITES runs 12 and SLOW_SUITES runs 5. The other ~32 files are dead weight that can rot silently and never gate anything. Two options: wire them in, or delete them. Wiring 32 in naively will blow the ~60s FAST budget, so classify each by runtime and promote the fast+valuable ones.",
+      "acceptance": "An inventory lists every tests/*.js as WIRED or RETIRED with a reason; every WIRED file appears in test_all.js; RETIRED files are deleted or moved to tests/manual/ with a README explaining how to run them; test_all.js auto-discovers suites so a new test file cannot be silently unwired (a test that asserts every test_*.js is either wired or in tests/manual/).",
+      "read_only": ["tests/test_all.js", "tests/", "scripts/", ".wikiskill/wiki/evolution/skill-impact.md"],
+      "touch": ["tests/test_all.js", "tests/", "evolve/reports/test-inventory.md"],
+      "patterns": ["P5-ui-contract-fragility", "P6-node-gates-blind-to-dom"]
+    },
+    {
+      "id": "S4",
+      "horizon": "short",
+      "priority": 1,
+      "title": "De-duplicate the physics helpers duplicated across forcefield.js and heavy.js",
+      "thesis": "kineticTemp is implemented twice (src/forcefield.js:925 and src/heavy.js:1450) with different mass-array handling. rmsd/rmsdAll/rmsdLig have near-parallel copies. Two implementations of the same observable is exactly how a physics bug survives review in one path but not the other — see docs/BINDING_PHYSICS_R* which repeatedly found asymmetric CG/heavy defects. Extract to src/physics/observables.js and have both call it.",
+      "acceptance": "src/physics/observables.js exports kineticTemp/rmsdTo/rmsdAll; forcefield.js and heavy.js delegate with no duplicated body; a new test asserts CG and heavy kineticTemp agree on identical input to 1e-12; gate stays >= baseline.",
+      "read_only": ["src/forcefield.js", "src/heavy.js", "src/units.js", "tests/test_seeded_integrator.js"],
+      "touch": ["src/physics/observables.js", "src/forcefield.js", "src/heavy.js", "tests/"],
+      "patterns": ["P5-ui-contract-fragility"]
+    },
+    {
+      "id": "S5",
+      "horizon": "short",
+      "priority": 1,
+      "title": "Cut repository bloat: 404MB data/coreset and 131MB .git",
+      "thesis": "data/coreset is 404MB across 1712 tracked files but there are 285 system dirs each carrying protein.mol2 AND protein.pdb AND pocket.pdb AND ligand.mol2 AND ligand_opt.mol2 AND ligand.sdf. The app only reads protein.pdb + ligand.mol2 at runtime. The .sdf and _opt and protein.mol2 variants are bench inputs. A scientist cloning the repo to run a 2-minute demo should not download 400MB. Ship a lean runtime set; keep the full set reproducible via a fetch script + manifest hash.",
+      "acceptance": "A data/README.md documents exactly which files the app needs; a scripts/fetch_coreset.mjs regenerates the rest; runtime-needed files remain tracked and small; total tracked bytes drop by >80%; bench scripts that need the full set fail LOUDLY with a one-line instruction rather than silently mis-measuring; data/manifest.json hashes stay valid.",
+      "read_only": ["data/README.md", "data/manifest.json", "bench/pdbbind_gb.js", "bench/pose_recovery.js", "src/pdb.js", "src/mol2.js"],
+      "touch": ["data/", "scripts/", ".gitignore", "bench/"],
+      "patterns": ["P3-unsurfaced-value"]
+    },
+    {
+      "id": "M6",
+      "horizon": "mid",
+      "priority": 1,
+      "title": "Break up the main.js god module (1685 LOC, 30 fns, 23 imports)",
+      "thesis": "src/main.js is the single point of failure documented in AUDIT_REPORT.md §1.1: one syntax error anywhere in its transitive closure kills the whole app, silently, with zero terminal output. It currently owns the load flow, the build flow, the HUD, the dock sparklines, BindViz, live-term tracking, the session snapshot/restore, and the RAF loop. Split it by responsibility into controllers that main.js only wires.",
+      "acceptance": "main.js under 400 LOC and only wiring; at least 4 extracted modules (load, build, hud, session); no behaviour change (test_all.js >= baseline, DOM contract green); each extracted module is independently node --check-able and documented in README project layout.",
+      "read_only": ["src/main.js", "src/ui.js", "src/session.js", "index.html", "AUDIT_REPORT.md"],
+      "touch": ["src/main.js", "src/controllers/"],
+      "patterns": ["P2-dead-canvas-redraw", "P5-ui-contract-fragility", "P6-node-gates-blind-to-dom"]
+    },
+    {
+      "id": "M7",
+      "horizon": "mid",
+      "priority": 1,
+      "title": "Single source of truth for LJ/charge parameter tables",
+      "thesis": "src/ff-params.js has LIG_ELEMENT (line 104) and src/heavy.js:73 has its own HEAVY_ELEMENT_DEFAULT = { sigma: 3.4, eps: 0.12, q: 0.0 }. Two tables for the same physical quantity, which must agree. This is how force fields silently diverge between the CG and heavy paths — the exact class of bug docs/BINDING_PHYSICS_R1..R7 spent seven rounds fixing. Consolidate with a single table plus an explicit test that every element resolves identically in both paths.",
+      "acceptance": "One element parameter table in src/physics/params.js; ff-params.js and heavy.js both import it; a test asserts element resolution is byte-identical across CG and heavy paths for every element in the table; no duplicated literal remains.",
+      "read_only": ["src/ff-params.js", "src/heavy.js", "docs/CHARGES.md", "docs/EXCLUSIONS.md", "tests/test_charges.js"],
+      "touch": ["src/physics/params.js", "src/ff-params.js", "src/heavy.js", "tests/"],
+      "patterns": ["P5-ui-contract-fragility"]
+    },
+    {
+      "id": "M8",
+      "horizon": "mid",
+      "priority": 1,
+      "title": "Kill the ?v=10 cache-bust sprawl by making the version real",
+      "thesis": "Every module imports with a hardcoded ?v=10 suffix across ~45 files. Editing any module without remembering to bump the version serves a stale cached module to the user — a failure mode that looks exactly like 'my fix did nothing'. A01 claimed this was solved via src/version.js, but the literals are still there. Replace with a build-free loader that injects the version from src/version.js at runtime, or a checker that fails when a ?v= disagrees with version.js.",
+      "acceptance": "Either zero hardcoded ?v= literals in src (injected from version.js), or `npm run check` fails when any ?v= mismatches src/version.js — and is wired into CI. Version bump is one edit. Verified by: edit a module, reload, see the change.",
+      "read_only": ["src/version.js", "src/main.js", "scripts/check.sh", "README.md#Development notes", "index.html"],
+      "touch": ["src/", "scripts/check.sh", "index.html", ".github/workflows/check.yml"],
+      "patterns": ["P5-ui-contract-fragility"]
+    },
+    {
+      "id": "M9",
+      "horizon": "mid",
+      "priority": 2,
+      "title": "Make the failure mode loud: global error surfacing on every async path",
+      "thesis": "A03 added window.onerror, but the codebase still contains silent try/catch-swallow patterns and if(viewer) guards. A scientist who loads a bad PDB must never see a frozen viewer and assume the software is broken in an interesting way. Every swallowed error must at minimum count itself and surface in the HUD.",
+      "acceptance": "grep finds zero empty catch blocks in src/; every catch either rethrows, logs with context, or increments a visible error counter; an error HUD line shows the count; a test feeds a malformed PDB and asserts a visible, specific message.",
+      "read_only": ["src/main.js", "src/input_errors.js", "src/ui.js", "docs/ACCESSIBILITY.md"],
+      "touch": ["src/", "index.html", "tests/"],
+      "patterns": ["P2-dead-canvas-redraw", "P3-unsurfaced-value"]
+    },
+    {
+      "id": "M10",
+      "horizon": "mid",
+      "priority": 2,
+      "title": "Docs index + scientist entry path: 37 md files, no map",
+      "thesis": "docs/ holds 37 markdown files (4943 LOC) with no index. A scientist arriving from the README cannot tell which doc answers 'can I trust this number'. ROADMAP.md §1 makes an explicit out-of-scope list the single most important document in the repo, and it is not linked from the docs directory. Build docs/README.md as a routing table by QUESTION (can I trust ΔG? what does this cost? how do I cite it?), not by filename.",
+      "acceptance": "docs/README.md exists, routes by question, every file in docs/ is linked from it exactly once, and the trust-boundary docs (ROADMAP, LIMITATIONS, APPLICABILITY, VALIDATION) are the first thing listed. A test asserts no orphan doc.",
+      "read_only": ["docs/", "ROADMAP.md", "README.md", "CONTRIBUTING.md"],
+      "touch": ["docs/README.md", "README.md", "tests/"],
+      "patterns": ["P3-unsurfaced-value", "P4-feature-hierarchy"]
+    },
+    {
+      "id": "L11",
+      "horizon": "long",
+      "priority": 1,
+      "title": "Plugin/registry architecture for physics terms",
+      "thesis": "Adding a force-field term currently means editing a monolith (heavy.js compute() is ~200 lines of inlined loops, forcefield.js likewise). A modular simulator needs terms to be registerable: {name, compute(pos, ctx, out), energy} so a scientist can add a term without touching the integrator. This is the core 'modular' directive. Design a term interface, migrate 2-3 terms to prove it, and document how to add one.",
+      "acceptance": "src/physics/terms/ defines a documented term interface; at least 3 existing terms (harmonic bond, angle, nonbonded LJ) implement it; a third-party example term is added by a test without editing the integrator; a docs/PHYSICS_TERMS.md explains registration in under a page.",
+      "read_only": ["src/heavy.js", "src/forcefield.js", "src/ff-harmonic.js", "src/integrator.js", "docs/PHYSICS_RIGOR.md"],
+      "touch": ["src/physics/terms/", "src/", "docs/PHYSICS_TERMS.md", "tests/"],
+      "patterns": ["P4-feature-hierarchy"]
+    },
+    {
+      "id": "L12",
+      "horizon": "long",
+      "priority": 1,
+      "title": "Verlet neighbour list with skin (the G66 debt)",
+      "thesis": "src/spatial-grid.js:6 and src/heavy.js:666 both document a known debt: the neighbour grid is rebuilt every single compute() call. A Verlet skin of 2A rebuilt every 10 steps is the textbook fix and is listed in ROADMAP.md §4 as the first post-v1 item. This is the single biggest available performance win for heavy mode, which currently runs at 14.7 ms/step against a 2.0 ms budget.",
+      "acceptance": "Neighbour list with skin, rebuilt on displacement threshold; a test asserts the force is IDENTICAL (<1e-9) to full rebuild for a trajectory where no particle crosses the skin, and that rebuilds actually happen (count > 0 over N steps); heavy ms/step improves measurably; correctness first, speed second.",
+      "read_only": ["src/spatial-grid.js", "src/heavy.js", "bench/perf.js", "bench/budget.json", "docs/PERFORMANCE.md"],
+      "touch": ["src/spatial-grid.js", "src/heavy.js", "bench/", "tests/", "docs/PERFORMANCE.md"],
+      "patterns": ["P5-ui-contract-fragility"]
+    },
+    {
+      "id": "L13",
+      "horizon": "long",
+      "priority": 2,
+      "title": "Structured results export: every analysis output as one machine-readable record",
+      "thesis": "The project exports trajectories and PMF CSVs, but a scientist's actual unit of work is a result set: parameters, seed, code version, the numbers, and the uncertainty. Today that is scattered across a REMARK header, a CSV, and a mental note. Produce ONE results record (JSON) per run, with provenance and uncertainty, that a downstream analysis script can consume — the difference between a demo and a tool.",
+      "acceptance": "One exported record contains: input structure + hash, all physics parameters, seed, code version, per-analysis values with error bars, and an explicit 'not computed / not valid for' field for anything out of scope. A round-trip test parses it back. ROADMAP.md §1 language is preserved inside the record.",
+      "read_only": ["src/session.js", "src/recorder.js", "src/analysis-panel.js", "docs/EXPORT.md", "docs/VALIDATION.md", "ROADMAP.md"],
+      "touch": ["src/results-record.js", "src/", "docs/EXPORT.md", "tests/"],
+      "patterns": ["P3-unsurfaced-value"]
+    },
+    {
+      "id": "L14",
+      "horizon": "long",
+      "priority": 2,
+      "title": "Reconcile the two incompatible ΔG stories into one honest number chain",
+      "thesis": "VALIDATION.md states CG ΔG -6.82 +/- 0.16 for 4W52-BNZ while the CG/heavy ΔG parity point (C30) was closed as 'not comparable'. A scientist reading the app sees a ΔG in the HUD and a very different ΔG in the validation doc, with no single chain from input to reported uncertainty. Build one auditable chain — where each term comes from, which is measured, which is assumed, and the honest error bar — and make the UI show the chain, not just the scalar.",
+      "acceptance": "docs/VALIDATION.md and the in-app ΔG trace agree term by term for 4W52; each contributing term is labelled measured | assumed | out-of-scope; the UI can expand the number into its chain; a test asserts UI text and doc numbers do not drift apart.",
+      "read_only": ["docs/VALIDATION.md", "src/funnel.js", "src/analysis/thermodynamics.js", "src/analysis/thermo_ligand.js", "src/analysis/thermo_sasa.js", "ROADMAP.md", "src/pmf-panel.js"],
+      "touch": ["docs/VALIDATION.md", "src/", "tests/"],
+      "patterns": ["P3-unsurfaced-value"]
+    },
+    {
+      "id": "L15",
+      "horizon": "long",
+      "priority": 2,
+      "title": "Autonomous next-goal generation from gate deltas (close the evolution loop)",
+      "thesis": "The loop must not depend on me writing 3,000 goals. After each goal closes, the gate emits a delta; the highest-negative component names the next bottleneck automatically. Implement `node evolve/evolve.mjs plan` to derive the next 15 goals from the measured R vector plus an open-issues scan, so the queue refills itself from evidence instead of from my attention.",
+      "acceptance": "plan emits exactly 15 goals ranked by measured deficit, each with a thesis citing the gate component that produced it; running plan after a gate produces goals that differ when the gate vector differs; the queue never runs dry.",
+      "read_only": ["evolve/evolve.mjs", "evolve/queue/state.json", "bench/budget.json", "docs/"],
+      "touch": ["evolve/evolve.mjs", "evolve/queue/", "evolve/reports/"],
+      "patterns": ["P3-unsurfaced-value"]
+    }
+  ]
+}
