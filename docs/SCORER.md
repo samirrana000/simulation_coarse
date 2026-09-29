@@ -1,8 +1,15 @@
-# Scorer — Custom JSON vs ONNX Future (I87)
+# Scorer — Custom JSON MLP (I87)
 
-*Source anchors: `src/scorer.js:35` `PoseScorer`, `src/ml-tier.js`, `src/scorer-onnx.js:13` `OnnxScorer`.*
+*Source anchors: `src/scorer.js:35` `PoseScorer`, `src/ml-tier.js`.*
 
-This note documents the **current JSON MLP scorer** and the **future ONNX interchange path** so that a trained PyTorch → ONNX model can replace the hand-tuned weights without changing the browser scoring contract.
+This note documents the **JSON MLP scorer** that the browser actually ships.
+
+> **ONNX is NOT implemented and is out of scope.** There is no `OnnxScorer`, no
+> `onnxruntime-web` dependency, and no `.onnx` loader anywhere in `src/`. The
+> `src/scorer-onnx.js` stub that used to sit here has been deleted — it only
+> printed `console.warn("ONNX scorer not yet implemented")` and delegated to
+> `PoseScorer`, so it advertised a capability that did not exist. Do not write
+> code against it. See "ONNX — absent" below.
 
 > Fidelity note: `src/mol2.js` preserves bond order for topology only — `grep -n "bond order.*topology" src/mol2.js` hits header.
 
@@ -54,58 +61,49 @@ json.dump(cfg, open("scorer.json","w"), indent=2)
 # Browser: PoseScorer(JSON)
 ```
 
-## Future: ONNX (`src/scorer-onnx.js` — stub)
+## ONNX — absent (out of scope)
 
-`src/scorer-onnx.js` exposes `export class OnnxScorer` as the **ONNX** interchange point. It mirrors the `PoseScorer` API (`predict(feat) → number`) but delegates to an ONNX Runtime session when one is available.
+There is **no ONNX support in this project**. Concretely:
 
-Current status: **stub** — `OnnxScorer` logs `"ONNX scorer not yet implemented — using JSON fallback"` and falls back to `PoseScorer` until the WASM runtime and a `.onnx` model are wired. This satisfies the file-contract measurable without claiming runtime support.
+- No `OnnxScorer` class, no `scorer-onnx.js` module — the stub was deleted
+  2026-09-30 (see `CHANGELOG.md` → Unreleased).
+- No `onnxruntime-web` / `ort` dependency. The project is zero-dependency by
+  design (`package.json`); an ONNX path would break that guarantee.
+- No `.onnx` file is fetched, and `OnnxScorer.fromOnnx(...)` does not exist.
 
-**Intended production wiring (not yet):**
+**What to use instead:** the JSON `PoseScorer` in `src/scorer.js`. It takes the
+identical 6-feature vector and the identical `predict(feat) → number` contract,
+so a PyTorch model exported as JSON weights is a drop-in replacement with no
+code change beyond supplying the weights file:
 
 ```js
-import { OnnxScorer } from "./src/scorer-onnx.js";
-const scorer = await OnnxScorer.fromOnnx("scorer.onnx", { featMean, featStd });
-// Under the hood: ort.InferenceSession.create("scorer.onnx"), session.run({input: tensor})
-// ONNX graph: input [1,6] float32 → MatMul/Relu/Gemm → output [1,1] float32
-// Identical feat6 as JSON scorer, so JSON vs ONNX scores agree to <1e-4 when exported correctly.
+import { PoseScorer } from "./src/scorer.js";
+const scorer = new PoseScorer(await fetch("weights.json").then(r => r.json()));
 ```
 
-**Exporting ONNX from PyTorch (future workflow):**
+**Why the feature is not on the roadmap:** the score is a cosmetic readout, not
+a force-field term. The stub was imported by zero files — it never warned on a
+real page load either — which is exactly the problem: it was an unreachable file
+whose only observable behaviour was a warning message, kept alive by prose in
+this document. Unsurfaced work has zero perceived value (wiki P3), so it was
+deleted rather than advertised. If a real ONNX runtime ever lands it must arrive
+as a working implementation with a parity test against `PoseScorer`, not as a
+warning message.
 
-```python
-import torch
-class MLP(torch.nn.Module):
-    def __init__(self): ...
-    def forward(self, x): ...
-m = MLP(); m.load_state_dict(torch.load("mlp.pt")); m.eval()
-dummy = torch.randn(1, 6, dtype=torch.float32)
-torch.onnx.export(m, dummy, "scorer.onnx",
-                  input_names=["input"], output_names=["score"],
-                  dynamic_axes={"input":{0:"batch"}, "score":{0:"batch"}})
-# Optionally: python -m onnxruntime.tools.convert_onnx_models_to_ort scorer.onnx
-# Browser: OnnxScorer.fromOnnx("scorer.onnx")
-```
-
-**Fallback behavior:** If `onnxruntime-web` (`ort`) is not loaded or `fetch("scorer.onnx")` fails, `OnnxScorer.predict` logs the ONNX stub message and returns `this.fallback.predict(feat)` (a `PoseScorer.docked()` instance).
-
-**Which to use?**
-
-| Path | File | Runtime | Size | Parity |
-|------|------|---------|------|--------|
-| **JSON** (current) | `weights.json` → `PoseScorer` | none (pure JS) | ~1 KB | reference |
-| **ONNX** (future) | `scorer.onnx` → `OnnxScorer` | `onnxruntime-web` WASM (~1 MB) | ~10–100 KB | `‖ONNX−JSON‖ < 1e-4` when exported from same PyTorch checkpoint |
-
-The scorer feature contract (`POSE_FEATURE_N=6` order fixed) is shared, so a model can be A/B tested across both paths.
+**If you need ONNX in your own pipeline:** export the PyTorch MLP to JSON
+weights as shown above, or run the ONNX graph in Python and hand the resulting
+6-parameter input to `PoseScorer` in the browser.
 
 ## Grep & measurability
 
 ```bash
-grep -n "ONNX" docs/SCORER.md src/scorer-onnx.js   # hits this doc + stub
+grep -n "PoseScorer" src/scorer.js src/ml-tier.js   # hits the real scorer and its wiring
 grep -n "bond order.*topology" src/mol2.js docs/*  # hits src/mol2.js header
 ```
 
 ## References
 
 - `src/scorer.js:101` `PoseScorer.docked()` built-in linear prior
-- `src/scorer-onnx.js:13` `OnnxScorer` stub (logs not yet)
-- ONNX Runtime Web: https://onnxruntime.ai/docs/get-started/with-javascript.html
+- `src/ml-tier.js:27` JSON weights loader wired to the "NN pose score" tickbox
+- `src/main.js:1571` the live `state.scorer.predict(feat)` call site
+

@@ -102,7 +102,7 @@
 
 ## H. Visualization & UX (71-80)
 
-- [x] **H71 — WebGL, not Canvas2D, for heavy 1300 atoms.** *Rationale:* Canvas2D `arc` 1300×60fps is borderline. *Success:* prototype `viewer-gl.js` (Three.js or regl) renders 1300 spheres ≥30fps on integrated GPU, feature-flagged. **P1**
+- [ ] **H71 — WebGL, not Canvas2D, for heavy 1300 atoms. NOT DONE — capability absent, out of scope.** *Rationale:* Canvas2D `arc` 1300×60fps is borderline. *Success:* a `viewer-gl.js` that actually renders 1300 spheres ≥30fps on integrated GPU, feature-flagged. **P1** *History: a pure wrapper stub (`ViewerGL`, no renderer) was added 2026-08-29 and marked `[x]` on the strength of its `console.warn` — claiming a stub as a win (wiki P3). That stub was deleted 2026-09-30 and this item is now un-checked. See `docs/VIEWER.md` "WebGL — absent" and `CHANGELOG.md` → Unreleased.*
 - [x] **H72 — Correct depth, not painter’s sort.** *Rationale:* `viewer.js:443` `Int32Array.sort` depth sort fails. *Success:* GL depth buffer or `depth = 1 - pz/(r*2.2)` not painter. **P1**
 - [x] **H73 — Picking that inverts motionGain.** *Rationale:* `viewer.js:299` motionGain not inverted in `unproject:248`. *Success:* test: click with `motionGain=5` → `screenToWorld` within 0.5 Å of true pos. **P1**
 - [x] **H74 — Ribbon assignment (DSSP), not d3 heuristic.** *Rationale:* `viewer.js:110` `d3<5.8 helices` crude. *Success:* import `dssp` logic or label “heuristic, not DSSP” in UI. **P2**
@@ -174,7 +174,7 @@
 | G61 | 2026-08-29 | `bench/perf.js` scale exponent 2.06, docs ideal 1.0, heavy not yet O(N) |
 | G63 | 2026-08-29 | `src/worker-pool.js:92` _busy guard, `assertNotDetached`, byteLength check |
 | G65 | 2026-08-29 | `src/heavy.js:597` zero-alloc audit, `bench/alloc.js:88` heap delta |
-| H71 | 2026-08-29 | `src/viewer-gl.js:19` ViewerGL stub, `docs/VIEWER.md:1` Canvas2D vs GL |
+| H71 | 2026-08-29 | `src/viewer-gl.js:19` ViewerGL wrapper stub (no renderer), `docs/VIEWER.md` — **stub deleted 2026-09-30, H71 still open** |
 | H76 | 2026-08-29 | `src/main.js:551` lastHudUpdate 10 Hz debounce |
 | H78 | 2026-08-29 | `src/recorder.js:56` getFrame(i) scrub placeholder |
 | I81 | 2026-08-29 | `src/mmcif.js:26` parseMMCIF stub, `docs/MMCIF.md:3` |

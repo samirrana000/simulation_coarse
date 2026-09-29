@@ -304,7 +304,7 @@ path bit-identical; full record in `docs/BINDING_LOOP2_DONE.md`):
 - **GB cutoff, no PME** — 6.5→8.5 Å switching, no PME (`src/heavy.js:32`); not for highly charged systems.
 - **1D funnel CV only** — PMF along `r = |COM_lig − COM_pocket|` (`src/funnel.js:165`); orthogonal barriers invisible.
 - **4-state kinetics toy** — Bulk/Encounter/Intermediate/Bound Kramers network (`src/physics/network.js:13`); illustrative, not a converged MSM. **4-state toy, not full MSM; use PyEMMA for production** — see `docs/NETWORK.md` (`src/physics/network.js:13`).
-- **Canvas2D vs WebGL** — 2-D Canvas painter's sort (`src/viewer.js:481`), no depth buffer; see `docs/VIEWER.md` and `src/viewer-gl.js`.
+- **Canvas2D only, no WebGL** — 2-D Canvas painter's sort (`src/viewer.js:481`), no depth buffer, and no WebGL renderer exists in this project; see `docs/VIEWER.md`.
 - **No membrane / nucleic acids / QM** — protein-only force fields; use GROMACS/CHARMM/NAMD/QM-MM for those.
 
 For the comparative table vs GROMACS/AMBER/OpenMM see **[docs/APPLICABILITY.md](docs/APPLICABILITY.md)**. For performance vs GROMACS see **[bench/vs_gromacs.md](bench/vs_gromacs.md)**. Full limitations also in **[docs/LIMITATIONS.md](docs/LIMITATIONS.md)**.

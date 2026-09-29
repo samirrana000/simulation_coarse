@@ -5,6 +5,56 @@ Trust boundary (all releases): ranking-only use — NOT FEP, NOT absolute Kd.
 Test tiers: `node tests/test_all.js` (FAST, gate) · `--slow` (SLOW-SMOKE) ·
 `--slow-full` (SLOW-FULL). Version flow: `src/version.js` (no `package.json`).
 
+## Unreleased
+
+- **Removed `src/scorer-onnx.js` and `src/viewer-gl.js` (dead stubs).** Both
+  modules were aspirational placeholders with no working code path: an
+  `OnnxScorer` whose every entry point warned and delegated to `PoseScorer`,
+  and a `ViewerGL` that held no renderer and forwarded every call to a
+  `Viewer`. Deleted; no replacement invented, because the capabilities
+  (ONNX inference, a WebGL renderer) genuinely do not exist in this project
+  and absence stated honestly is the correct outcome (wiki P3 — unsurfaced
+  work has zero perceived value; `ROADMAP.md` §1: never claim aspirational
+  stubs as wins).
+- **Measured reason for removal.** `src/scorer-onnx.js` was imported by
+  **zero** files — not by `src/`, not by `tests/`, not by `index.html`; its
+  only references were prose in `docs/SCORER.md`. `src/viewer-gl.js` was
+  imported by **three test files only** (`test_ligand_colors.js`,
+  `test_rev2_issue3_viewergl_sync.js`, `test_rev3_issue3_viewergl_view_sync.js`)
+  and by **no** application code — `src/main.js` has always imported the plain
+  Canvas2D `Viewer`. Neither stub was therefore in the shipped import graph:
+  no browser user was actually shown a console warning. What they did cost is
+  5 `console.warn` call sites, ~170 lines of pass-through code, and two
+  features implied in `README.md` / `ROADMAP.md` / `docs/` that were never
+  built. Removal is a claim-honesty fix, not a console-noise fix.
+- **Warning noise removed.** `console.warn` calls in `src/`: **54 → 49**.
+  All 5 removed were in the two deleted stubs (4 in `scorer-onnx.js`, 1 in
+  `viewer-gl.js`), including the module-level
+  `console.warn("[scorer-onnx] … stub module loaded")` that fired on bare
+  import. `grep -rn "console\.warn" src/ | grep -i "not yet"` → **0 hits**.
+- **Test-suite corrections.** The three suites that imported `ViewerGL`
+  asserted only wrapper mechanics (prototype accessors, own-property
+  shadowing, `gl === fallback` identity) — tautologies once the wrapper is
+  gone, and zero coverage of the real renderer. Deleted
+  `test_rev2_issue3_viewergl_sync.js` and
+  `test_rev3_issue3_viewergl_view_sync.js`; their *underlying* risk (that a
+  system rebuild silently resets the user's camera, or that the view radius and
+  pocket centre are computed from hetero/cofactor atoms that are not ligand) is
+  now tested directly against the shipped `Viewer` in the new
+  `tests/test_viewer_view_state.js` (**25 asserts, 0 failed**).
+  `test_ligand_colors.js` no longer loops over `[Viewer, ViewerGL]` — the
+  `ViewerGL` iterations were byte-identical duplicates (pure delegation) and
+  added no coverage.
+- **Docs corrected.** `docs/SCORER.md` and `docs/VIEWER.md` now state ONNX and
+  WebGL are **absent and out of scope**, with a pointer to what does exist
+  (`PoseScorer` JSON MLP, Canvas2D `Viewer`) instead of "coming soon".
+  `README.md`, `ROADMAP.md`, `docs/LIMITATIONS.md`, `docs/PLACEMENT.md` updated
+  to stop citing the deleted `file:line` anchors.
+- **Gate:** `bash scripts/check.sh` → **65 files checked, 0 syntax errors**
+  (was 67 — exactly the 2 deleted modules). `npm test` → **352 PASSED,
+  0 FAILED**, unchanged. All 46 standalone `tests/test_*.js` scripts still
+  exit 0 (47 at HEAD, minus 2 deleted, plus the 1 new).
+
 ## 1.1.0-fp7 (2026-09-13) — release closeout [FP7]
 
 - Version: `1.0.0-transform` → `1.1.0-fp7` (`src/version.js`; minor bump —

@@ -29,11 +29,11 @@ This document enumerates known model limitations that affect interpretation of r
 - **Impact:** The 4-state discretization is a pedagogical illustration — kinetics scale with the chosen barrier heights and `ν₀`, so reported `k_on/k_off/K_D` are order-of-magnitude teaching numbers, not experimental rates.
 - **Recommendation:** For publishable kinetics use a full MSM (PyEMMA, MSMBuilder) on explicit-solvent trajectories.
 
-## Rendering: Canvas2D vs WebGL
+## Rendering: Canvas2D only (no WebGL)
 
 - **Current:** `Viewer` (`src/viewer.js:303` `render`) uses Canvas2D `arc` + manual painter's sort (`src/viewer.js:481`); no GPU depth buffer, no instancing.
-- **Impact:** Canvas2D overdraw scales linearly with atom count and fails z-correctness for dense heavy-mode scenes; WebGL with a depth buffer (see `src/viewer-gl.js:1` `ViewerGL`) would give correct occlusion and 2–3× higher frame rate at 1300 atoms.
-- **Status:** WebGL prototype is a placeholder that logs `WebGL not yet, fallback to Canvas2D` (`src/viewer-gl.js:18`) — see `docs/VIEWER.md` for the Canvas2D vs WebGL comparison.
+- **Impact:** Canvas2D overdraw scales linearly with atom count and fails z-correctness for dense heavy-mode scenes, so overlapping spheres can z-fight. This is a standing trade-off of the shipped renderer, not a gap awaiting a second renderer.
+- **Status:** Canvas2D is the only renderer in this project. There is no WebGL renderer — no `WebGLRenderingContext` is created and no GPU library is a dependency. A WebGL path would trade away the zero-dependency / anywhere-runs property for a frame-rate win this demo does not need; see `docs/VIEWER.md` for the full reasoning and the cost/benefit note.
 
 ## Out of scope: membranes, nucleic acids, QM
 

@@ -570,6 +570,6 @@
   ],
   "pdb": "4w52.pdb",
   "generator": "tests/generate_golden.js via SeededRNG(mulberry32) seed=42 patching Math.random",
-  "timestamp": "2026-08-29T11:21:54.155Z",
+  "timestamp": "2026-09-29T18:31:59.969Z",
   "nodeVersion": "v22.23.0"
 }

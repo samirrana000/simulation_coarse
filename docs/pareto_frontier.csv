@@ -13,3 +13,10 @@ L2 heavy,84.797,8.2,0.14,9/10,1.3,covalent+LJ+GB (today),2026-09-12 FULL
 L3 heavy+R3,83.063,8.8,0.18,9/10,1.3,+pi-stack+cation-pi+halogen weakint (Loop-2 S3 measured),2026-09-12 FULL
 L2 full-rigor,85.493,9.2,-0.25,9/10,1.3,heavy+weakint+7-term bindU accumulators (Loop-2 S7 measured),2026-09-12 FULL
 L4 heavy+OBC2+RESPA (est),46.639,,,est,est,OBC2+LCPO+RESPA 2fs (Ph1/Ph3),2026-09-12 FULL
+L0 CG,0.189,6.9,-0.13,10/10,1.0,ENM+isotropic-LJ+burial (today),2026-09-29 FULL
+L1 CG+,0.179,8.4,-1.73,10/10,1.0,+charges+directional-HB virtual-sites (Loop-2 S1+S2 measured),2026-09-29 FULL
+L1 CG+ +BindLog,0.185,9.4,1.64,,,+per-term accumulators trackTerms (Loop-2 S4 measured),2026-09-29 FULL
+L2 heavy,73.252,18.7,0.96,9/10,1.3,covalent+LJ+GB (today),2026-09-29 FULL
+L3 heavy+R3,68.978,13.6,-3.87,9/10,1.3,+pi-stack+cation-pi+halogen weakint (Loop-2 S3 measured),2026-09-29 FULL
+L2 full-rigor,70.547,13.8,-11.74,9/10,1.3,heavy+weakint+7-term bindU accumulators (Loop-2 S7 measured),2026-09-29 FULL
+L4 heavy+OBC2+RESPA (est),40.288,,,est,est,OBC2+LCPO+RESPA 2fs (Ph1/Ph3),2026-09-29 FULL

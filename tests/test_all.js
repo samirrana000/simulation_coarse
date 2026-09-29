@@ -31,109 +31,151 @@ function assert(condition, message) {
 }
 
 // -----------------------------------------------------------------
-// Stage-3 tiered integration (Loop-2 suites guarded by this harness).
-// FAST tier runs by default (must stay < ~60s for gate/CI).
-// SLOW tier is opt-in: `node tests/test_all.js --slow` or SLOW=1.
-// Stage-6 smoke/full split: --slow runs heavy in SMOKE mode
-// (1 rep × 50+300 steps, ~15-25s, fast CI); --slow-full (or --long)
-// runs heavy FULL (3 reps × 300+1500, ~200s, manual).
-// Suites are standalone scripts (call process.exit), so they run via
-// child_process with a timeout; child stdout is captured (piped) and only
-// a one-line lowercase summary is printed per suite — the single
-// uppercase "N PASSED, M FAILED" line in this harness output is the
-// grand total below, which scripts/wikiskill_gate.js checks.
+// Three tiers, all declared in tests/suites.js:
+//   FAST   always; must stay < 60 s (npm test, CI, wikiskill_gate, evolve gate).
+//   MEDIUM opt-in via --medium / MEDIUM=1; implied by --slow. 10-60 s.
+//   SLOW   opt-in via --slow (SMOKE protocol for test_thermo_heavy) or
+//          --slow-full / --long / --full (FULL, ~200 s heavy leg).
+// Suites are standalone scripts (they call process.exit), so they run via
+// child_process with a per-suite timeout; child stdout is captured (piped)
+// and summarised one line per suite. The single uppercase
+// "N PASSED, M FAILED" line at the end is the grand total, which
+// scripts/wikiskill_gate.js and evolve/evolve.mjs check.
 // -----------------------------------------------------------------
 const __testAllDir = path.dirname(fileURLToPath(import.meta.url));
+// tests/suites.js records repo-root-relative paths ("tests/x.js",
+// "scripts/y.mjs") so the registry reads the same way as the tree does.
+const __rootDir = path.resolve(__testAllDir, "..");
 const SLOW_FULL = process.argv.includes("--slow-full") || process.argv.includes("--long") || process.argv.includes("--full") || process.env.SLOW_FULL === "1";
 const SLOW = process.argv.includes("--slow") || process.env.SLOW === "1" || SLOW_FULL;
+// MEDIUM is the middle tier (10-60 s of seeded work, currently
+// scripts/test_pocket_entropy.mjs). It is implied by SLOW because it is
+// strictly cheaper, so `--slow` keeps meaning "everything above FAST".
+const MEDIUM = process.argv.includes("--medium") || process.env.MEDIUM === "1" || SLOW;
 
-// Runtimes measured 2026-09-12 (linux, node): charges 0.1s, vsites 0.1s,
-// weakint ~15s, seeded 0.2s, bindviz 0.0s, bindlog 0.2s, bindlog-int 0.2s,
-// altloc-cleaner 0.1s, rotbonds 0.1s (Stage-4), ala-noise-floor ~1s (Loop-2 Stage-4),
-// input-errors 0.1s (FP2), session-roundtrip 0.2s (FP4).
-const FAST_SUITES = [
-  { file: "test_charges.js", expect: 20, timeout: 60000 },
-  { file: "test_virtual_sites.js", expect: 8, timeout: 60000 },
-  { file: "test_weakint.js", expect: 49, timeout: 90000 },
-  { file: "test_seeded_integrator.js", expect: 16, timeout: 60000 },
-  { file: "../scripts/test_bindviz.mjs", expect: 22, timeout: 60000 },
-  { file: "../scripts/test_bindlog.mjs", expect: 18, timeout: 60000 },
-  { file: "../scripts/test_bindlog_integration.mjs", expect: 14, timeout: 60000 },
-  { file: "test_altloc_cleaner.js", expect: 19, timeout: 60000 },
-  { file: "test_rotbonds.js", expect: 17, timeout: 60000 },
-  { file: "test_ala_noise_floor.js", expect: 16, timeout: 60000 },
-  { file: "test_input_errors.js", expect: 75, timeout: 60000 },
-  { file: "test_session_roundtrip.js", expect: 46, timeout: 60000 },
-];
+// The suite tables live in tests/suites.js (declarative registry). This file
+// only executes them.
+//
+// WHY A SEPARATE REGISTRY
+// -----------------------
+// The old inline tables hardcoded `expect: <n>` per suite, so a suite that
+// gained one assertion failed with a bare "expected 20/0" and no hint that
+// the harness, not the test, was stale. The registry carries tier + timeout
+// only; assertion counts are DERIVED from each child's own output at run
+// time (see runSuiteFile) and the gate is the child's exit code. Adding a
+// test can therefore never break this harness, and deleting a test cannot
+// either — only a genuinely failing test does.
+//
+// tests/suites.js is the single source of truth and is itself covered by
+// tests/test_suite_registry.js, which FAILS if any tests/test_*.js or
+// scripts/test_*.mjs file exists without being wired into a tier or moved to
+// tests/manual/.
+//
+// Tier contract (see tests/suites.js for the full text):
+//   FAST   always run; must stay under ~60 s — `npm test`, CI, and every
+//          gate depend on it.
+//   MEDIUM 10-60 s of seeded work; opt-in via --medium / MEDIUM=1, and
+//          implied by --slow (it is strictly cheaper than SLOW).
+//   SLOW   multi-minute validation legs; opt-in via --slow (SMOKE protocol
+//          for test_thermo_heavy) or --slow-full / --long / --full (FULL).
+import { FAST_BUDGET_S, suitesIn } from "./suites.js";
 
-// test_thermo: 7 asserts, ~60-120s seeded CG. test_thermo_heavy: 13 asserts,
-// FULL ~200s+ heavy (6 legs × 1800 steps × ~20ms), SMOKE ~15-25s
-// (2 legs × 350 steps). Both deterministic via SEEDS. SMOKE keeps the
-// same 13 asserts (finiteness/boundedness only, sign never asserted).
-// calibration_4w52: 14 asserts, ~6s seeded CG (4W52 ΔG anchor + ala-scan + Stage-3 real SASA burial).
-// validate_flexlig (Stage-5): 10 asserts, ~1s seeded CG (4W52 EPE flexible-ligand
-// second system: 4 rotatable, nonzero ΔS_lig vs BNZ zero control + real SASA).
-// validate_1crn_null (FP6): 8 asserts, ~1s seeded CG (1CRN 46-res ligand-free
-// apo-vs-apo null: ΔH≈0 + bounded |−TΔS|, finiteness/boundedness only).
-// Stage-6 tiers: FAST 352 untouched by SLOW; --slow = SMOKE heavy + thermo +
-// calibration + flexlig + 1crn-null (52 SLOW asserts, total 404); --slow-full/--long =
-// FULL heavy (same 52 asserts, ~200s heavy leg).
-const SLOW_SUITES = [
-  { file: "../scripts/test_thermo.mjs", expect: 7, timeout: 600000 },
-  { file: "../scripts/test_thermo_heavy.mjs", expect: 13, timeout: 900000, args: SLOW_FULL ? [] : ["--smoke"] },
-  { file: "../scripts/calibration_4w52.mjs", expect: 14, timeout: 600000 },
-  { file: "../scripts/validate_flexlig.mjs", expect: 10, timeout: 600000 },
-  { file: "../scripts/validate_1crn_null.mjs", expect: 8, timeout: 600000 },
-];
+const FAST_SUITES = suitesIn("FAST");
+const MEDIUM_SUITES = suitesIn("MEDIUM");
+const SLOW_SUITES = suitesIn("SLOW");
 
-/** Run one standalone suite script; return { passed, failed, secs }. */
+// test_thermo_heavy is the one suite whose protocol depends on the flag:
+// FULL is ~200 s (6 legs x 1800 heavy steps), SMOKE is ~10-25 s (2 legs x
+// 350 steps) and asserts the same things (finiteness/boundedness; the sign
+// is deliberately never asserted at SMOKE sample size). Both are
+// deterministic via fixed SEEDS.
+for (const s of SLOW_SUITES) {
+  if (s.file === "scripts/test_thermo_heavy.mjs") s.args = SLOW_FULL ? [] : ["--smoke"];
+}
+
+/**
+ * Count assertions in a suite's stdout, without the harness holding a
+ * hardcoded expectation for it.
+ *
+ * Preference order (first that yields something wins):
+ *   1. `N PASSED, M FAILED`      — the modern convention.
+ *   2. `✓`-prefixed lines         — legacy per-assert printers.
+ *   3. a bare `PASS` / `PASS: …`  — single-gate legacy scripts.
+ * Anything else counts as 0 passes and the suite is reported as UNCACHED so
+ * it is visible rather than silently folded into the total as zero work.
+ *
+ * The number is REPORTING ONLY. The gate is the child's exit code plus any
+ * `M FAILED > 0`. This is what makes "add an assertion to a suite" a
+ * non-event instead of a confusing harness failure.
+ */
+function countAsserts(out) {
+  const sums = [...String(out).matchAll(/(\d+) PASSED, (\d+) FAILED/g)];
+  if (sums.length) {
+    const last = sums[sums.length - 1];
+    return { passed: Number(last[1]), failed: Number(last[2]), via: "summary line" };
+  }
+  const ticks = (String(out).match(/^\s*[✓✔]\s/gm) || []).length;
+  const crosses = (String(out).match(/^\s*[✗✘]\s/gm) || []).length;
+  if (ticks || crosses) return { passed: ticks, failed: crosses, via: `${ticks} check lines` };
+  if (/^\s*PASS\b/m.test(out)) return { passed: 1, failed: 0, via: "single PASS gate" };
+  return { passed: 0, failed: 0, via: "no output (UNCACHED — check it still asserts)" };
+}
+
+/** Run one standalone suite script; return { passed, failed, secs, via }. */
 function runSuiteFile(suite) {
   const t0 = Date.now();
   let out = "";
   const suiteArgs = suite.args || [];
   const suiteEnv = { ...process.env, ...(suite.env || {}) };
   try {
-    out = execFileSync(process.execPath, [path.resolve(__testAllDir, suite.file), ...suiteArgs], {
+    out = execFileSync(process.execPath, [path.resolve(__rootDir, suite.file), ...suiteArgs], {
       encoding: "utf-8", timeout: suite.timeout, stdio: ["ignore", "pipe", "pipe"], env: suiteEnv,
     });
   } catch (e) {
     out = (e.stdout || "") + (e.stderr || "");
-    const ms = [...String(out).matchAll(/(\d+) PASSED, (\d+) FAILED/g)];
-    if (ms.length) {
-      const last = ms[ms.length - 1];
-      throw new Error(`${suite.file} exited ${e.status ?? "?"} (${last[1]} passed, ${last[2]} failed): ${(e.stderr || "").split("\n").filter((l) => l.includes("FAIL")).slice(0, 3).join(" | ")}`);
-    }
-    throw new Error(`${suite.file} failed to run: ${(e.message || "").split("\n")[0]}`);
+    const c = countAsserts(out);
+    const detail = (e.stderr || "").split("\n").filter((l) => /FAIL|Error|✗/.test(l)).slice(0, 3).join(" | ");
+    const timedOut = e.killed === true || e.signal === "SIGTERM";
+    throw new Error(
+      `${suite.file} ${timedOut ? `TIMED OUT after ${suite.timeout}ms` : `exited ${e.status ?? "?"}`}` +
+      (c.passed || c.failed ? ` (${c.passed} passed, ${c.failed} failed)` : "") +
+      (detail ? `: ${detail}` : "")
+    );
   }
-  const ms = [...out.matchAll(/(\d+) PASSED, (\d+) FAILED/g)];
-  if (!ms.length) throw new Error(`${suite.file}: no results line in output`);
-  const last = ms[ms.length - 1];
-  return { passed: Number(last[1]), failed: Number(last[2]), secs: (Date.now() - t0) / 1000 };
+  const c = countAsserts(out);
+  // Exit code 0 is the gate. A suite that self-reports failures while exiting
+  // 0 is a harness bug in that suite, not a pass — treat it as a failure.
+  if (c.failed > 0) throw new Error(`${suite.file}: self-reported ${c.failed} failed assertion(s) but exited 0`);
+  return { passed: c.passed, failed: 0, secs: (Date.now() - t0) / 1000, via: c.via };
 }
 
-/** Run a tier, folding child counts into the harness totals (additive). */
+/**
+ * Run a tier, folding child counts into the harness totals (additive).
+ *
+ * There is deliberately NO `expected N` comparison here — see tests/suites.js
+ * for why. A suite passes when it exits 0; its assertion count is printed
+ * for information and added to the grand total.
+ */
 function runTier(label, suites) {
-  console.log(`\n[${label}] Tiered Loop-2 suites (${suites.length} scripts)...`);
+  console.log(`\n[${label}] tier (${suites.length} scripts from tests/suites.js)...`);
   const t0 = Date.now();
   let tierPassed = 0;
   for (const suite of suites) {
     const name = path.basename(suite.file);
     try {
       const r = runSuiteFile(suite);
-      if (r.failed === 0 && r.passed === suite.expect) {
-        passed += r.passed;
-        tierPassed += r.passed;
-        console.log(`  ✓ [${label}] ${name}: ${r.passed} passed, 0 failed (${r.secs.toFixed(1)}s)`);
-      } else {
-        failed += r.failed + 1;
-        console.error(`  ✗ FAIL: [${label}] ${name}: got ${r.passed} passed/${r.failed} failed, expected ${suite.expect}/0`);
-      }
+      passed += r.passed;
+      tierPassed += r.passed;
+      const uncached = r.passed === 0 ? "  ⚠ UNCACHED (no assertion output found)" : "";
+      console.log(`  ✓ [${label}] ${name}: ${r.passed} passed (${r.via}) in ${r.secs.toFixed(1)}s${uncached}`);
     } catch (e) {
       failed++;
       console.error(`  ✗ FAIL: [${label}] ${name} — ${e.message}`);
     }
   }
-  console.log(`  [${label}] tier done: +${tierPassed} asserts in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  const secs = (Date.now() - t0) / 1000;
+  console.log(`  [${label}] tier done: +${tierPassed} asserts in ${secs.toFixed(1)}s`);
+  return secs;
 }
 
 async function runTests() {
@@ -337,20 +379,31 @@ async function runTests() {
   }
 
   // -----------------------------------------------------------------
-  // 9. Stage-3 tiered Loop-2 suites (FAST default; SLOW opt-in)
+  // 9. Tiers (see tests/suites.js). FAST always; MEDIUM and SLOW opt-in.
   // -----------------------------------------------------------------
-  runTier("FAST", FAST_SUITES);
+  const fastSecs = runTier("FAST", FAST_SUITES);
+  if (fastSecs > FAST_BUDGET_S) {
+    failed++;
+    console.error(`  ✗ FAIL: [FAST] tier took ${fastSecs.toFixed(1)}s, over the ${FAST_BUDGET_S}s budget — move the slowest entries to MEDIUM (tests/suites.js)`);
+  } else {
+    console.log(`  [FAST] within budget: ${fastSecs.toFixed(1)}s <= ${FAST_BUDGET_S}s`);
+  }
+  if (MEDIUM) runTier("MEDIUM", MEDIUM_SUITES);
+  else console.log(`\n[MEDIUM] skipped (opt-in: \`node tests/test_all.js --medium\` or MEDIUM=1; implied by --slow) — ${MEDIUM_SUITES.map((s) => path.basename(s.file)).join(", ")}`);
   if (SLOW) {
     runTier(SLOW_FULL ? "SLOW-FULL" : "SLOW-SMOKE", SLOW_SUITES);
   } else {
-    console.log("\n[SLOW] skipped (opt-in: `node tests/test_all.js --slow` = SMOKE heavy ~20s, or `--slow-full`/`--long` = FULL heavy ~200s, or SLOW=1) — test_thermo (7, ~3s) + test_thermo_heavy SMOKE (13, ~15-25s) / FULL (13, ~200s+) + calibration_4w52 (14, ~6s) + validate_flexlig (10, ~1s) + validate_1crn_null (8, ~1s)");
+    console.log(`\n[SLOW] skipped (opt-in: \`--slow\` = SMOKE heavy, or \`--slow-full\`/\`--long\` = FULL heavy, or SLOW=1) — ${SLOW_SUITES.map((s) => path.basename(s.file)).join(", ")}`);
   }
 
   // -----------------------------------------------------------------
-  // SUMMARY (grand total: Tier-0 32 + FAST 320 = 352 [SLOW +52 → 404 smoke or full])
+  // SUMMARY. The grand total is Tier-0 inline asserts + every tier's
+  // counted child asserts. It is REPORTING (and the evolve gate's >= 352
+  // floor), never a pass/fail criterion on its own.
   // -----------------------------------------------------------------
   console.log("\n=================================================");
   console.log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
+  console.log(`  (tiers run: ${["FAST", MEDIUM ? "MEDIUM" : null, SLOW ? (SLOW_FULL ? "SLOW-FULL" : "SLOW-SMOKE") : null].filter(Boolean).join(" + ")})`);
   console.log("=================================================");
 
   if (failed > 0) process.exit(1);

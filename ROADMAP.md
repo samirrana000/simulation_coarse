@@ -55,8 +55,9 @@ from `TRANSFORMATION_PLAN_100.md:1`.
   and `c(t)` convergence diagnostics (HUD grays `ΔG` until `nHills≥50`).
 - **4-state Chemical Network + TPT** strictly for teaching timescale bridging,
   not publishable `k_on/k_off`.
-- **Canvas2D viewer with WebGL successor stub** (`src/viewer-gl.js:1`
-  `WebGL not yet, fallback to Canvas2D`, `docs/VIEWER.md`).
+- **Canvas2D viewer, and no WebGL successor** — Canvas2D is the only renderer
+  (`src/viewer.js`); a WebGL renderer is not implemented and is out of scope
+  (`docs/VIEWER.md`).
 - **Honest tutorials that fail** (`docs/TUTORIAL.md:31` Where it fails —
   charged ligand `ΔΔG≈±2–4 kcal/mol`, membrane `ΔG` meaningless).
 

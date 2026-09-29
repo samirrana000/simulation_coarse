@@ -7,7 +7,6 @@
 
 import { readFileSync } from "node:fs";
 import { Viewer } from "../src/viewer.js";
-import { ViewerGL } from "../src/viewer-gl.js";
 import { parseHeavy, selectHeavy, appendHeavyLigands, HeavyForceField } from "../src/heavy.js";
 
 function makeMockCtx() {
@@ -125,11 +124,14 @@ for (const includePdbLigands of [true, false]) {
       ...subset, atoms: subset.atoms.filter((a) => withProtein || !a.isProtein),
     }, { includePdbLigands });
     const actualFF = new HeavyForceField(selected);
-    for (const ViewerClass of [Viewer, ViewerGL]) {
+    // Renderer list is just [Viewer]: the deleted ViewerGL stub delegated every
+    // call to a Viewer, so its iterations were byte-identical duplicates of
+    // these and added no coverage.
+    for (const ViewerClass of [Viewer]) {
       const canvas = makeMockCanvas();
       const renderer = new ViewerClass(canvas);
       renderer.setSystem(selected, actualFF);
-      const actual = renderer.fallback || renderer;
+      const actual = renderer;
       const label = `${ViewerClass.name}, PDB ligands=${includePdbLigands}, protein=${withProtein}`;
       const mi = selected.atoms.findIndex((a) => a.isMetal);
       const ci = selected.atoms.findIndex((a) => a.resName === "HEM" && a.element === "C");
