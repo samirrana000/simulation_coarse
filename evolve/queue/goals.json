@@ -110,7 +110,11 @@
       ],
       "patterns": [
         "P5-ui-contract-fragility"
-      ]
+      ],
+      "status": "closed",
+      "verdict": "ACCEPTED",
+      "note": "found real KB_KCAL 5.03e-8 CG/heavy divergence; observables.js single kernel + parity test",
+      "closedAtCycle": 4
     },
     {
       "id": "S5",
@@ -257,7 +261,11 @@
       "patterns": [
         "P3-unsurfaced-value",
         "P4-feature-hierarchy"
-      ]
+      ],
+      "status": "closed",
+      "verdict": "ACCEPTED",
+      "note": "docs routed by question, 38 files linked exactly once, no-orphan test proven to fail on planted orphan",
+      "closedAtCycle": 5
     },
     {
       "id": "L11",

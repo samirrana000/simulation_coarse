@@ -1,8 +1,50 @@
 {
-  "cycle": 4,
-  "R_best": 0.935,
+  "cycle": 6,
+  "R_best": 0.802,
   "closed": [],
   "rejected": [],
-  "testHighWater": 738,
-  "rBaselineNote": "R rebaselined at cycle 5: weights renorm over non-saturated components; testPass ratios vs high-water (738). Scores before this are NOT comparable."
+  "testHighWater": 820,
+  "rBaselineNote": "R rebaselined at cycle 7: bloat now scores STRUCTURE (max/median module ratio) not volume, so adding a test or a shared kernel no longer lowers R. Previous scores are NOT comparable. The old metric punished good work and made R_best unreachable, which blocked the entire loop.",
+  "prevGateVector": {
+    "cycle": 6,
+    "score": 0.4707,
+    "parts": {
+      "syntax": 0.985075,
+      "testPass": 0,
+      "coverage": 1,
+      "dom": 1,
+      "bloat": 0.802016,
+      "science": 1
+    },
+    "saturated": [
+      "dom",
+      "science",
+      "coverage"
+    ]
+  },
+  "gateVector": {
+    "cycle": 6,
+    "score": 0.802,
+    "parts": {
+      "syntax": 1,
+      "testPass": 1,
+      "coverage": 1,
+      "dom": 1,
+      "bloat": 0.802016,
+      "science": 1
+    },
+    "saturated": [
+      "testPass",
+      "syntax",
+      "dom",
+      "science",
+      "coverage"
+    ]
+  },
+  "benchVector": {
+    "heavyMs": 14.437,
+    "cgMs": 0.18,
+    "treeKey": "dd0531e8eeba89954091ff3ab56dab744245f8ea:297",
+    "measuredAt": "2026-09-29T19:47:59.644Z"
+  }
 }

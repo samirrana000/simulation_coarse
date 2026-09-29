@@ -108,6 +108,8 @@ export const SUITES = [
   // anti-rot self-checks: registry wiring + docs/ index no-orphans
   { file: "tests/test_suite_registry.js", tier: "FAST" },
   { file: "tests/test_docs_index.js", tier: "FAST", note: "every file under docs/ linked from docs/README.md" },
+  { file: "tests/test_evolve_planner.js", tier: "FAST", note: "plan emits 15 schema-valid goals whose read_only paths all exist" },
+  { file: "tests/test_evolve_gate.js", tier: "FAST", note: "the gate can fail: structure not volume, sees uncommitted work, exits non-zero" },
 
   // -------------------------------------------------------------- MEDIUM
   { file: "scripts/test_pocket_entropy.mjs", tier: "MEDIUM", timeout: 300000, note: "~19 s seeded pocket-entropy pilot" },
