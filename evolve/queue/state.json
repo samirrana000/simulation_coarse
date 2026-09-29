@@ -1,6 +1,8 @@
 {
-  "cycle": 2,
-  "R_best": 0.987,
+  "cycle": 4,
+  "R_best": 0.935,
   "closed": [],
-  "rejected": []
+  "rejected": [],
+  "testHighWater": 738,
+  "rBaselineNote": "R rebaselined at cycle 5: weights renorm over non-saturated components; testPass ratios vs high-water (738). Scores before this are NOT comparable."
 }

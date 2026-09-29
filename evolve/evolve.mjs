@@ -58,12 +58,20 @@ const state = readJson(STATE, { cycle: 0, R_best: 0, closed: [], rejected: [] })
  * ------------------------------------------------------------------ */
 
 const WEIGHTS = {
-  testPass: 0.40,   // tests/test_all.js assertions passed (min 352)
+  testPass: 0.25,   // tests/test_all.js — ratio vs the HIGH-WATER mark, not a fixed floor
   syntax: 0.10,     // node --check over every module
   dom: 0.05,        // ui.js ids present in index.html
   bloat: 0.20,      // inverse repo bytes + LOC (bloat is a real defect)
   science: 0.25,    // honest-scope surface: docs present, no new overclaims
+  coverage: 0.15,   // anti-rot: is every test actually gated? (see S3)
 };
+
+// Saturation guard: a component pinned at 1.0 carries no gradient, so the loop
+// cannot distinguish "improved" from "unchanged". Weights are renormalised over
+// NON-saturated components only. A goal that only moves a dead component scores
+// zero and gets reported as such, rather than silently inflating R.
+const SAT = 0.999;
+
 
 function runGate() {
   const r = { score: 0, parts: {}, notes: [] };
@@ -87,20 +95,28 @@ function runGate() {
   r.syntaxNumbers = { ok: syntaxOk, total: srcFiles.length };
   if (syntaxBad.length) r.notes.push(`syntax FAIL: ${syntaxBad.join(", ")}`);
 
-  // 2. tests
+  // 2. tests — ratio against the recorded high-water mark, so adding real
+  //    coverage keeps moving the needle instead of pinning at a legacy floor.
   try {
     const out = execFileSync(process.execPath, [path.join(ROOT, "tests", "test_all.js")], {
       encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], timeout: 300000,
     });
     const m = [...out.matchAll(/(\d+) PASSED, (\d+) FAILED/g)];
     const [p, f] = m.length ? [Number(m.at(-1)[1]), Number(m.at(-1)[2])] : [0, 1];
-    r.parts.testPass = f > 0 ? 0 : Math.min(1, p / 352);
-    r.testNumbers = { passed: p, failed: f };
+    const hw = Math.max(state.testHighWater || 0, 352);
+    r.parts.testPass = f > 0 ? 0 : Math.min(1, p / hw);
+    r.testNumbers = { passed: p, failed: f, highWater: hw };
+    if (p > hw && f === 0) state.testHighWater = p;
     if (f > 0) r.notes.push(`tests FAIL: ${f}`);
   } catch (e) {
     r.parts.testPass = 0;
     r.notes.push(`tests crashed: ${String(e.message).slice(0, 120)}`);
   }
+
+  // 2b. coverage / anti-rot: every tests/test_*.js must be wired or in tests/manual/.
+  r.parts.coverage = coverageScore();
+  r.coverageNumbers = countTests();
+
 
   // 3. DOM contract
   try {
@@ -118,7 +134,13 @@ function runGate() {
   r.parts.science = scienceScore();
   r.tracked = tracked;
 
-  r.score = Object.entries(WEIGHTS).reduce((a, [k, w]) => a + w * (r.parts[k] || 0), 0);
+  // Renormalise over non-saturated components only.
+  const live = Object.entries(WEIGHTS).filter(([k]) => (r.parts[k] || 0) < SAT);
+  const dead = Object.entries(WEIGHTS).filter(([k]) => (r.parts[k] || 0) >= SAT).map(([k]) => k);
+  const wsum = live.reduce((a, [, w]) => a + w, 0) || 1;
+  r.score = live.reduce((a, [k, w]) => a + (w / wsum) * (r.parts[k] || 0), 0);
+  r.saturated = dead;
+  if (dead.length) r.notes.push(`saturated (no gradient, weight redistributed): ${dead.join(", ")}`);
   return r;
 }
 
@@ -142,8 +164,28 @@ function readTrackedStats() {
   return s;
 }
 
-/** Bloat score in [0,1]. 1 = lean. Penalises >1MB tracked files hard. */
-function bloatScore(s) {
+/** Count test files and how many are wired into a suite vs retired to manual. */
+function countTests() {
+  const dir = path.join(ROOT, "tests");
+  let all = [];
+  try { all = fs.readdirSync(dir).filter((f) => /^test_.*\.js$/.test(f)); } catch { return { total: 0, wired: 0, manual: 0 }; }
+  let wired = 0;
+  try {
+    const reg = fs.readFileSync(path.join(dir, "suites.js"), "utf-8");
+    for (const f of all) if (reg.includes(f)) wired++;
+  } catch {}
+  let manual = 0;
+  try { manual = fs.readdirSync(path.join(dir, "manual")).filter((f) => /^test_.*\.js$/.test(f)).length; } catch {}
+  return { total: all.length, wired, manual };
+}
+
+function coverageScore() {
+  const c = countTests();
+  if (!c.total) return 1;
+  return Math.min(1, (c.wired + c.manual) / c.total);
+}
+
+/** Bloat score in [0,1]. 1 = lean. Penalises >1MB tracked files hard. */function bloatScore(s) {
   const filePenalty = 1 / (1 + s.bigFiles.length / 20);
   const sizeScore = 1 / (1 + s.bytes / (500 * 1024 * 1024)); // 500MB -> 0.5
   const locScore = 1 / (1 + Math.max(0, s.srcLoc - 20000) / 20000);
@@ -214,16 +256,25 @@ function cmdGate() {
     verdict: r.score >= state.R_best ? "OPEN (accept)" : "CLOSED (roll back)",
     parts: Object.fromEntries(Object.entries(r.parts).map(([k, v]) => [k, Number(v.toFixed(4))])),
     weights: WEIGHTS,
+    saturated: r.saturated,
     testNumbers: r.testNumbers,
+    coverageNumbers: r.coverageNumbers,
     domNumbers: r.domNumbers,
     tracked: r.tracked && { files: r.tracked.files, MB: +(r.tracked.bytes / 1048576).toFixed(1), srcLoc: r.tracked.srcLoc, bigFiles: r.tracked.bigFiles.slice(0, 8) },
     notes: r.notes,
   }, null, 2));
-  if (r.score > state.R_best) {
-    state.R_best = Number(r.score.toFixed(4));
+  // Compare at 4dp so float noise does not read as a regression.
+  const r4 = Number(r.score.toFixed(4));
+  const hwMoved = (state.testHighWater || 0) < 352 + 1 && r.testNumbers && r.testNumbers.passed > 352;
+  if (r4 > state.R_best) {
+    state.R_best = r4;
     writeJson(STATE, state);
     console.error(`\n[R_best updated -> ${state.R_best}]`);
+  } else if (hwMoved) {
+    // Persist the coverage high-water even when the composite did not move.
+    writeJson(STATE, state);
   }
+  if (state.rBaselineNote) console.error(`[NOTE] ${state.rBaselineNote}`);
 }
 
 function cmdDone(id, verdict, note = "") {

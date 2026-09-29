@@ -56,7 +56,11 @@
       ],
       "patterns": [
         "P3-unsurfaced-value"
-      ]
+      ],
+      "status": "closed",
+      "verdict": "ACCEPTED",
+      "note": "stubs had 0 app importers; real defect was docs claiming capabilities that don't exist + H71 checked off on a stub",
+      "closedAtCycle": 2
     },
     {
       "id": "S3",
@@ -79,7 +83,11 @@
       "patterns": [
         "P5-ui-contract-fragility",
         "P6-node-gates-blind-to-dom"
-      ]
+      ],
+      "status": "closed",
+      "verdict": "ACCEPTED",
+      "note": "36 dead tests wired, expect-counts replaced by registry + orphan self-check, 352->738, FAST 16.1s/60s",
+      "closedAtCycle": 3
     },
     {
       "id": "S4",

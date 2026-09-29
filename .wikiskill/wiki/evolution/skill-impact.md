@@ -117,3 +117,15 @@ cites the wiki pattern that motivated it and the gating outcome.
 - **Motivated by:** P3-unsurfaced-value
 - **Verdict:** ACCEPTED
 - **Note:** tracked 427MB -> 15.6MB (96.3% drop), 1712 files hash-verified restorable, all benches pass with data absent
+## Evolution 3 — S2 — Delete the two dead stub modules that ship warnings on load
+
+- **Horizon:** short (priority P0)
+- **Motivated by:** P3-unsurfaced-value
+- **Verdict:** ACCEPTED
+- **Note:** stubs had 0 app importers; real defect was docs claiming capabilities that don't exist + H71 checked off on a stub
+## Evolution 4 — S3 — Close the test gap: 49 test files, only ~13 actually gated
+
+- **Horizon:** short (priority P1)
+- **Motivated by:** P5-ui-contract-fragility, P6-node-gates-blind-to-dom
+- **Verdict:** ACCEPTED
+- **Note:** 36 dead tests wired, expect-counts replaced by registry + orphan self-check, 352->738, FAST 16.1s/60s
