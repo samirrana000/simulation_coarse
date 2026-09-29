@@ -124,6 +124,34 @@ if [ -z "$SRC_VERSION" ] || [ "$SRC_VERSION" != "$PKG_VERSION" ]; then
   exit 1
 fi
 
+# Cache-bust guard: zero hand-typed version query literals in shipped code.
+#
+# HISTORY (recorded because both halves of this were silent)
+#   Every module edge used to carry a literal cache-bust suffix —
+#   `import { ForceField } from "./forcefield.js?v=10"` — 121 of them across
+#   42 src/ files plus index.html's module tag, frozen at `10` while
+#   src/version.js said `1.1.0-fp7`. A module edited without also editing
+#   its neighbours' literals kept the same url, the browser served the cached
+#   bytes, and the symptom was "my fix did nothing". Freshness is now sw.js's
+#   job (network-first, cache:"no-store"), so a literal here is at best
+#   redundant and at worst a url that pins a cached copy forever.
+#
+#   tests/test_cache_contract.js is the authoritative check for the same
+#   invariant (it also runs sw.js in a sandbox and checks the single ui.js
+#   instance). This is the cheap pre-commit copy, so `npm run check` is red
+#   before anyone reaches for `npm test`.
+CACHE_LITS=$(grep -rnE '\.js\?|\?v=' src index.html 2>/dev/null || true)
+if [ -n "$CACHE_LITS" ]; then
+  echo "[check] FAIL: version query literal in shipped code — freshness is sw.js's job (see sw.js)" >&2
+  echo "$CACHE_LITS" | head -20 | sed 's/^/[check]   /' >&2
+  echo "[check]   (tests/test_cache_contract.js is the full check; ?v= appears in prose only after a comment strip)" >&2
+  exit 1
+fi
+if [ ! -s sw.js ]; then
+  echo "[check] FAIL: sw.js missing or empty — nothing forces a fresh module graph on reload" >&2
+  exit 1
+fi
+
 echo "[check] PASS: $TOTAL files checked, 0 syntax errors"
 echo "[check]   per-extension: $SUMMARY"
 echo "[check]   roots: ${ROOTS[*]} (+ repo root)"

@@ -979,7 +979,7 @@ keep-first-in-band retry loop. Both now seeded (thermo-SEEDS family,
   seed 101 locks a representative 17/30. The `hbSeen > 0` bar is UNCHANGED
   (no lowered standard); assert count stays 14/14 so the FAST gate
   expectation is untouched.
-- `tests/test_all.js:300-324`: retry loop replaced by 3 seeded replicas
+- `tests/test_all.js:300-323`: retry loop replaced by 3 seeded replicas
   (`TEMP_SEEDS = [101, 202, 303]`) with a replica-mean assertion in the same
   260–340 K band. Physics reason: the OU thermostat is exact in
   distribution, but one 200-step kinetic-T sample carries O(1/√steps) noise
@@ -1013,7 +1013,7 @@ Settings → panel summaries → inputs → viewer → canvas); the Digit1-7
   `role="img"` + viewer `aria-label`; 6 data canvases
   (`:239,303,345,361-363`) + 2 dock strips (`:410,412`) gain `role="img"` +
   `aria-label` (display-only, no new tab stops).
-- Tiny JS guards (`src/main.js:893-895,926` + same-shape fallback
+- Tiny JS guards (`src/main.js:1125-1135` + same-shape fallback
   `index.html:517`): Space no longer hijacks focused BUTTON/A/SUMMARY
   (native activation wins; Space on a focused Run button still toggles via
   its native click); Digit index derives from `e.code` (layout-independent;

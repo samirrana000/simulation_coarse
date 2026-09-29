@@ -39,7 +39,7 @@ export const MEMBRANE_HALF_THICKNESS = 15.0;
 export const MEMBRANE_WIDTH = 2.0;
 // kcal·Å/(mol·e²) — re-exported from the src/units.js contract (see the note
 // there); this file previously repeated the literal.
-import { COULOMB_CONST } from "../../units.js?v=10";
+import { COULOMB_CONST } from "../../units.js";
 export { COULOMB_CONST };
 
 /**

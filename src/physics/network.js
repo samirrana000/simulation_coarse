@@ -8,7 +8,7 @@
  *   State 3: Native Bound Pose (stereospecific pocket locked state)
  */
 
-import { KB_KCAL, STANDARD_VOLUME } from "../units.js?v=10";
+import { KB_KCAL, STANDARD_VOLUME } from "../units.js";
 
 export const NETWORK_STATES = [
   { id: 0, name: "Bulk Solvated", color: "#60a5fa", energy: 0.0, desc: "Free 3D diffusion in bulk aqueous solvent" },

@@ -1,6 +1,27 @@
 # Simulation Coarse — Blank Rendering Audit Report
 **Date:** 2026-08-29  ·  **Branch:** main (dirty, untracked `src/settings-panel.js` etc.)  ·  **Auditor:** Muse Spark (sub-agent graph audit)
 
+> **STATUS 2026-09-30 — HISTORICAL RECORD. THE P0 IS FIXED.**
+> The TL;DR below is written in the present tense and is **false today**: the
+> single-brace `SyntaxError` no longer exists, the app loads, and the P0/P1
+> items in §5 have been landed. It is kept verbatim because it is a dated
+> audit, not a status page. Verified at the current commit:
+>
+> ```bash
+> node -e "import('./src/settings-panel.js').then(()=>console.log('OK'))"   # OK
+> node -e "const s=require('fs').readFileSync('src/settings-panel.js','utf8');let o=0,c=0;for(const ch of s){if(ch==='{')o++;if(ch==='}')c++;}console.log('brace diff',o-c)"   # 0
+> grep -c ResizeObserver src/viewer.js                                       # 3
+> ```
+>
+> **Consequence for the `file:line` citations in this file:** they are the
+> 2026-08-29 line numbers of the buggy snapshot, and they are deliberately NOT
+> repointed at today's code — repointing them would falsify the record by
+> implying the quoted snippets are the current source. They are allowlisted in
+> `tests/test_doc_citations.js`, which also fails if an allowlist entry stops
+> being used, so the list cannot outlive this note. Every other markdown file
+> in the repo is held to the strict rule: the file must exist and be tracked,
+> and the line must be within it and non-blank.
+
 > **TL;DR:** The app is not “working in background with a subtle cutoff”. It **fails to load at all** due to a single-brace `SyntaxError` in the untracked `src/settings-panel.js`. That file breaks the entire ES-module graph (`main.js` → `settings-panel.js`), so `requestAnimationFrame(tick)` never starts and `viewer.render()` is never called. The `<canvas>` therefore shows only its CSS background `#040711` — a flat dark rectangle that looks like “fully cutoff” or “blank”. The bug produces **zero terminal output** (server.py keeps running) and only appears as `SyntaxError: Unexpected end of input` in the browser console. Fixing that one brace restores rendering; the rest of this report documents the secondary cutoff/size bugs that will still truncate or shrink the molecule once loading succeeds.
 
 ---
@@ -291,10 +312,10 @@ if (persp <= 0 || !Number.isFinite(px[i])) continue;
 // center: include ligand COM weighted, or pin to protein COM + clamp radius to 1.5*protein radius when ligand far
 ```
 
-### 3.4 P2 — `heavy.js:196-207` `elementFromName("CA")` → calcium
+### 3.4 P2 — `heavy.js:196-206` `elementFromName("CA")` → calcium
 
 ```js
-// heavy.js:196-207
+// heavy.js:196-206
 function elementFromName(name){
   let el = m[1].toUpperCase(); // "CA" → "CA"
   if (two.has(el)) return el;  // "CA" ∈ {CL,BR,ZN,FE,MG,CA,…} → returns "CA" (calcium)

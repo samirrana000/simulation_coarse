@@ -31,20 +31,20 @@
  * @module physics/integrators/respa
  */
 
-import { KB_KCAL, KCONV } from "../../units.js?v=10";
+import { KB_KCAL, KCONV } from "../../units.js";
 // Holo compression floor (RMIN 2.6 Å, KF 8.0 kcal/mol/Å²). These were typed
 // into this file's bondedFn replica AND into forcefield.js's kernel; ff-params
 // is the single home, so the "keep in sync" instruction above is now
 // structural. ff-params.js imports only units.js, so this edge is acyclic.
-import { HOLO_FLOOR_RMIN, HOLO_FLOOR_K } from "../../ff-params.js?v=10";
+import { HOLO_FLOOR_RMIN, HOLO_FLOOR_K } from "../../ff-params.js";
 import {
   harmonicPairs,
   springForces,
   angleForces,
   dihedralForcesAnalytic,
-} from "../../ff-harmonic.js?v=10";
-import { lcpoSasa } from "../solvation/lcpo_sasa.js?v=10";
-import { membraneEnergyForces } from "../solvation/membrane_slab.js?v=10";
+} from "../../ff-harmonic.js";
+import { lcpoSasa } from "../solvation/lcpo_sasa.js";
+import { membraneEnergyForces } from "../solvation/membrane_slab.js";
 
 /** Per-particle |dv| clamp per kick (A/ps). Mirrors integrator.js _kick. */
 export const RESPA_DVMAX = 2.0;

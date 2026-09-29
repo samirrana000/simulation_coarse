@@ -27,8 +27,8 @@
  *  - Helper `countWarnings(warnings)` returns warnings.length (0 if none).
  */
 
-import { parseMol2, mol2Element } from "./mol2.js?v=10";
-import { parseAltLoc, parseOccupancy, shouldReplaceAltloc } from "./pdb_altloc.js?v=10";
+import { parseMol2, mol2Element } from "./mol2.js";
+import { parseAltLoc, parseOccupancy, shouldReplaceAltloc } from "./pdb_altloc.js";
 export { parseMol2, mol2Element };
 
 /**

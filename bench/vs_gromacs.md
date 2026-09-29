@@ -34,14 +34,14 @@ Source: `bench/perf.js:53` `benchCompute()` and `src/forcefield.js:403` `compute
 
 - **No PME, no SIMD:** `src/heavy.js:32` uses a switched cutoff 6.5→8.5 Å (`switchFunc`) on a JS `SpatialGrid` (`src/spatial-grid.js:13`). GROMACS uses PME (`docs/LIMITATIONS.md:8` **no PME**) + SIMD/AVX + GPU kernels — that alone is 10–20×.
 - **GC & bounds checks:** `Float64Array` forces (`src/heavy.js:593` `compute`) are looped in JS; GROMACS forces are C arrays with pointer arithmetic and no GC pauses.
-- **Single-threaded:** Browser main thread runs `integrator.js:187` BAOAB + `viewer.js:303` Canvas2D at 60 fps in the same thread; GROMACS overlaps PME/ bonded / non-bonded across MPI+OpenMP+CUDA.
+- **Single-threaded:** Browser main thread runs `integrator.js:187` BAOAB + `viewer.js:303` Canvas2D in the same thread; GROMACS overlaps PME / bonded / non-bonded across MPI+OpenMP+CUDA. (Frame rate itself is not measured in this repo — see `docs/PERFORMANCE.md`.)
 - **Implicit vs explicit:** Browser heavy is implicit GB/SASA (`src/physics/gb.js:13` `GeneralizedBorn`, `src/physics/sasa.js`) — cheaper than explicit water but still JS-slow; GROMACS explicit adds ~20 k waters and PME lattice, yet still wins per ns on hardware acceleration.
 
 ## Why browser is still useful (faster to hypothesis)
 
 - **Zero install:** `python3 -m http.server 8123` → `http://127.0.0.1:8123/` → load `4w52.pdb` → `▶ Run` in seconds; `docs/APPLICABILITY.md:10` table lists simulation_coarse as “Instant, no queue, no GPU driver” vs GROMACS “Moderate, hours–days per window, compiled C++/CUDA”.
 - **Interactive triage:** Ligand library placement (`src/ligandLib.js`, `src/placement.js`) is clash-free in < 50 ms; a GROMACS placement requires `gmx insert-molecules` + minimization + visual check in VMD/PyMOL.
-- **Teaching:** 1-D funnel PMF (`src/funnel.js:60`), 4-state network (`src/physics/network.js:13`), and Canvas2D viewer (`src/viewer.js:41` `Viewer`) run synchronously at 30–60 fps for live lectures — GROMACS needs batch queues and post-hoc analysis.
+- **Teaching:** 1-D funnel PMF (`src/funnel.js:60`), 4-state network (`src/physics/network.js:13`), and Canvas2D viewer (`src/viewer.js:41` `Viewer`) all run synchronously in the page for live lectures — GROMACS needs batch queues and post-hoc analysis. Interactive by construction (no queue); frame rate not measured here.
 
 ## How to reproduce
 

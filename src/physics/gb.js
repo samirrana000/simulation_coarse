@@ -15,7 +15,7 @@
  * Analytic gradients are computed directly.
  */
 
-import { GB_RADII } from "./charges.js?v=10";
+import { GB_RADII } from "./charges.js";
 
 // kcal·Å/(mol·e²). RE-EXPORTED from src/units.js, the declared single unit
 // contract. This file carried its own `= 332.06371` literal while
@@ -23,7 +23,7 @@ import { GB_RADII } from "./charges.js?v=10";
 // ff-binding.js / gpu.js / force-worker.js carried 332.0637 / 332.0 — three
 // live values for one physical constant. units.js is a leaf (zero imports),
 // so this edge cannot close a cycle.
-import { COULOMB_CONST } from "../units.js?v=10";
+import { COULOMB_CONST } from "../units.js";
 export { COULOMB_CONST };
 
 export class GeneralizedBorn {

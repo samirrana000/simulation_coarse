@@ -17,29 +17,29 @@
  *   ligand-panel.js   — Ligand library & clash-free placement
  */
 
-import { VERSION, BUILD_DATE } from "./version.js?v=10";
-import { ForceField } from "./forcefield.js?v=10";
-import { Funnel } from "./funnel.js?v=10";
-import { LangevinIntegrator } from "./integrator.js?v=10";
-import { fetchPdb, parseCa, parseLigands, parseMol2, selectSystem, summarizeStructure } from "./pdb.js?v=10";
-import { classifyInputError, formatInputError, validatePdbText, checkSystemSize } from "./input_errors.js?v=10";
-import { downloadText } from "./recorder.js?v=10";
-import { buildSession, serializeSession, parseSession, trajectoryJson, downloadBlob } from "./session.js?v=10";
-import { PoseScorer } from "./scorer.js?v=10";
-import { ui, state, viewer, recorder, initParamReadouts, updateSelSummary, updateRecStatus, fp1GuideState } from "./ui.js?v=10";
-import "./analysis-panel.js?v=10"; // side-effect: Analyze + Phase-4 workflow buttons
-import { dccmTick, drawDccmEmpty, invalidateThermo, refreshThermoLigPicker } from "./analysis-panel.js?v=10"; // steady ≤1 Hz DCCM empty redraw (P2)
-import { applyMLToFF } from "./ml-tier.js?v=10";
-import { updatePMFPlot } from "./pmf-panel.js?v=10";
-import { initLigandPanel, updateMol2PlaceButton } from "./ligand-panel.js?v=10";
-import { parseHeavy, HeavyForceField, selectHeavy, appendHeavyLigands, buildTopologyChunked } from "./heavy.js?v=10";
-import { HEAVY_TOPO_CHUNK_ROWS, setHeavyButtons, setHeavyCaption, heavyTopoCaption } from "./heavy_progress.js?v=10";
-import { assignProtonationStates, applyProtonationStates } from "./chem/protonation.js?v=10";
-import { initSettingsModal, settingsState, workerPool, gpuAccelerator, persistPhysicsLevel, restorePhysicsLevelSelect } from "./settings-panel.js?v=10";
-import { RESPAStepper, splitForceField } from "./physics/integrators/respa.js?v=10";
-import { initNetworkPanel, updateNetworkPlot, networkPanelTick, networkModel, isLiveTrackingActive } from "./network-panel.js?v=10";
-import { BindLog } from "./capture/bindlog.js?v=10";
-import { renderInteractionTimeline, renderEnergyDecomposition, renderPmfFormation, PMF_NOHILL_HINT } from "./capture/bindviz.js?v=10";
+import { VERSION, BUILD_DATE } from "./version.js";
+import { ForceField } from "./forcefield.js";
+import { Funnel } from "./funnel.js";
+import { LangevinIntegrator } from "./integrator.js";
+import { fetchPdb, parseCa, parseLigands, parseMol2, selectSystem, summarizeStructure } from "./pdb.js";
+import { classifyInputError, formatInputError, validatePdbText, checkSystemSize } from "./input_errors.js";
+import { downloadText } from "./recorder.js";
+import { buildSession, serializeSession, parseSession, trajectoryJson, downloadBlob } from "./session.js";
+import { PoseScorer } from "./scorer.js";
+import { ui, state, viewer, recorder, initParamReadouts, updateSelSummary, updateRecStatus, fp1GuideState } from "./ui.js";
+import "./analysis-panel.js"; // side-effect: Analyze + Phase-4 workflow buttons
+import { dccmTick, drawDccmEmpty, invalidateThermo, refreshThermoLigPicker } from "./analysis-panel.js"; // steady ≤1 Hz DCCM empty redraw (P2)
+import { applyMLToFF } from "./ml-tier.js";
+import { updatePMFPlot } from "./pmf-panel.js";
+import { initLigandPanel, updateMol2PlaceButton } from "./ligand-panel.js";
+import { parseHeavy, HeavyForceField, selectHeavy, appendHeavyLigands, buildTopologyChunked } from "./heavy.js";
+import { HEAVY_TOPO_CHUNK_ROWS, setHeavyButtons, setHeavyCaption, heavyTopoCaption } from "./heavy_progress.js";
+import { assignProtonationStates, applyProtonationStates } from "./chem/protonation.js";
+import { initSettingsModal, settingsState, workerPool, gpuAccelerator, persistPhysicsLevel, restorePhysicsLevelSelect } from "./settings-panel.js";
+import { RESPAStepper, splitForceField } from "./physics/integrators/respa.js";
+import { initNetworkPanel, updateNetworkPlot, networkPanelTick, networkModel, isLiveTrackingActive } from "./network-panel.js";
+import { BindLog } from "./capture/bindlog.js";
+import { renderInteractionTimeline, renderEnergyDecomposition, renderPmfFormation, PMF_NOHILL_HINT } from "./capture/bindviz.js";
 
 // Initialize UI modals & panels
 initSettingsModal();

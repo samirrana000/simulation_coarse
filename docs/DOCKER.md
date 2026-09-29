@@ -25,7 +25,9 @@ docker stop coarse_test
 
 ## Reproducibility notes
 
-- No build step — app is static ES modules (`index.html` + `src/*.js?v=10`), so the container just serves files.
+- No build step — app is static ES modules (`index.html` + `src/*.js`, plus a
+  static `sw.js` that keeps every reload fresh), so the container just serves
+  files.
 - Pin `python:3.11-slim` (Debian slim) for a stable base; `python -m http.server` is stdlib, no pip.
 - For exact parity with host run, `python -m http.server 8000` serves from `/app` (`WORKDIR /app`) exactly as `python3 -m http.server 8123` from the checkout root.
 ```

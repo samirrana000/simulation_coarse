@@ -9,11 +9,11 @@
  *   5. Seamless placement of loaded MOL2 ligands in both Cα and Heavy mode.
  */
 
-import { LIGAND_LIBRARY } from "./ligandLib.js?v=10";
-import { parseLibraryLigand, placeLigand, findPocketCenter } from "./placement.js?v=10";
-import { LIG_ELEMENT, LIG_ELEMENT_DEFAULT } from "./ff-params.js?v=10";
-import { classifyInputError, formatInputError, createInputError, checkPlacement } from "./input_errors.js?v=10";
-import { ui, state, viewer } from "./ui.js?v=10";
+import { LIGAND_LIBRARY } from "./ligandLib.js";
+import { parseLibraryLigand, placeLigand, findPocketCenter } from "./placement.js";
+import { LIG_ELEMENT, LIG_ELEMENT_DEFAULT } from "./ff-params.js";
+import { classifyInputError, formatInputError, createInputError, checkPlacement } from "./input_errors.js";
+import { ui, state, viewer } from "./ui.js";
 
 let _buildSystem = () => {};
 

@@ -15,9 +15,9 @@ WebGL renderer.
 
 - **How it renders:** Each frame `Viewer.render(pos)` (`src/viewer.js:303`) projects all `n` atoms to screen (`src/viewer.js:330` perspective math), then draws in painter's order — farthest first (`src/viewer.js:481` `order.sort((a,b)=>pz[b]-pz[a])`) — using `ctx.arc` + `ctx.fill` for spheres, `ctx.stroke` for bonds/ribbon, and manual depth-shaded `rgb(depth)` (`src/viewer.js:485`).
 - **Depth handling:** **Painter's sort** — CPU `Int32Array` sort on `pz` every frame (`src/viewer.js:481` `order.sort((a,b)=>pz[b]-pz[a])`), `O(n log n)`. Correct only if spheres don't intersect; overlapping dense regions (e.g. heavy 1308 heterogeneous pocket) show z-fighting because the sort key is bead-COM depth, not per-pixel depth. There is no depth buffer — this is the renderer's documented trade-off, not a stubbed-out future path (see "Depth Correctness" below).
-- **Performance:** ~1300 `arc` calls at 60 fps is borderline on integrated GPUs; profiling shows `render` ~8–12 ms/frame for heavy 1308 (`src/viewer.js:484` `baseR` + highlight). No instancing, no GPU culling.
-- **Picking:** `unproject(clientX, clientY)` (`src/viewer.js:271`) inverts the same projection math; does not invert `motionGain` amplification (known limitation `docs/LIMITATIONS.md:34`) — fov unified `fov=800` with `render()` for picking invertibility (`src/viewer.js:309` and `src/viewer.js:364` `fov=800 unified`).
-- **Ribbon heuristic:** Secondary structure is `heuristic, not DSSP` (`src/viewer.js:110` `heuristic, not DSSP` and `src/viewer.js:114` `heuristic, not DSSP`) — Ca `i→i+3` distance heuristic (`d3<5.8 → H`, `d3>8.5 → E`), not Kabsch-Sander H-bonds; documented as heuristic (see H74 ribbon note below).
+- **Performance:** ~1300 `arc` calls per frame with no instancing and no GPU culling. Frame rate is **not measured in this repo** — the headless gate has no canvas, so no fps figure is claimed here; the reasoning about what a WebGL path would cost is qualitative.
+- **Picking:** `unproject(clientX, clientY)` (`src/viewer.js:271`) inverts the same projection math; does not invert `motionGain` amplification (known limitation `docs/LIMITATIONS.md:33`) — fov unified `fov=800` with `render()` for picking invertibility (`src/viewer.js:309` and `src/viewer.js:364` `fov=800 unified`).
+- **Ribbon heuristic:** Secondary structure is `heuristic, not DSSP` (`src/viewer.js:127` `heuristic, not DSSP` and `src/viewer.js:131` `heuristic, not DSSP`) — Ca `i→i+3` distance heuristic (`d3<5.8 → H`, `d3>8.5 → E`), not Kabsch-Sander H-bonds; documented as heuristic (see H74 ribbon note below).
 - **Pros:** Zero dependencies, works everywhere (no WebGL context), trivial to debug, offline.
 - **Cons:** No depth buffer, painter's sort artifact, CPU-bound, linear overdraw.
 
@@ -77,8 +77,8 @@ repository implements it.
 
 ## Ribbon — DSSP Heuristic, not DSSP (H74)
 
-- Secondary structure assignment in `src/viewer.js:110` is `heuristic, not DSSP` (`src/viewer.js:110` `heuristic, not DSSP — ribbon assignment is Ca-distance heuristic, see docs/VIEWER.md`) and `src/viewer.js:114` `heuristic, not DSSP` (Ca `d3` distance, not Kabsch-Sander H-bonds). Also `src/viewer.js:470` `heuristic, not DSSP — see docs/VIEWER.md` for ribbon rendering.
-- **Constraint:** DSSP (Kabsch & Sander, 1983) requires hydrogen-bond pattern detection; this viewer uses only Cα `i→i+3` Euclidean distance `d3 = |r[i+3]-r[i]|` as a geometric proxy: `d3<5.8 Å → H` (helix), `d3>8.5 Å → E` (strand), else `C` (coil) (`src/viewer.js:122-130`). This is a heuristic, not DSSP — it does not compute electrostatic H-bond energy, nor assign 3_10/pi helices, bulges, or turns.
+- Secondary structure assignment in `src/viewer.js:127` is `heuristic, not DSSP` (`src/viewer.js:127` `heuristic, not DSSP — ribbon assignment is Ca-distance heuristic, see docs/VIEWER.md`) and `src/viewer.js:131` `heuristic, not DSSP` (Ca `d3` distance, not Kabsch-Sander H-bonds). Also `src/viewer.js:470` `heuristic, not DSSP — see docs/VIEWER.md` for ribbon rendering.
+- **Constraint:** DSSP (Kabsch & Sander, 1983) requires hydrogen-bond pattern detection; this viewer uses only Cα `i→i+3` Euclidean distance `d3 = |r[i+3]-r[i]|` as a geometric proxy: `d3<5.8 Å → H` (helix), `d3>8.5 Å → E` (strand), else `C` (coil) (`src/viewer.js:122-129`). This is a heuristic, not DSSP — it does not compute electrostatic H-bond energy, nor assign 3_10/pi helices, bulges, or turns.
 - **Documentation:** This note satisfies `grep -n "heuristic" docs/VIEWER.md` and `grep -n "heuristic" src/viewer.js` measurability; ribbon is heuristic per `docs/VIEWER.md` note.
 
 ## Color-blind Safe Palette (H75)
@@ -91,7 +91,7 @@ repository implements it.
 
 ## Mobile / Touch (H80)
 
-- **Touch handlers:** `src/viewer.js:77` `touch` comment (`this._dragging = false; // touch: drag state...`) and `src/viewer.js:238` `touch support for mobile/trackball (H80): single-finger rotate, pinch zoom` with `touchstart` / `touchmove` / `touchend` listeners (`src/viewer.js:239` `touchstart`, `src/viewer.js:246` `touchmove`, `src/viewer.js:260` `touchend`). Verified via `grep -n "touch" src/viewer.js`.
+- **Touch handlers:** `src/viewer.js:77` `touch` comment (`this._dragging = false; // touch: drag state...`) and `src/viewer.js:260` `touch support for mobile/trackball (H80): single-finger rotate, pinch zoom` with `touchstart` / `touchmove` / `touchend` listeners (`src/viewer.js:261` `touchstart`, `src/viewer.js:268` `touchmove`, `src/viewer.js:282` `touchend`). Verified via `grep -n "touch" src/viewer.js`.
 - **CSS media query:** `css/style.css:123` `@media (max-width: 900px)` collapses `#controls` to 260 px for tablet/phone; `css/style.css` also ensures `#canvas` fills flex `viewerWrap` with `touch-action` via `passive:false` handlers.
 - **Grep:** `grep -n "touch" src/viewer.js` hits line 77 and handlers; see `src/viewer.js:77` touch.
 

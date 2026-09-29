@@ -11,14 +11,14 @@ This document tracks HPC-related performance wiring. All targets marked aspirati
 
 ## GPU WebGPU Compute (G64)
 
-- Clamp: `sr<5` present via `Math.min(sigma/r,5)` / `min(sigma/r,5.0)` in WGSL (`src/gpu.js:51` WGSL, `src/gpu.js:214` JS helper `gpuClampSr`).
+- Clamp: `sr<5` present via `Math.min(sigma/r,5)` / `min(sigma/r,5.0)` in WGSL (`src/gpu.js:68` WGSL, `src/gpu.js:229` JS helper `gpuClampSr`).
 - Test: `tests/test_gpu_clamp.js` verifies `sr=200→5`.
 - Aspirational correlation: GPU vs CPU R>0.999 — not yet benchmarked, placeholder target (`src/gpu.js:6`).
 
 ## Neighbor List Skin (G66)
 
 - **Verlet skin 2Å, rebuild every 10 steps, 20% cut** — aspirational target, not yet implemented.
-- Current: `SpatialGrid` rebuilds every `compute()` call with `R_CUT=8.5Å` and no skin (`src/heavy.js:473`, `src/spatial-grid.js:8`).
+- Current: `SpatialGrid` rebuilds every `compute()` call with `R_CUT=8.5Å` and no skin (`src/heavy.js:473`, `src/spatial-grid.js:9`).
 - Desired: introduce 2 Å skin (effective cutoff 10.5 Å), rebuild every 10 steps, yielding ~20% reduction in pair-list rebuild cost. Until implemented, the O(N) grid still beats O(N²) but incurs per-step hash cost.
 
 ## dt Auto-Tuning Honest (G67)
@@ -30,7 +30,7 @@ This document tracks HPC-related performance wiring. All targets marked aspirati
 ## Adaptive Steps per Frame (G68)
 
 - `advance(maxMs=14)` caps wall-clock per animation frame to 14 ms (`src/main.js:525` `state.integ.advance(steps,14)`, `src/integrator.js:262` `advance(stepsWanted, maxMs=12)` default, caller passes 14).
-- Keeps 60 fps UI responsive under heavy load.
+- Keeps the UI responsive under heavy load. The 14 ms cap is the mechanism; the resulting frame rate is **not measured here** (see the budget section).
 
 ## Memory Leak Guards (G69)
 
@@ -43,26 +43,87 @@ This document tracks HPC-related performance wiring. All targets marked aspirati
 
 ## Performance Budget (J99)
 
-Budgets are enforced in `bench/budget.json:1` and checked in CI (see `.github/workflows/check.yml:19` `CI budget warn` comment — warns, does not fail).
+`bench/budget.json` is the single source of truth, evaluated by exactly one
+implementation — `bench/budget_check.js` — which both
+`.github/workflows/check.yml` and `manuscript/reproduce.sh` call. (They used to
+carry private copies of the same python; they had already drifted, and both
+printed an fps budget for a quantity neither measured.)
+
+Every key is either **measured** — with the bench file and metric that produce
+it — or **explicitly not measured**, with the reason. `tests/test_budget_coverage.js`
+fails if a new key arrives with neither.
 
 ```json
-{"heavy_compute_ms": 2.0, "fps": 30, "cg_compute_ms": 0.5}
+{
+  "heavy_compute_ms": 16.0,
+  "cg_compute_ms": 0.5,
+  "fps": null
+}
 ```
 
-- `bench/budget.json:1` `heavy_compute_ms: 2.0` — p95 `HeavyForceField.compute(pos)` on 4W52 heavy (1308 atoms) must be ≤2.0 ms. Measured via `bench/perf.js:108` `Heavy: n=1308 ... ms/compute`. Exceed ⇒ `::warning` in CI, not error.
-- `bench/budget.json:1` `cg_compute_ms: 0.5` — p95 `ForceField.compute(pos)` on CG 164 beads must be ≤0.5 ms (`bench/perf.js:107` `CG: n=164`).
-- `bench/budget.json:1` `fps: 30` — Interactive threshold. `Viewer.render` + `advance(maxMs=14)` must sustain ≥30 fps on 4W52 heavy integrated GPU. See `docs/VIEWER.md:27` and `bench/perf.js` scale note. Below 30 fps ⇒ CI warns.
-- **Budget source:** `bench/budget.json:1` is the single source of truth. `docs/PERFORMANCE.md:47` budget section and `manuscript/reproduce.sh:49` `budget check` both import from it. CI step is `CI budget warn` (soft gate) — see `.github/workflows/check.yml:19`.
+- **`heavy_compute_ms: 16.0`** — measured. `bench/perf.js` `heavy.meanMs`:
+  `HeavyForceField.compute(ref)` on 4W52 heavy (1308 atoms), 20 warmup + 30 timed.
+  **Measured 14.11 ms** (range 13.86–14.23 over 8 independent runs; worst
+  single-run max 15.39). The 16.0 is that value plus ~14 % headroom, so it is a
+  **regression tripwire, not a target**.
 
-To reproduce locally:
+- **`cg_compute_ms: 0.5`** — measured. `bench/perf.js` `cg.meanMs`:
+  `ForceField.compute(ref)` on the 164 Cα beads. **Measured 0.174 ms**
+  (range 0.164–0.195). Unchanged from birth; it was reachable then and is now.
+
+- **`fps: null`** — **NOT MEASURED. No frame rate is claimed anywhere.** A frame
+  rate needs a frame: a canvas, a compositor, a display refresh, a GPU. This repo
+  has zero dependencies by design, there is no canvas polyfill and no jsdom, and
+  `new Viewer({})` in bare Node throws `TypeError: canvas.getContext is not a
+  function` — `src/viewer.js` binds `window.addEventListener("resize")` and reads
+  `devicePixelRatio` at construction. `requestAnimationFrame` does not exist in
+  Node either. Until a real-browser leg in `tests/manual/` writes a
+  frames/second figure to a file CI reads, this stays `null` and no script prints
+  a number for it. That is an honest absence, and it is better than the fake it
+  replaces.
+
+  What a headless bench *can* say about interactivity, and does: heavy compute is
+  **14.1 ms**, and `advance(steps, 14)` caps physics at 14 ms of wall clock per
+  animation frame (`src/main.js:1454`). **14.1 > 14**, so heavy mode fits at most
+  one force evaluation per frame at the reference position. That is a real,
+  measured, falsifiable statement about frame pacing. It is not a frame rate.
+
+  **Known remaining frame-rate strings in `src/main.js`** — the module map, the
+  G68 comment above the `advance` call, the H76 HUD-debounce comment, and the
+  phase note on the top bar all still name a nominal refresh rate. They are
+  design notes to the next maintainer, not published claims, and `src/` was
+  outside the write scope of the change that produced this section, so they were
+  left alone rather than silently deleted or silently ignored. They are recorded
+  here so the next person to touch `src/main.js` can settle them.
+  `tests/test_budget_coverage.js` scans the publishing surfaces (docs, bench,
+  .github, manuscript, scripts, root markdown) and fails if any of those grows a
+  new frame-rate number; widening it to `src/` is a one-line change to
+  `SCAN_DIRS`.
+
+### Where 2.0 ms came from (it was never real)
+
+The budget file's entire history is **one commit**, `3ee4914` (2026-09-11), and it
+*creates* the file already containing `heavy_compute_ms: 2.0`. There is no earlier
+value for the code to have regressed from. Running that same commit's own
+`bench/perf.js` today gives **15.17 ms**; running its `src/heavy.js` directly
+gives **51.2 ms** at `de10a73` (2026-08-11), falling to 14.1 ms now. So 2.0 was
+fiction at birth: the O(N) `SpatialGrid` work in `3ee4914` took heavy from ~51 ms
+to ~15 ms, and the budget was written against neither number. It has never once
+been met, and CI emitted `::warning Heavy compute ... exceeds budget 2.0` on
+**every run since** — a permanently lit warning that gated nothing.
+
+Reproduce any of it:
 
 ```bash
-node bench/perf.js | tee /tmp/perf.log
-python3 -c "import json; b=json.load(open('bench/budget.json')); print(b)"
-# CI warn logic is also in manuscript/reproduce.sh:50 budget check (warn not fail)
+node bench/perf.js | tee /tmp/perf.log    # the measurement
+node bench/budget_check.js                # the contract check (exit 1 if over)
+git log -p --follow bench/budget.json     # the whole history: one commit
 ```
 
-If a change pushes `heavy_compute_ms` above 2.0 or drops fps below 30, the PR CI will emit `::warning :: Heavy compute X ms exceeds budget 2.0 ms` — fix by optimizing `src/heavy.js` spatial grid or reducing `R_CUT` overhead before merge.
+If a change pushes `heavy_compute_ms` past 16.0, `bench/budget_check.js` reports
+`OVER` and CI emits a `::warning`. If `fps` is ever added back as a number, a
+browser leg must produce that number first — `tests/test_budget_coverage.js` will
+reject the key otherwise.
 
 ---
 *Teams: all aspirational figures must be validated via `bench/perf.js` and `bench/alloc.js` before claim.*

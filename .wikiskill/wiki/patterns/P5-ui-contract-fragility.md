@@ -7,7 +7,7 @@ can silently null a handle (guarded) or misindex a hotkey (unguarded).
 
 **Evidence:** audit history — blank-render was caused by a syntax error, but
 the same fragility class appears as `if (ui.x)` guards everywhere; hotkeys
-1-7 assume panel order `#controls > .panel` (src/main.js:509-513).
+1-7 assume panel order `#controls > .panel` (src/main.js:509-512).
 
 **Fix that works:** After any index.html restructure: (1) run a headless
 contract test that every ui.* id exists in the served HTML; (2) keep hotkey

@@ -1,1 +1,39 @@
-{"heavy_compute_ms": 2.0, "fps": 30, "cg_compute_ms": 0.5}
+{
+  "_comment": "PERFORMANCE CONTRACT. Top-level keys are the budget VALUES consumed by bench/budget_check.js, .github/workflows/check.yml and manuscript/reproduce.sh; a null value means 'no number is claimed'. Every key has a matching _meta entry saying whether it is MEASURED (and by which bench file and metric) or explicitly NOT MEASURED with the reason. tests/test_budget_coverage.js enforces that a new key with neither a producer nor a stated reason fails CI. A number here is a promise about a measurement, never a target someone hoped for.",
+
+  "heavy_compute_ms": 16.0,
+  "cg_compute_ms": 0.5,
+  "fps": null,
+
+  "_meta": {
+    "heavy_compute_ms": {
+      "measured": true,
+      "producer": "bench/perf.js",
+      "metric": "heavy.meanMs",
+      "measured_value": 14.11,
+      "measured_spread": "13.86 - 14.23 across 8 independent runs; worst single-run max 15.39",
+      "statistic": "mean of 30 timed calls after 20 warmup; 8 independent processes",
+      "workload": "4w52.pdb, 1308 heavy atoms, HeavyForceField.compute(ref)",
+      "provenance": "2.0 in this file from 2026-09-11 to 2026-09-30 was never achievable and was never once met. `git log -p --follow bench/budget.json` shows exactly ONE commit (3ee4914, 2026-09-11), which creates the file already containing 2.0 — there is no earlier value it could have regressed from. Running that same commit's own bench/perf.js today reports 15.17 ms/compute, and its src/heavy.js run directly gives 51.2 ms at de10a73 (2026-08-11) falling to 14.1 ms now. So 2.0 was fiction at birth, not a 7x regression: the O(N) SpatialGrid work in 3ee4914 took heavy from ~51 ms to ~15 ms and the budget was written against neither number. CI has emitted '::warning Heavy compute ... exceeds budget 2.0' on every single run since, which is a permanently lit warning that gates nothing.",
+      "rebasis": "2026-09-30, to the measured value plus ~14% headroom. This is a REGRESSION TRIPWIRE, not a performance target: a change that pushes heavy compute past 16.0 ms trips the gate, ordinary machine-to-machine variance does not. The honest target for making heavy mode faster is tracked as an open item in ROADMAP section 4, not smuggled in here as a number the code never met."
+    },
+
+    "cg_compute_ms": {
+      "measured": true,
+      "producer": "bench/perf.js",
+      "metric": "cg.meanMs",
+      "measured_value": 0.174,
+      "measured_spread": "0.164 - 0.195 across 8 independent runs",
+      "statistic": "mean of 30 timed calls after 20 warmup; 8 independent processes",
+      "workload": "4w52.pdb, 164 C-alpha beads, ForceField.compute(ref)",
+      "provenance": "0.5 was reachable from birth (measured 0.174, i.e. 2.9x under budget) and is left unchanged. The heavy key next to it was 7x under the truth, which is the whole reason a sibling number nobody audited was believed for a month."
+    },
+
+    "fps": {
+      "measured": false,
+      "reason": "NOT MEASURABLE IN THIS ENVIRONMENT, and no number is claimed. A frame rate needs a frame: a canvas, a compositor, a display refresh, a GPU. This repo has zero dependencies by design (package.json has no `dependencies` block at all), there is no canvas polyfill and no jsdom, and `new Viewer({})` in bare Node throws `TypeError: canvas.getContext is not a function` because src/viewer.js binds window.addEventListener('resize') and reads devicePixelRatio at construction. requestAnimationFrame does not exist in Node either. A headless Node bench has no frame rate; asserting one would be a fabricated measurement, which is strictly worse than admitting the gap. Hence the null.",
+      "what_would_measure_it": "A real browser, not this repo's Node gate: tests/manual/ already holds the Playwright legs for exactly this class of check. Until such a leg exists and writes a frames/second figure to a file CI reads, no doc, script or workflow in this repo prints an fps budget.",
+      "measured_neighbour": "The two things a headless bench CAN say about interactivity, and does say, are in bench/perf.js: heavy compute is 14.1 ms/compute, and advance(steps, 14) caps physics at 14 ms of wall clock per animation frame (src/main.js:1454). 14.1 > 14 means heavy mode fits at most ONE force evaluation per frame at the reference position. That is a real, measured, falsifiable statement about frame pacing. It is not a frame rate and is not reported as one."
+    }
+  }
+}

@@ -33,7 +33,7 @@
  * over-subtracted multiply-buried area. C/hetero values below reproduce
  * isolated CH4/ALA SASA within ~10% of numerical Shrake–Rupley in tests.
  *
- * Units: Å, kcal/mol (γ in kcal/mol/Å²). No Node deps, `?v=` compatible.
+ * Units: Å, kcal/mol (γ in kcal/mol/Å²). No Node deps; plain ES module (no query suffix needed).
  *
  * Reference: Weiser, Shenkin & Still, J. Comput. Chem. 20, 217–230 (1999).
  */

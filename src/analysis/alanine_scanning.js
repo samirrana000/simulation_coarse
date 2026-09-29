@@ -35,8 +35,8 @@
  * src/analysis-panel.js (opt-in buttons, graceful degradation).
  */
 
-import { ForceField } from "../forcefield.js?v=10";
-import { HeavyForceField } from "../heavy.js?v=10";
+import { ForceField } from "../forcefield.js";
+import { HeavyForceField } from "../heavy.js";
 
 /** Heavy-atom names kept by an alanine truncation (backbone + CB + terminal O). */
 export const ALA_KEPT_ATOMS = new Set(["N", "CA", "C", "O", "OXT", "CB"]);

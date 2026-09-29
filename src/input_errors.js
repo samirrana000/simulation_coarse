@@ -28,8 +28,8 @@
  * through untouched (idempotent) and never throws itself.
  */
 
-import { parseCa, parseLigands } from "./pdb.js?v=10";
-import { parseMol2 } from "./mol2.js?v=10";
+import { parseCa, parseLigands } from "./pdb.js";
+import { parseMol2 } from "./mol2.js";
 
 /** Stable failure-class codes (frozen contract — tests assert membership). */
 export const INPUT_ERROR_CODES = [

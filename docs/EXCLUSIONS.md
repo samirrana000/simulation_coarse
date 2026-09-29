@@ -1,6 +1,6 @@
 # Exclusions — 1-2 / 1-3 / 1-4 non-bonded policy
 
-> Audit: `src/heavy.js:524-542` (`pairKey i*1e6+j`) and `src/forcefield.js:250-309`
+> Audit: `src/heavy.js:524-541` (`pairKey i*1e6+j`) and `src/forcefield.js:250-309`
 > ⇒ documented here for B13.
 
 ## Summary
@@ -13,7 +13,7 @@
 | **intra-ligand** | all pairs i<j with i,j ≥ `ligandStart` | **fully excluded** (`_excluded`) | excluded | Small-molecule geometry is governed by its own harmonic/angle/improper FF; grid LJ would otherwise crush rings / folded conformers (para carbons at 2.8 Å ≪ r_e 5 Å) |
 | **coarse ENM / holo / native contacts** | ENM springs, holo springs, `nativeContacts` (`forcefield.js`) | excluded | excluded | Spring already encodes native contact |
 
-## Heavy mode (`src/heavy.js:524-542`)
+## Heavy mode (`src/heavy.js:524-541`)
 
 ```js
 this._excluded = new Set();

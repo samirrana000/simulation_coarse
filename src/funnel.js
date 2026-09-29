@@ -35,7 +35,7 @@
  * A module with no ligand atoms degrades to a safe no-op (active === false).
  */
 
-import { KB_KCAL, STANDARD_VOLUME } from "./units.js?v=10";
+import { KB_KCAL, STANDARD_VOLUME } from "./units.js";
 
 export class Funnel {
   /**

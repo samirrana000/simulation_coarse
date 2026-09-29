@@ -156,7 +156,7 @@ Loop-2 plan below.
 ## 3. Discrepancies found (all minor; none blocks Loop 2)
 
 - **D1 — `renderPmfFormation` is not null-bindlog-safe** (real bug, one line):
-  `bindviz.js:222` dereferences `bindlog.nEvents` without a null guard; my re-test
+  `src/capture/bindviz.js:245` dereferences `bindlog.nEvents` without a null guard; my re-test
   shows `renderPmfFormation(canvas, null)` throws, while timeline/energy renderers
   handle null correctly. R7 §1's blanket claim ("null canvas / empty BindLog → …
   never throw") is *tested* only for null canvas + **empty** BindLog, both of which

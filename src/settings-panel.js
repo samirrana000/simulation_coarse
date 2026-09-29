@@ -8,12 +8,12 @@
  *   - Integrator performance & sub-stepping
  */
 
-import { ui, state } from "./ui.js?v=10";
-import { downloadText } from "./recorder.js?v=10";
-import { settingsJson } from "./session.js?v=10";
-import { GpuAccelerator } from "./gpu.js?v=10";
-import { WorkerPool } from "./worker-pool.js?v=10";
-import { initWebGPU, isSupported as isWebgpuSupported, webgpuStatus } from "./compute/webgpu_backend.js?v=10";
+import { ui, state } from "./ui.js";
+import { downloadText } from "./recorder.js";
+import { settingsJson } from "./session.js";
+import { GpuAccelerator } from "./gpu.js";
+import { WorkerPool } from "./worker-pool.js";
+import { initWebGPU, isSupported as isWebgpuSupported, webgpuStatus } from "./compute/webgpu_backend.js";
 
 export const gpuAccelerator = new GpuAccelerator();
 export const workerPool = new WorkerPool();

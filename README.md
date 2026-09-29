@@ -67,6 +67,10 @@ python3 -m http.server 8123
 # open http://127.0.0.1:8123/
 ```
 
+Serve it from the repo root over HTTP. `127.0.0.1`/`localhost` also count as a
+secure context, which the page uses to guarantee a fresh module graph on every
+reload (see **Development notes**).
+
 ### The 4W52 binding demo (2 minutes)
 
 0. **First run?** Open **Structure → Getting started — 4-step checklist** and
@@ -375,10 +379,26 @@ docs/PHYSICS_RIGOR.md + CHEMISTRY.md + GPU_RESPA.md + WORKFLOWS.md + UI_COCKPIT.
 
 ## Development notes
 
-- ES modules are cache-busted with a query suffix (`?v=10`); bump it after
-  editing any module so browsers fetch fresh code.
-- Modules import each other with that suffix; Node strips the query string on
-  `file://` URLs, so the modules also run under plain Node for unit tests.
+- **There is nothing to bump.** Modules import each other with plain relative
+  specifiers (`./units.js`); no version query suffix exists anywhere in the
+  app. `sw.js` serves the graph network-first with `cache: "no-store"`, so
+  edit a module, reload, and the new bytes are what run. Until 2026-09-29 this
+  was 121 hand-typed `?v=10` suffixes across 42 files, and a forgotten one
+  served the cached copy — the symptom being "my fix did nothing", which on
+  this app is indistinguishable from a physics bug. `src/version.js` remains
+  the single version carrier (HUD prefix, trajectory `REMARK` provenance); it
+  is not a cache key.
+- What that costs, stated plainly: every reload re-downloads ~1 MB of modules
+  from the dev server, and the app no longer runs offline (serving a stale
+  graph is a worse failure for an interactive simulator than refusing to
+  start). Service workers need a secure context, so on an insecure origin
+  (e.g. `http://192.168.x.x`) or `file://` registration is skipped and the app
+  falls back to the plain urls — still correct, just no longer guaranteed
+  fresh.
+- `tests/test_cache_contract.js` (FAST) goes red if a query literal reappears
+  on any module edge, if `sw.js` is deleted, unwired, or given a cache-read
+  path, and if `ui.js` ever gets a second module instance. `npm run check`
+  carries the cheap pre-commit copy of the literal rule.
 - Unit/browser harnesses live under `/tmp/opencode/` (`t2`–`t22`, `probe4w52`).
   The browser tests drive the app over `http://127.0.0.1:8123/` with
   puppeteer-core and the bundled Chrome.

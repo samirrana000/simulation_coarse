@@ -6,7 +6,7 @@
  * Bekker vector formulas), replacing finite differences and delivering ~50x speedups.
  */
 
-import { improperAngle } from "./ligand.js?v=10";
+import { improperAngle } from "./ligand.js";
 
 /** Σ ½ k (r−r0)² over a flat pair list; returns energy, accumulates forces. */
 export function harmonicPairs(pos, f, list, stride, k) {

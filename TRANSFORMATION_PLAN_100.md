@@ -174,7 +174,7 @@
 | G61 | 2026-08-29 | `bench/perf.js` scale exponent 2.06, docs ideal 1.0, heavy not yet O(N) |
 | G63 | 2026-08-29 | `src/worker-pool.js:92` _busy guard, `assertNotDetached`, byteLength check |
 | G65 | 2026-08-29 | `src/heavy.js:597` zero-alloc audit, `bench/alloc.js:88` heap delta |
-| H71 | 2026-08-29 | `src/viewer-gl.js:19` ViewerGL wrapper stub (no renderer), `docs/VIEWER.md` — **stub deleted 2026-09-30, H71 still open** |
+| H71 | 2026-08-29 | `src/viewer-gl.js` (line 19 of the 2026-08-29 tree) ViewerGL wrapper stub (no renderer), `docs/VIEWER.md` — **file deleted 2026-09-30, so the line pointer cannot be repointed; H71 still open** |
 | H76 | 2026-08-29 | `src/main.js:551` lastHudUpdate 10 Hz debounce |
 | H78 | 2026-08-29 | `src/recorder.js:56` getFrame(i) scrub placeholder |
 | I81 | 2026-08-29 | `src/mmcif.js:26` parseMMCIF stub, `docs/MMCIF.md:3` |

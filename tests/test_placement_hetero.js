@@ -19,10 +19,10 @@
 
 import { placeLigand, relaxClash, findPocketCenter } from "../src/placement.js";
 import { getProteinCoordsAndSigma } from "../src/ligand-panel.js";
-// NOTE: ligand-panel.js binds `state` from "./ui.js?v=10"; the query string
-// makes that a distinct module instance from "../src/ui.js", so the test
-// must inject through the same ?v=10 instance the panel reads.
-import { state } from "../src/ui.js?v=10";
+// NOTE: ligand-panel.js binds `state` from "./ui.js". Both specifiers resolve
+// to the same url, so this is the same module instance the panel reads — one
+// instance, which is the invariant tests/test_cache_contract.js asserts.
+import { state } from "../src/ui.js";
 
 let fails = 0;
 let passes = 0;

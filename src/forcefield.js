@@ -73,20 +73,20 @@
  * accumulated in a preallocated flat array — zero allocations per step.
  */
 
-import { buildLigandInternalFF, improperAngle } from "./ligand.js?v=10";
+import { buildLigandInternalFF, improperAngle } from "./ligand.js";
 import {
   harmonicPairs, springForces, angleForces, ligandBondForces, improperForces,
-} from "./ff-harmonic.js?v=10";
-import { repulsion } from "./ff-repulsion.js?v=10";
-import { binding } from "./ff-binding.js?v=10";
-import { KB_KCAL, KCONV } from "./units.js?v=10";
+} from "./ff-harmonic.js";
+import { repulsion } from "./ff-repulsion.js";
+import { binding } from "./ff-binding.js";
+import { KB_KCAL, KCONV } from "./units.js";
 import {
   RES_CLASS, RES_CLASS_OF, CG_FORMAL_CHARGES, LIG_ELEMENT, LIG_ELEMENT_DEFAULT,
   SEQ_WEIGHT, KBOND_DEFAULT, KANGLE_DEFAULT, HOLO_FLOOR_RMIN, HOLO_FLOOR_K,
-} from "./ff-params.js?v=10";
-import { buildTirionNetwork, applyTirionToForceField } from "./physics/forcefield/tirion_anm.js?v=10";
+} from "./ff-params.js";
+import { buildTirionNetwork, applyTirionToForceField } from "./physics/forcefield/tirion_anm.js";
 import { buildVirtualSites, coneAxisOf } from "./physics/virtual-sites.js";
-import { kineticTemp, rmsdTo } from "./physics/observables.js?v=10";
+import { kineticTemp, rmsdTo } from "./physics/observables.js";
 
 // canonical units live in units.js; re-export keeps backward compat for
 // integrator.js / funnel.js / tests that historically imported from here. The

@@ -9,27 +9,27 @@
  * Analyze flow is untouched.
  */
 
-import { analyzeTrajectory, pmfCsv } from "./analysis.js?v=10";
-import { downloadText } from "./recorder.js?v=10";
-import { ui, state, viewer, recorder } from "./ui.js?v=10";
-import { scanPocket, pocketResidues, formatMutationTable } from "./analysis/alanine_scanning.js?v=10";
-import { computeDCCM, renderDCCMHeatmap, topCorrelations, dccmPick, highlightCorrelatedPair } from "./analysis/dccm.js?v=10";
-import { trackPocketVolume, detectCryptic } from "./analysis/cryptic_pockets.js?v=10";
-import { runPullingEnsemble, jarzynskiFreeEnergy, koffSurrogate } from "./analysis/unbinding_smd.js?v=10";
-import { computeThermodynamics, formatThermoTable } from "./analysis/thermodynamics.js?v=10";
-import { dccmCsv } from "./session.js?v=10";
+import { analyzeTrajectory, pmfCsv } from "./analysis.js";
+import { downloadText } from "./recorder.js";
+import { ui, state, viewer, recorder } from "./ui.js";
+import { scanPocket, pocketResidues, formatMutationTable } from "./analysis/alanine_scanning.js";
+import { computeDCCM, renderDCCMHeatmap, topCorrelations, dccmPick, highlightCorrelatedPair } from "./analysis/dccm.js";
+import { trackPocketVolume, detectCryptic } from "./analysis/cryptic_pockets.js";
+import { runPullingEnsemble, jarzynskiFreeEnergy, koffSurrogate } from "./analysis/unbinding_smd.js";
+import { computeThermodynamics, formatThermoTable } from "./analysis/thermodynamics.js";
+import { dccmCsv } from "./session.js";
 import {
   THERMO_LIG_AUTO, THERMO_POCKET_RCUT,
   resolveThermoLigand, selectedLigandAtomIndices, selectedLigandCom,
   pocketFromCom, sliceSelectedPositions, refreshThermoLigOptions,
-} from "./analysis/thermo_ligand.js?v=10";
+} from "./analysis/thermo_ligand.js";
 import {
   THERMO_SASA_STRIDE, sasaBurialChunked, cgBeadExtendedRadius,
   selectedLigandElements,
-} from "./analysis/thermo_sasa.js?v=10";
-import { ForceField } from "./forcefield.js?v=10";
-import { LangevinIntegrator } from "./integrator.js?v=10";
-import { findRotatableBonds } from "./analysis/rotbonds.js?v=10";
+} from "./analysis/thermo_sasa.js";
+import { ForceField } from "./forcefield.js";
+import { LangevinIntegrator } from "./integrator.js";
+import { findRotatableBonds } from "./analysis/rotbonds.js";
 
 /**
  * Count rotatable bonds in the selected thermo ligand subset (Stage-5 display

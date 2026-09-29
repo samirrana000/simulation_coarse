@@ -22,27 +22,27 @@ import {
   METAL_ELEMENT, METAL_ELEMENT_DEFAULT,
   COVALENT_RADIUS, BOND_SLACK,
   LIG_ELEMENT, LIG_ELEMENT_DEFAULT,
-} from "./ff-params.js?v=10";
+} from "./ff-params.js";
 // D2: heavy's k_B came from ff-params.js, CG's from units.js — a 5e-8 split in
 // a HUD number. The observables now read the units.js constant; dropped import.
-import { kineticTemp, rmsdTo } from "./physics/observables.js?v=10";
-import { springForces, dihedralForcesAnalytic } from "./ff-harmonic.js?v=10";
-import { assignCharges, GB_RADII } from "./physics/charges.js?v=10";
-import { GeneralizedBorn, COULOMB_CONST } from "./physics/gb.js?v=10";
-import { SasaModel } from "./physics/sasa.js?v=10";
-import { DirectionalHBond } from "./physics/hbond.js?v=10";
-import { SpatialGrid } from "./spatial-grid.js?v=10";
-import { getBondParams, getAngleParams, getNonbondedParams } from "./physics/forcefield/amber14sb.js?v=10";
-import { computeBornRadii as computeOBC2Radii, gbEnergyForces as gbOBC2Forces, debyeKappa } from "./physics/solvation/gb_obc2.js?v=10";
-import { lcpoSasa } from "./physics/solvation/lcpo_sasa.js?v=10";
-import { membraneEnergyForces, transferDgFor } from "./physics/solvation/membrane_slab.js?v=10";
-import { typeMolecule, assignCharges as gaffAssignCharges } from "./chem/gaff2_mapper.js?v=10";
-import { parseAltLoc, parseOccupancy, shouldReplaceAltloc } from "./pdb_altloc.js?v=10";
+import { kineticTemp, rmsdTo } from "./physics/observables.js";
+import { springForces, dihedralForcesAnalytic } from "./ff-harmonic.js";
+import { assignCharges, GB_RADII } from "./physics/charges.js";
+import { GeneralizedBorn, COULOMB_CONST } from "./physics/gb.js";
+import { SasaModel } from "./physics/sasa.js";
+import { DirectionalHBond } from "./physics/hbond.js";
+import { SpatialGrid } from "./spatial-grid.js";
+import { getBondParams, getAngleParams, getNonbondedParams } from "./physics/forcefield/amber14sb.js";
+import { computeBornRadii as computeOBC2Radii, gbEnergyForces as gbOBC2Forces, debyeKappa } from "./physics/solvation/gb_obc2.js";
+import { lcpoSasa } from "./physics/solvation/lcpo_sasa.js";
+import { membraneEnergyForces, transferDgFor } from "./physics/solvation/membrane_slab.js";
+import { typeMolecule, assignCharges as gaffAssignCharges } from "./chem/gaff2_mapper.js";
+import { parseAltLoc, parseOccupancy, shouldReplaceAltloc } from "./pdb_altloc.js";
 import {
   piStackForces, cationPiForces, halogenForces,
   buildRingFrames, buildCationList, buildHalogenList, HALOGEN_EPS,
-} from "./physics/weakint.js?v=10";
-import { detectCoordination, enforceCoordination } from "./chem/metals.js?v=10";
+} from "./physics/weakint.js";
+import { detectCoordination, enforceCoordination } from "./chem/metals.js";
 
 /**
  * Coulomb constant, kcal·Å/(mol·e²). Public name kept (docs/UNITS.md lists

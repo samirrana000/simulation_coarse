@@ -25,14 +25,14 @@
  * @module compute/webgpu_backend
  */
 
-import { SpatialGrid } from "../spatial-grid.js?v=10";
+import { SpatialGrid } from "../spatial-grid.js";
 
 /** Default non-bonded cutoff == GPU cell edge (A). Matches gb_obc2 HCT cutoff. */
 export const RCUT_DEFAULT = 12.0;
 /** Default LJ switch start (A). */
 export const SWITCH_ON_DEFAULT = 10.0;
 /** Coulomb constant (kcal·A/mol/e^2) — re-exported from src/units.js. */
-import { COULOMB_CONST } from "../units.js?v=10";
+import { COULOMB_CONST } from "../units.js";
 export { COULOMB_CONST };
 /** Threads per workgroup (must match both .wgsl files). */
 export const WORKGROUP = 64;

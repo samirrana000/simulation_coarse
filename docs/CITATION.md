@@ -50,5 +50,5 @@ grep -n "zenodo" CITATION.cff docs/CITATION.md -i   # hits
 grep -n "Zenodo" manuscript/manuscript_jpcb.tex       # hits (after patch)
 ```
 
-*See also `README.md:59` Code and Data Availability and `ROADMAP.md:1` for v1 scope.*
+*See also `README.md:390` Version, license & citation and `ROADMAP.md:1` for v1 scope.*
 

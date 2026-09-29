@@ -29,7 +29,7 @@
  * DOM-free; runs under plain Node.
  */
 
-import { KB_KCAL } from "../units.js?v=10";
+import { KB_KCAL } from "../units.js";
 
 /* ------------------------------------------------------------------ */
 /*  Geometry primitives                                                */

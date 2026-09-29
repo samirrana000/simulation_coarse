@@ -51,29 +51,16 @@ echo "--- [4/4] Performance budget check (bench/budget.json, CI warn) ---"
 if [ -f bench/budget.json ]; then
   echo "budget.json content:"
   cat bench/budget.json
-  # CI warn logic: compare perf log to budget (warn, do not fail)
-  # heavy_compute_ms budget 2.0, cg_compute_ms 0.5 (see docs/PERFORMANCE.md)
-  echo "CI budget warn: if meanMs > budget, emit ::warning (not error)"
-  python3 - << 'PY' || true
-import json, re, pathlib
-try:
-    budget=json.loads(pathlib.Path("bench/budget.json").read_text())
-    text=pathlib.Path("/tmp/reproduce_perf.log").read_text()
-    m=re.search(r"CG:[^\n]*?(\d+\.\d+)\s*±", text)
-    cg=float(m.group(1)) if m else None
-    m2=re.search(r"Heavy:[^\n]*?(\d+\.\d+)\s*±", text)
-    hv=float(m2.group(1)) if m2 else None
-    print(f"budget heavy_compute_ms={budget.get('heavy_compute_ms')} fps={budget.get('fps')} cg_compute_ms={budget.get('cg_compute_ms')}")
-    if cg and cg>budget.get("cg_compute_ms",999):
-        print(f"::warning :: CG compute {cg:.3f} ms exceeds budget {budget['cg_compute_ms']} ms")
-    if hv and hv>budget.get("heavy_compute_ms",999):
-        print(f"::warning :: Heavy compute {hv:.3f} ms exceeds budget {budget['heavy_compute_ms']} ms")
-    if hv and hv and budget.get("fps"):
-        fps_budget=budget["fps"]
-        print(f"fps budget {fps_budget} — check render fps via bench/perf.js scale if applicable")
-except Exception as e:
-    print("budget check skipped:", e)
-PY
+  # bench/budget_check.js is the single implementation of the contract; this
+  # file and .github/workflows/check.yml both call it rather than keeping
+  # private copies (the copies had drifted, and BOTH used to print
+  # "fps budget 30" for a quantity neither measured — nothing in this repo
+  # measures frame rate, so fps is null with the reason recorded).
+  # --perf-log reuses the bench/perf.js output already captured in [2/4].
+  # Exit 1 = at least one MEASURED key is over budget; unmeasured keys are
+  # reported as UNMEASURED and are never counted as passing.
+  echo "contract check:"
+  node bench/budget_check.js --perf-log /tmp/reproduce_perf.log || true
 fi
 
 echo ""

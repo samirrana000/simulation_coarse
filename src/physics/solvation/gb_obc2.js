@@ -27,7 +27,7 @@
  *           dR/dx propagation (full OBC forces) can contract it.
  *
  * Units: Å, kcal/mol, e. Works on Float32Array or Float64Array positions.
- * No Node deps, `?v=` compatible.
+ * No Node deps; plain ES module (no query suffix needed).
  *
  * References:
  *   [1] Still et al., JACS 112, 6127 (1990) — f_GB form.
@@ -45,7 +45,7 @@ export const R_MAX = 30.0;
 
 // kcal·Å/(mol·e²) — re-exported from the src/units.js contract (see the note
 // there); this file previously repeated the literal.
-import { COULOMB_CONST } from "../../units.js?v=10";
+import { COULOMB_CONST } from "../../units.js";
 export { COULOMB_CONST };
 
 /**

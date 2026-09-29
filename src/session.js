@@ -38,7 +38,7 @@
  */
 
 /* eslint-disable no-unused-vars */
-import { createInputError } from "./input_errors.js?v=10";
+import { createInputError } from "./input_errors.js";
 
 /** Session schema version (frozen contract — tests assert === 1). */
 export const SESSION_VERSION = 1;

@@ -90,7 +90,7 @@ u = mda.Universe("topology.pdb", "cg_traj_500frames.xyz")  # XYZ reader is built
 
 ## RMSF → B-factor parity check
 
-`src/analysis.js:371` defines:
+`src/analysis.js:376` defines:
 
 ```js
 const RMSF_TO_B = (8 * Math.PI * Math.PI) / 3; // B = 8π²/3 ⟨Δr²⟩ ≈ 26.32

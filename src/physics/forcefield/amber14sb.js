@@ -1,7 +1,7 @@
 /**
  * amber14sb.js — AMBER ff14SB-style bonded + non-bonded parameter tables.
  *
- * Pure data + getters, no Node dependencies, ES-module safe (`?v=` compatible).
+ * Pure data + getters, no Node dependencies, ES-module safe.
  * Units: Length Å, Energy kcal/mol, Angle rad internally (tables store deg,
  * getters convert), Mass Da. See src/units.js and docs/UNITS.md.
  *

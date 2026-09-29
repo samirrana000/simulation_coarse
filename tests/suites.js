@@ -111,9 +111,13 @@ export const SUITES = [
   { file: "tests/test_observables_parity.js", tier: "FAST", note: "CG/heavy kineticTemp + rmsd parity" },
   { file: "tests/test_unit_contract.js", tier: "FAST", note: "one unit contract, one value (KB_KCAL was defined twice)" },
   { file: "tests/test_constant_ledger.js", tier: "FAST", note: "every SCREAMING_CASE constant has one home; catches a contract constant re-derived under ANY name, including inside a WGSL template string" },
+  { file: "tests/test_cache_contract.js", tier: "FAST", note: "no version query literal on any module edge (121 were hand-typed); sw.js exists, is wired up, and re-fetches with cache:no-store — executed in a node:vm sandbox, not grepped" },
   // anti-rot self-checks: registry wiring + docs/ index no-orphans
   { file: "tests/test_suite_registry.js", tier: "FAST" },
   { file: "tests/test_docs_index.js", tier: "FAST", note: "every file under docs/ linked from docs/README.md" },
+  // honest-scope gates: the two categories of claim that cannot be falsified
+  { file: "tests/test_doc_citations.js", tier: "FAST", note: "every path:line claim in every tracked .md resolves to a real, non-blank line (13 allowlisted, all in dated artifacts)" },
+  { file: "tests/test_budget_coverage.js", tier: "FAST", note: "every bench/budget.json key is measured by a named producer or explicitly unmeasured with a reason; no published surface claims an fps number" },
   { file: "tests/test_evolve_planner.js", tier: "FAST", note: "plan emits 15 schema-valid goals whose read_only paths all exist" },
   { file: "tests/test_evolve_gate.js", tier: "FAST", note: "the gate can fail: structure not volume, sees uncommitted work, exits non-zero" },
 

@@ -40,7 +40,7 @@
 // units.js is a zero-import leaf (the declared single unit contract), so this
 // keeps analysis.js DOM-free and node-importable while sourcing STANDARD_VOLUME
 // once instead of re-typing 1660.54 in the PMF provenance header.
-import { STANDARD_VOLUME } from "./units.js?v=10";
+import { STANDARD_VOLUME } from "./units.js";
 
 /** Pearson correlation coefficient between two arrays of equal length. */
 export function pearson(a, b) {

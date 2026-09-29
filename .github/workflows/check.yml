@@ -44,23 +44,13 @@ jobs:
             echo "evolve/evolve.mjs absent — skipping evolution gate (npm test already covered)"
           fi
       - name: Performance budget (J99 — CI warn, not fail)
-        # CI budget warn: compares bench/perf.js meanMs vs bench/budget.json (heavy_compute_ms 2.0, cg_compute_ms 0.5, fps 30) and emits ::warning if exceeded
-        run: |
-          node bench/perf.js | tee /tmp/perf.log
-          python3 - << 'PY' || true
-          import json, re, pathlib
-          b=json.loads(pathlib.Path("bench/budget.json").read_text())
-          t=pathlib.Path("/tmp/perf.log").read_text()
-          import re as _re
-          cg=_re.search(r"CG:[^\n]*?(\d+\.\d+)\s*±", t)
-          hv=_re.search(r"Heavy:[^\n]*?(\d+\.\d+)\s*±", t)
-          cg_ms=float(cg.group(1)) if cg else 999
-          hv_ms=float(hv.group(1)) if hv else 999
-          # CI warn comment: budget is {"heavy_compute_ms":2.0,"fps":30,"cg_compute_ms":0.5} (bench/budget.json:1)
-          if cg_ms > b.get("cg_compute_ms", 0.5):
-              print(f"::warning :: CG compute {cg_ms:.3f} ms exceeds budget {b['cg_compute_ms']} ms")
-          if hv_ms > b.get("heavy_compute_ms", 2.0):
-              print(f"::warning :: Heavy compute {hv_ms:.3f} ms exceeds budget {b['heavy_compute_ms']} ms")
-          else:
-              print(f"Budget OK: CG {cg_ms:.3f} ≤ {b['cg_compute_ms']}, Heavy {hv_ms:.3f} ≤ {b['heavy_compute_ms']}, fps budget {b['fps']}")
-          PY
+        # bench/budget_check.js is the ONLY implementation of the contract.
+        # It used to be duplicated as inline python in this file AND in
+        # manuscript/reproduce.sh; the copies had already drifted, and both
+        # printed "fps budget 30" for a quantity NEITHER measured (nothing in
+        # this repo measures frame rate — a headless Node bench has no canvas,
+        # no compositor and no rAF). fps is now `null` in bench/budget.json
+        # with the reason recorded, and this step prints no fps number.
+        # `|| true` is deliberate: this gate has always been a warning, and
+        # turning it into a blocker is a policy change, not a bug fix.
+        run: node bench/budget_check.js || true

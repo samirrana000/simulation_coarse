@@ -20,7 +20,7 @@
  *   to embed run-time values; defaults are 300 K, gamma 2.0, seed 0.
  */
 
-import { VERSION, BUILD_DATE } from "./version.js?v=10";
+import { VERSION, BUILD_DATE } from "./version.js";
 
 export class Recorder {
   // G69 — Memory leak guard: maxFrames cap 500 documented; auto-stop when reached to prevent unbounded heap growth

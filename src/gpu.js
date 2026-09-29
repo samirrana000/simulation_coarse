@@ -11,7 +11,7 @@
 // the CODATA value the CPU kernels use — the same physical constant, evaluated
 // two different ways depending on which backend ran. units.js is a zero-import
 // leaf, so this edge is acyclic and costs nothing at module load.
-import { COULOMB_CONST } from "./units.js?v=10";
+import { COULOMB_CONST } from "./units.js";
 
 /**
  * GPU non-bonded truncation radius (Å). Per-backend tuning constant for the

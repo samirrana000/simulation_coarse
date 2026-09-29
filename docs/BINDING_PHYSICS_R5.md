@@ -34,7 +34,7 @@ in Loop 2. The benchmark is reproducible and will be re-run per Loop.
    │                      L2 heavy (82 ms/step)
    │      L1 CG+ (0.23 ms/step)  ← Pareto-optimal sweet spot for pose triage
    │  L0 CG (0.20 ms/step)
-   └──────────────────────────────────────────▶ speed (steps/s at 60fps budget)
+   └──────────────────────────────────────────▶ speed (steps/s, per-frame physics cap)
      ~5000/s      ~60/s                       ~12/s      ~22 eff/s
 ```
 

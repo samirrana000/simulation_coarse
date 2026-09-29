@@ -7,6 +7,51 @@ Test tiers: `node tests/test_all.js` (FAST, gate) · `--slow` (SLOW-SMOKE) ·
 
 ## Unreleased
 
+- **The 121 hand-typed `?v=10` cache-bust literals are gone; a service worker
+  replaced them.** Measured before the change: 121 literals in 42 files under
+  `src/` plus one on `index.html`'s module tag, every one frozen at `10`
+  while `src/version.js` said `1.1.0-fp7`. A module edited without also editing
+  its neighbours' literals kept the same URL, the browser served the cached
+  bytes, and the developer saw "my fix did nothing" — indistinguishable from a
+  physics bug on a tool whose premise is interactive exploration.
+  `TRANSFORMATION_PLAN_100.md` item A01 recorded this as solved via
+  `src/version.js`; the literals were still there, and nothing checked them.
+- **Why not just check the literals (design a).** A gate that fails when a
+  `?v=` disagrees with `src/version.js` cannot make "edit a module, reload,
+  get the new code" true: a developer who edits without bumping the version
+  leaves the gate green and still gets cached bytes. Keeping the scheme also
+  keeps a release bump at 121 hand edits, which is the sprawl itself.
+- **Why not inject the version at runtime (design b).** A query string on the
+  entry point does not propagate through static relative imports — specifiers
+  are resolved by the parser before any code runs — so each of the 121 edges
+  would still need its own literal, i.e. a build step or a bespoke dynamic
+  loader that re-resolves the whole graph, double-fetches every module, and
+  re-handles the worker and the WGSL fetches. Zero-build forbids both.
+- **What was done instead.** Freshness moved off the URLs and onto the cache:
+  `sw.js` (new, static, no imports, no dependency) re-fetches every same-origin
+  GET with `cache: "no-store"` and holds **no** cache of its own — its only
+  response is a network response it just received, so there is no stored copy
+  of the app that can go stale. Every import is now a plain relative
+  specifier. Cost, stated: ~1 MB re-downloaded per reload, and no offline
+  mode. Where service workers are unavailable (insecure origin, `file://`)
+  registration is skipped and the app falls back to the plain URLs.
+- **Now checked, and the check is itself tested.** `scripts/check.sh` fails on
+  any version query literal in `src/`/`index.html` or a missing `sw.js`
+  (pre-commit copy; CI runs both `npm run check` and `npm test`).
+  `tests/test_cache_contract.js` (new, FAST, 33 assertions) fails if a literal
+  reappears on any module edge in shipped or node-side code, if `sw.js` is
+  deleted, unwired, stripped of `no-store`, or given a cache-read path, and if
+  `ui.js` ever gets a second module instance. It *executes* `sw.js` in a
+  `node:vm` sandbox with a recording `fetch` and asserts the recorded calls,
+  so a mechanism that silently stopped working goes red even when every grep
+  is clean.
+- **Side effect of the removal, fixed at the same time.**
+  `tests/test_placement_hetero.js` and `tests/test_rev1_issue4_live_terms.js`
+  imported `../src/ui.js?v=10` to reach the same `state` object the panels
+  read — `ui.js` and `ui.js?v=10` are two module instances, and the
+  "same-instance" note in each test was documenting a hazard the suffixes had
+  created. Both now import the plain module. No physics touched.
+
 - **Removed `src/scorer-onnx.js` and `src/viewer-gl.js` (dead stubs).** Both
   modules were aspirational placeholders with no working code path: an
   `OnnxScorer` whose every entry point warned and delegated to `PoseScorer`,

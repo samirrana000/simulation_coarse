@@ -2,7 +2,7 @@
  * pmf-panel.js — binding-PMF panel: funnel reset button + PMF plot drawing
  */
 
-import { ui, state } from "./ui.js?v=10";
+import { ui, state } from "./ui.js";
 
 let _lastPmfDraw = 0;
 

@@ -11,7 +11,7 @@
  * Hydrophobic burial drives non-polar ligand binding into protein hydrophobic pockets.
  */
 
-import { SASA_RADII } from "./charges.js?v=10";
+import { SASA_RADII } from "./charges.js";
 
 // Probe radius of water (Å). lcpo_sasa.js is the zero-import leaf holding the
 // single definition — this file previously repeated the `1.4` literal. The two
@@ -20,7 +20,7 @@ import { SASA_RADII } from "./charges.js?v=10";
 //
 // Imported AND re-exported (not `export … from`): SasaModel's constructor
 // reads PROBE_RADIUS as a local binding, and a bare re-export creates none.
-import { PROBE_RADIUS } from "./solvation/lcpo_sasa.js?v=10";
+import { PROBE_RADIUS } from "./solvation/lcpo_sasa.js";
 export { PROBE_RADIUS };
 
 export class SasaModel {

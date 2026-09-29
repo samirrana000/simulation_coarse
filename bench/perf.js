@@ -16,7 +16,9 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// Import forcefields — try without ?v suffix first (Node-friendly), fall back to ?v=10 style
+// Import forcefields — plain relative specifiers. There is no version query
+// suffix in this repo: freshness is sw.js's job in the browser, and a suffix
+// here would only fork src/ui.js into two module instances.
 import { ForceField } from "../src/forcefield.js";
 import { HeavyForceField, parseHeavy } from "../src/heavy.js";
 import { parseCa, selectSystem } from "../src/pdb.js";

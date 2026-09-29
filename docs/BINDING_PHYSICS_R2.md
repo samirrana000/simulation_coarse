@@ -19,7 +19,7 @@ modules read-only), raw output `/tmp/opencode/r2_proto_output.txt`.
 | Protein bead charges all q=0 | `src/ff-params.js:61-67` | Coulomb path (`ff-binding.js:114-124`) is coded but dead — revive with charge table (term b) **[DONE Loop-2 S1: CG_FORMAL_CHARGES, opt-in `binding.charges`]** |
 | H-bond flag = residue class P/Cp/Cn only | `src/forcefield.js:185` | **52% of backbone donors/acceptors score ZERO today (prototype §C)** — every residue gets backbone virtual sites |
 | Holo springs k=0.5 hold native pose | `src/forcefield.js:116,276-303` | Keep; binding terms must not double-count (exclusion set already handles) |
-| EEF1-lite ΔG_a −0.25…−0.55, B_a=1−exp(−n/3) | `src/ff-binding.js:89-155` | Term (c) multiplies this — no new loop |
+| EEF1-lite ΔG_a −0.25…−0.55, B_a=1−exp(−n/3) | `src/ff-binding.js:89-154` | Term (c) multiplies this — no new loop |
 | Cross cutoff 9.0 Å, switch at 7.65 Å | `src/forcefield.js:115`, `ff-binding.js:25` | All new terms live inside existing pair loop |
 
 The three native 4w52 HEPES contacts used throughout as the test case (X-ray,
@@ -230,7 +230,7 @@ molecules) currently scored by LJ alone.
 ```
 E_burial = Σ_a ΔG_a · B_a · (1 + λ_enc · enc_a)
 enc_a   = clip((n_H(a) − 4)/8, 0, 1)      n_H = H/A-class protein beads within 7 Å
-B_a     = 1 − exp(−n_a/3)                  [existing, ff-binding.js:150-155]
+B_a     = 1 − exp(−n_a/3)                  [existing, ff-binding.js:150-154]
 λ_enc   = 1.0
 ```
 

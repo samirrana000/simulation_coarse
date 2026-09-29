@@ -9,7 +9,7 @@
  * See docs/MMCIF.md for status and migration notes.
  */
 
-import { parseCa } from "./pdb.js?v=10";
+import { parseCa } from "./pdb.js";
 
 /**
  * Parse a PDBx/mmCIF string into the same {beads, chains, nAtoms} shape

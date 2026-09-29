@@ -26,7 +26,7 @@
 // tests/test_constant_ledger.js (ΔS shifts by ~5e-8 relative, i.e. ~1.7e-5
 // kcal/mol/K at 300 K). units.js is a zero-import leaf, so this edge is
 // acyclic.
-import { KB_KCAL as KB } from "../units.js?v=10";
+import { KB_KCAL as KB } from "../units.js";
 
 /**
  * Hydrophobic burial scale for the solvent-entropy term (R4 scale, ±50% band).

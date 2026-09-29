@@ -2,8 +2,8 @@
  * ui.js — DOM handles, application state, and shared singletons.
  */
 
-import { Viewer } from "./viewer.js?v=10";
-import { Recorder } from "./recorder.js?v=10";
+import { Viewer } from "./viewer.js";
+import { Recorder } from "./recorder.js";
 
 const $ = (id) => (typeof document !== "undefined" ? document.getElementById(id) : null);
 

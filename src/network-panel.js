@@ -7,8 +7,8 @@
  *   3. active   — transition glow + caption + legend so it self-explains
  */
 
-import { ChemicalNetworkModel } from "./physics/network.js?v=10";
-import { viewer } from "./ui.js?v=10";
+import { ChemicalNetworkModel } from "./physics/network.js";
+import { viewer } from "./ui.js";
 
 export const networkModel = new ChemicalNetworkModel({ temperature: 300 });
 export let isLiveTrackingActive = true;

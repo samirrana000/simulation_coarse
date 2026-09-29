@@ -165,8 +165,8 @@ async function main() {
     updateLiveTermsMirror,
     liveTermsBindLogView,
   } = await import("../src/main.js");
-  // Same-module state instance main.js mutates (ui.js?v=10 query pin).
-  const { state: liveState } = await import("../src/ui.js?v=10");
+  // Same-module state instance main.js mutates (one ui.js instance, no query pin).
+  const { state: liveState } = await import("../src/ui.js");
   assert(typeof liveTermsWanted === "function" &&
     typeof applyLiveTrackTerms === "function" &&
     typeof readLiveTerms === "function" &&

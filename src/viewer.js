@@ -10,7 +10,7 @@
  *  - Multi-touch and mouse trackball controls with perspective picking
  */
 
-import { VERSION } from "./version.js?v=10"; // A01 provenance — viewer knows build version (unused but validates deterministic import)
+import { VERSION } from "./version.js"; // A01 provenance — viewer knows build version (unused but validates deterministic import)
 
 const CHAIN_PALETTE = [
   [86, 156, 214], // blue

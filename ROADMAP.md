@@ -8,7 +8,7 @@
 
 These are **hard no's** for `v1` (tag `v1.0-jpcb`, see `CITATION.cff:13`).
 If you need them, use GROMACS / AMBER / OpenMM / NAMD / CHARMM as noted in
-`docs/APPLICABILITY.md:4`.
+`docs/APPLICABILITY.md:40`.
 
 - **No QM/MM** — No quantum Hamiltonian, no SCF, no bond breaking/formation, no
   catalysis or metal redox. The heavy force field is LJ + screened Coulomb +
@@ -48,9 +48,12 @@ grep -n "No QM/MM, no explicit membrane, no PME" ROADMAP.md
 education, rapid hypothesis generation, and methods prototyping — the thesis
 from `TRANSFORMATION_PLAN_100.md:1`.
 
-- **Cα ENM + heavy-atom GB/SA that stays fast:** `bench/budget.json:1`
-  `{"heavy_compute_ms":2.0,"fps":30,"cg_compute_ms":0.5}` with CI warn
-  (`docs/PERFORMANCE.md:47` budget section, `.github/workflows/check.yml:19`).
+- **Cα ENM + heavy-atom GB/SA that stays fast:** `bench/budget.json`
+  `{"heavy_compute_ms":16.0,"cg_compute_ms":0.5,"fps":null}` with CI warn
+  (`docs/PERFORMANCE.md` budget section; the single evaluator is
+  `bench/budget_check.js`, called by `.github/workflows/check.yml`).
+  `fps` is `null` on purpose — nothing here measures frame rate, so no fps
+  number is claimed anywhere.
 - **Well-tempered funnel metadynamics on 1-D `r`** with Jacobian `2kT ln r`
   and `c(t)` convergence diagnostics (HUD grays `ΔG` until `nHills≥50`).
 - **4-state Chemical Network + TPT** strictly for teaching timescale bridging,
@@ -67,13 +70,13 @@ from `TRANSFORMATION_PLAN_100.md:1`.
 |---|---|---|---|
 | `v1.0-jpcb` | 2026-09-01 | Tag + `CITATION.cff:13` + Zenodo `10.5281/zenodo.XXXXXXX` placeholder (`docs/CITATION.md`) | Pending deposition — placeholder in `manuscript/manuscript_jpcb.tex:359` |
 | Reproducibility | 2026-09-01 | `manuscript/reproduce.sh` (bench/perf + figs), `docs/TUTORIAL.md` Where it fails | Done (J92, J93) |
-| Accessibility | 2026-09-01 | `docs/ACCESSIBILITY.md` axe 0 violations, ESC + Space in `index.html:280`/`src/main.js:477` | Done (J98) |
-| Performance budget | 2026-09-01 | `bench/budget.json:1`, `docs/PERFORMANCE.md:47`, `check.yml:19` CI warn | Done (J99) |
+| Accessibility | 2026-09-01 | `docs/ACCESSIBILITY.md` axe 0 violations, ESC + Space in `index.html:480`/`src/main.js:1108` | Done (J98) |
+| Performance budget | 2026-09-01, rebaselined 2026-09-30 | `bench/budget.json`, `docs/PERFORMANCE.md`, `bench/budget_check.js` CI warn | Done (J99). The original `heavy_compute_ms: 2.0` and `fps: 30` were both fiction: 2.0 was 7× under the measured 14.1 ms and had never once been met (one-commit file history); fps was measured by nothing at all. Both are corrected. |
 | Browser v1 scope lock | 2026-09-01 | This file `ROADMAP.md:3` **No QM/MM, no explicit membrane, no PME** | Done (J100) |
 
 ## 4. What might come after v1 (not promised)
 
-- WebGL instanced spheres with depth buffer (`docs/VIEWER.md:16`) if ≥1.5× fps at 1308 atoms.
+- WebGL instanced spheres with depth buffer (`docs/VIEWER.md:16`) — would need a real-browser frame-rate measurement to justify, which this repo does not have (see `docs/PERFORMANCE.md`).
 - Neighbor-list skin 2 Å, rebuild every 10 steps, 20% cut (`docs/PERFORMANCE.md:18`).
 - PLUMED CV compatibility note (`docs/BRIDGE.md:??`) — 2-D CVs remain out of scope.
 - None of the above overrides **No QM/MM, no explicit membrane, no PME in browser v1**.
@@ -83,10 +86,10 @@ from `TRANSFORMATION_PLAN_100.md:1`.
 A PR that adds QM/MM, membrane, or PME must also:
 
 1. Update this file, `docs/APPLICABILITY.md`, `docs/LIMITATIONS.md`, and
-   `README.md:29` Limitations, and
+   `README.md:320` Limitations, and
 2. Add a benchmark vs GROMACS/AMBER PME with RMSE and performance numbers in
    `bench/vs_gromacs.md`, and
-3. Pass the same `bench/budget.json:1` budget without regressing fps <30.
+3. Pass the same `bench/budget.json` budget (`node bench/budget_check.js`, exit 0).
 
 Absent that, the PR will be closed as out-of-scope — intentionally.
 

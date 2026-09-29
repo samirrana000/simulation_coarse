@@ -35,7 +35,7 @@
  * convention); elements parallel array of uppercase symbols.
  */
 
-import { METAL_ELEMENT, METAL_ELEMENT_DEFAULT } from "../ff-params.js?v=10";
+import { METAL_ELEMENT, METAL_ELEMENT_DEFAULT } from "../ff-params.js";
 
 /** Metals handled by the enforcer (formal charges for documentation). */
 export const COORDINATION_METALS = Object.freeze({

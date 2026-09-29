@@ -112,7 +112,7 @@ cannot capture.
 **Why it fails:** Force fields are protein Cα ENM (`src/forcefield.js:91`)
 or heavy LJ/GB/SASA (`src/heavy.js:415`) — no lipid TIP3P, no
 CHARMM36 lipid dihedrals, no membrane insertion free energy
-(`docs/LIMITATIONS.md:40` **Out of scope: membranes, nucleic acids, QM**).
+(`docs/LIMITATIONS.md:39` **Out of scope: membranes, nucleic acids, QM**).
 
 ### How to diagnose a failed run
 
@@ -121,8 +121,8 @@ CHARMM36 lipid dihedrals, no membrane insertion free energy
 | `ΔG` far from ITC (>2 kcal/mol) on charged ligand | Net charge `Σq ≠ 0`, `κ` mismatch, cutoff 8.5 Å truncation `ΔU≈5%` | `src/ff-params.js` charges, `src/heavy.js:32` switch, `docs/CHARGES.md`, `settings-panel.js:saltM` |
 | PMF plateau not flat (`W(r≥9)` drifts) | 1-D CV misses orthogonal barrier, `rFlat` mis-set, `nHills<50` | `src/funnel.js:165` `cv()`, `docs/FUNNEL.md`, HUD `ΔG not converged (nHills<50)` |
 | B-factor `R<0.45` | Cutoff `Rc` wrong, ENM uniform `γ` | `bench/b_factors.js`, `docs/CG_HEAVY.md` |
-| Kinetics `k_on` off by 100× | CNM is **4-state toy**, not MSM, `ν0=1e10` | `docs/NETWORK.md:13` `NETWORK_STATES` |
-| Membrane trajectory explodes | System out of scope | `docs/APPLICABILITY.md:4` **What We Will NOT Do** |
+| Kinetics `k_on` off by 100× | CNM is **4-state toy**, not MSM, `ν0=1e10` | `src/physics/network.js:13` `NETWORK_STATES` |
+| Membrane trajectory explodes | System out of scope | `docs/APPLICABILITY.md:40` **What We Will NOT Do** |
 
 **Action:** If any symptom hits, do **not** report `ΔG/K_D/k_on` as an
 affinity. Use GROMACS/AMBER/OpenMM with PME + explicit solvent + MBAR/FEP

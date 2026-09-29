@@ -34,7 +34,7 @@
  * DOM-free; runs under plain Node.
  */
 
-import { KB_KCAL, KCONV } from "../units.js?v=10";
+import { KB_KCAL, KCONV } from "../units.js";
 
 /* ------------------------------------------------------------------ */
 /*  Small utilities                                                    */

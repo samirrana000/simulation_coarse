@@ -37,8 +37,8 @@
  * with k_B = KB_KCAL kcal/mol/K (equipartition: ½m⟨v²⟩KCONV = ½k_BT per dof).
  */
 
-import { KB_KCAL, KCONV } from "./units.js?v=10";
-import { SeededRNG } from "./seeded-rng.js?v=10";
+import { KB_KCAL, KCONV } from "./units.js";
+import { SeededRNG } from "./seeded-rng.js";
 
 export class LangevinIntegrator {
   /**

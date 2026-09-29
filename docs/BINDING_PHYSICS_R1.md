@@ -71,14 +71,14 @@ Heavy mode (`src/heavy.js`):
 - Covalent topology: `r < 1.15·(r_cov(i)+r_cov(j))` and `r < 2.2 Å` cap
   (`src/heavy.js:278-299`; radii `src/ff-params.js:150-155`); metal
   coordination = distance springs to N/O/S donors within `coordR`
-  (`src/heavy.js:383-404`; `coordR/coordN` table `src/ff-params.js:102-113`).
+  (`src/heavy.js:383-404`; `coordR/coordN` table `src/ff-params.js:102-112`).
 - Charges: united-atom AMBER-ish protein table + element fallbacks for
   ligand (`src/physics/charges.js:96-132`); GAFF2-lite typer opt-in
-  (`src/heavy.js:215-249`); heuristic PROPKA-style protonation
+  (`src/heavy.js:215-248`); heuristic PROPKA-style protonation
   (`src/chem/protonation.js:1-33`, pKa shifts `HBOND_DIST 3.5 Å`,
   `SALTBRIDGE_DIST 4.5 Å` at lines 56-57).
 - Non-polar: SASA pair-overlap model, `γ = 0.0072 kcal/mol/Å²`
-  (`src/heavy.js:502`, `src/physics/sasa.js:19-28`).
+  (`src/heavy.js:680`, `src/physics/sasa.js:19-28`).
 
 Implication for R2/R3: the single biggest CG gaps vs literature are (1) no
 H-bond directionality, (2) dead Coulomb channel (q=0), (3) no aromatic /
@@ -150,8 +150,9 @@ opposing terms** — the central fact behind enthalpy–entropy compensation
 
 Geometry conventions: `r` = heavy–heavy distance unless noted; angles in
 degrees. "Cheapest faithful form" = minimal term that reproduces ranking
-signal at 60 fps in JS (radial part reuses the existing pair loop; angular
-part ≤ 1 cos evaluation).
+signal at interactive frame cadence in JS (design target — frame rate is not
+measured in this repo, see `docs/PERFORMANCE.md`; the radial part reuses the
+existing pair loop, the angular part ≤ 1 cos evaluation).
 
 | # | Interaction | Strength (net in protein) | Key geometry (structural surveys) | Cheapest faithful functional form | Notes |
 |---|---|---|---|---|---|
@@ -261,7 +262,8 @@ single-digit-percent upgrade conditioned on the big five being right.
 
 Scale: 0 = infeasible/wrong-resolution · 1 = feasible with scaffolding
 (precompute vectors, extra arrays, <10% frame cost) · 2 = trivially feasible
-(fits existing pair loop, ~0 marginal cost at 60 fps).
+(fits existing pair loop, ~0 marginal cost at interactive cadence — a design
+target, not a measured frame rate).
 
 | Interaction (§2 #) | CG-feasible? | Heavy-feasible? | Cheapest form in our engine | Priority driver |
 |---|---|---|---|---|

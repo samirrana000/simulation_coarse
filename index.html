@@ -5,6 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CG & Heavy Protein Simulator — C&alpha; / Heavy / Chemical Network</title>
   <link rel="stylesheet" href="css/style.css" />
+  <script>
+  // Freshness, not cache-busting. No import in this app carries a version
+  // query suffix; src/version.js is the only version carrier. sw.js serves the
+  // whole graph network-first with cache:"no-store", so editing a module and
+  // reloading loads the new bytes from disk. Registered from <head> so
+  // installation is under way before the 66-module graph below is requested.
+  (function () {
+    if (!("serviceWorker" in navigator)) return;   // insecure origin / no SW support
+    if (!navigator.serviceWorker.controller) {
+      // No controller yet on this load (first visit, or the worker activated
+      // after the graph below was already fetched): reload exactly once so
+      // this load is covered too. sessionStorage bounds it to one reload per
+      // tab, so a worker that never activates cannot turn into a reload loop.
+      navigator.serviceWorker.addEventListener("controllerchange", function () {
+        var k = "simcoarse.sw.reloaded";
+        try {
+          if (sessionStorage.getItem(k)) return;
+          sessionStorage.setItem(k, "1");
+        } catch (e) { return; }
+        location.reload();
+      });
+    }
+    // Query-free url + updateViaCache:"none" so the worker script itself is
+    // revalidated on every navigation: a changed sw.js installs itself, with
+    // no version literal for anyone to forget.
+    navigator.serviceWorker.register("sw.js", { scope: "./", updateViaCache: "none" })
+      .catch(function (e) { console.warn("[sw] not registered:", (e && e.message) || e); });
+  })();
+  </script>
 </head>
 <body>
   <header>
@@ -521,7 +550,7 @@
   </div>
 
   <!-- Accessibility: ESC closes modal, Space toggles run, tab order logical — see src/main.js:477 Escape, src/main.js:494 Space, docs/ACCESSIBILITY.md (axe 0 violations) -->
-  <script type="module" src="src/main.js?v=10"></script>
+  <script type="module" src="src/main.js"></script>
   <script>
   // Fallback keyboard contract for index.html standalone (primary impl is src/main.js:477-515)
   // ESC closes modal, Space toggles run, tab order logical (natural DOM order, no positive tabindex)

@@ -28,7 +28,7 @@
  * springK: Float64Array per-spring γ_ij, pseudoDihedrals: Float64Array
  * [i,j,k,l,φ0…], pseudoDihedralK: Float64Array, ss: string[] per-quadruple }.
  *
- * Units: Å, kcal/mol(/rad² for dihedrals). No Node deps, `?v=` compatible.
+ * Units: Å, kcal/mol(/rad² for dihedrals). No Node deps; plain ES module (no query suffix needed).
  *
  * References:
  *   [1] Tirion, PRL 77, 1905 (1996).  [2] Atilgan et al., Biophys J 80, 505

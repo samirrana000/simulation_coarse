@@ -1,6 +1,6 @@
 # OpenMM Reference — Heavy GB/SA vs OpenMM Implicit GBSA (F52)
 
-*Source anchors: `src/heavy.js:461` `HeavyForceField`, `src/physics/gb.js:13` `GeneralizedBorn`, `src/physics/sasa.js` `SasaModel`.*
+*Source anchors: `src/heavy.js:652` `HeavyForceField`, `src/physics/gb.js:13` `GeneralizedBorn`, `src/physics/sasa.js` `SasaModel`.*
 
 This document defines the reference protocol for validating the browser heavy
 all-atom force field (LJ + Generalized Born + SASA) against a production
@@ -24,7 +24,7 @@ as the reference (not explicit-solvent PME). It is the **F52** extended-validati
   `switchFunc` 6.5 → 8.5 Å) and OpenMM GBSA use cutoff 12–16 Å with switching,
   but neither uses Particle-Mesh Ewald. The browser heavy model and the OpenMM
   GBSA reference are therefore **comparable in the implicit-solvent regime**,
-  but neither is comparable to explicit-solvent PME (see `docs/LIMITATIONS.md:13`
+  but neither is comparable to explicit-solvent PME (see `docs/LIMITATIONS.md:14`
   and §4 below).
 
 ## 2. Expected correlation
@@ -91,7 +91,7 @@ computes long-range Lattice-sum electrostatics via **Particle-Mesh Ewald (PME)**
 Therefore:
 
 - Energies are **not comparable** to GROMACS/AMBER explicit-solvent PME
-  (`docs/LIMITATIONS.md:13` **GB cutoff, no PME**). Do not compare `ff.elecU`
+  (`docs/LIMITATIONS.md:14` **GB cutoff, no PME**). Do not compare `ff.elecU`
   from `src/heavy.js:704` `_nonBondedGrid` to a PME lattice energy — the
   difference is systematic (≈5 % at 8.5 Å, see `bench/vs_gromacs.md`).
 - Highly charged systems, membranes, nucleic acids, and multi-valent ions
@@ -110,7 +110,7 @@ available.*
 - Hawkins, G.D. et al. *J. Phys. Chem.* 1996, 100, 19824 — HCT
 - Onufriev, A. et al. *J. Phys. Chem. B* 2004, 108, 15873 — OBC2
 - Eastman, P. et al. *PLOS Comp. Biol.* 2017, 13, e1005659 — OpenMM
-- `src/heavy.js:461` `HeavyForceField`, `src/physics/gb.js:134` `pairInteraction`,
+- `src/heavy.js:652` `HeavyForceField`, `src/physics/gb.js:134` `pairInteraction`,
   `src/physics/sasa.js` `SasaModel`, `bench/perf.js:1` timing
 
 *Generated 2026-09-01. Placeholder table to be filled when OpenMM GBSA frames are exported.*

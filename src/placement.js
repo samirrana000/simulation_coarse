@@ -11,8 +11,8 @@
  *   3. Intramolecular distances and bond geometries are preserved to float64 roundoff.
  */
 
-import { parseMol2 } from "./mol2.js?v=10";
-import { LIG_ELEMENT, LIG_ELEMENT_DEFAULT } from "./ff-params.js?v=10";
+import { parseMol2 } from "./mol2.js";
+import { LIG_ELEMENT, LIG_ELEMENT_DEFAULT } from "./ff-params.js";
 
 // ============================================================================
 // Deterministic RNG (mulberry32)

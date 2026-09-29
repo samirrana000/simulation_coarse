@@ -17,7 +17,7 @@
  * hook (duck-typed, never throws).
  */
 
-import { kabsch } from "../analysis.js?v=10";
+import { kabsch } from "../analysis.js";
 
 /**
  * @typedef {object} DCCMResult

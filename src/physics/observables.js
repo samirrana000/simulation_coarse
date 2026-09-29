@@ -20,7 +20,7 @@
  *    k_B consumer already read (integrator, respa, network, funnel, analysis).
  */
 
-import { KB_KCAL, KCONV } from "../units.js?v=10";
+import { KB_KCAL, KCONV } from "../units.js";
 
 /**
  * Instantaneous kinetic temperature from equipartition.

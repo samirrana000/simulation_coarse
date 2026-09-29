@@ -11,7 +11,7 @@ A plain-language answer to "what actually improved?" Full technical log:
 | Picking misplaced atoms (motion amplification) | clicks landed Å away from atoms | gain-inverted unproject; <0.5 Å error at 5× amplification |
 | Heavy-mode forces wrong | GB & SASA derivative bugs | finite-difference verified to maxRel 7.4e-6 |
 | Energy conservation (CG) | uncontrolled drift | NVE drift 0.05% |
-| Speed | unmeasured | CG 0.20 ms/step; heavy-atom 14.7 ms/step (≈60 fps for ≤3k atoms) |
+| Speed | unmeasured | CG 0.174 ms/compute; heavy-atom 14.1 ms/compute (1308 atoms, 4W52) — measured by `bench/perf.js`, see `docs/PERFORMANCE.md`. Frame rate is **not measured** here: a headless Node bench has no canvas, so no fps figure is claimed. |
 | Crash behavior | silent NaN freeze | auto-pause + "NON-FINITE ENERGY" HUD warning |
 | Ligand vs protein look (heavy mode) | identical CPK greys | ligand = vivid palette + white halo + on-screen legend |
 | Chemical network panel | drew once, looked dead | explains itself; redraws live (1 Hz steady + on every state hop) |

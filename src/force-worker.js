@@ -27,7 +27,7 @@
 // Loaded as `new Worker(url, { type: "module" })` (see worker-pool.js), so
 // static ES imports are available. units.js has zero imports (it is the leaf
 // of the dependency graph), so this edge cannot create a cycle.
-import { COULOMB_CONST } from "./units.js?v=10";
+import { COULOMB_CONST } from "./units.js";
 
 let system = null;
 let elem = null;

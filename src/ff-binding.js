@@ -37,7 +37,7 @@
 // previously carried a local `ELC = 332.0637`, 3.0e-8 below the value every
 // other non-bonded kernel used — see the header note and
 // tests/test_constant_ledger.js.
-import { COULOMB_CONST } from "./units.js?v=10";
+import { COULOMB_CONST } from "./units.js";
 
 /**
  * Revolution 1 / Issue 3: read-only wiring descriptor for the binding kernel.
