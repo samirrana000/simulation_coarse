@@ -44,18 +44,15 @@
  *   default; sequence-weighted is opt-in via ForceField.applySeqWeights().
  */
 
-export const KB_KCAL = 0.0019872041; // Boltzmann constant, kcal mol^-1 K^-1
+// Boltzmann constant and the kcal→mechanical conversion are RE-EXPORTED from
+// src/units.js, which is the declared single unit contract (docs/UNITS.md,
+// TRANSFORMATION_PLAN_100 A05). This file previously carried its own copies:
+// KB_KCAL = 0.0019872041 here vs 0.001987204 in units.js — a 5.03e-8 relative
+// split that made the reported temperature depend on which module a value was
+// imported from (CG via units.js, heavy via ff-params.js). Re-exporting makes
+// divergence structurally impossible rather than merely fixed once.
+export { KB_KCAL, KCONV } from "./units.js";
 
-/**
- * Unit-conversion constant between (kcal/mol, Å) and mechanical (Da, Å, ps)
- * units used by the integrator:
- *     1 kcal/mol            = 418.4 Da·Å²/ps²
- *     a[Å/ps²]              = KCONV · F[kcal/mol/Å] / m[Da]
- *     k_B in mech. units    = KB_KCAL · KCONV = 0.8314 Da·Å²/(ps²·K)
- * (derivation: 1 kcal/mol·Å = 6.9477e-11 N ≙ 418.4 Da·Å/ps² since 1 N =
- * 6.022e15 Da·Å/ps².)
- */
-export const KCONV = 418.4;
 
 // Residue class → protein-bead LJ parameters (σ Å, ε kcal/mol, charge e)
 export const RES_CLASS = {

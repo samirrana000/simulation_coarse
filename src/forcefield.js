@@ -86,9 +86,12 @@ import {
 } from "./ff-params.js?v=10";
 import { buildTirionNetwork, applyTirionToForceField } from "./physics/forcefield/tirion_anm.js?v=10";
 import { buildVirtualSites, coneAxisOf } from "./physics/virtual-sites.js";
+import { kineticTemp, rmsdTo } from "./physics/observables.js?v=10";
 
 // canonical units live in units.js; re-export keeps backward compat for
-// integrator.js / funnel.js / tests that historically imported from here.
+// integrator.js / funnel.js / tests that historically imported from here. The
+// import below now exists ONLY to feed this re-export — the physics moved to
+// physics/observables.js.
 export { KB_KCAL, KCONV };
 
 // ── Revolution 1 / Issue 3: explicit CG physics-level default ─────────────
@@ -233,6 +236,12 @@ export class ForceField {
     // united-atom mass (H implicitly folded in).
     this.masses = new Float64Array(this.n).fill(par.mass ?? 110);
     if (ligands.length) this.masses.set(this.ligandMasses, nProt);
+
+    // Fold-metric selection for rmsd(): protein Cα beads [0, nProt) — ligand
+    // coords are rigid internal DOF. Built once so the per-frame call allocates
+    // nothing. Formula: physics/observables.js.
+    this._maskProt = new Uint8Array(this.n);
+    this._maskProt.fill(1, 0, nProt);
 
     // Per-protein-bead residue class + LJ params
     this.resClass = new Uint8Array(nProt);
@@ -915,32 +924,18 @@ export class ForceField {
   /* ------------------------------------------------------------------ */
 
   /**
-   * Instantaneous kinetic temperature from equipartition:
-   *   ke_mech = ½ Σ m v²   (Da·Å²/ps²)  →  /KCONV → kcal/mol
-   *   T = ke_kcal / (3/2 N k_B)
-   * @param {Float64Array} vel   velocities, one component per coordinate (3n)
-   * @param {Float64Array} mass  mass per coordinate (3n) — ligand atoms carry
-   *   their united-atom mass, protein beads the Cα mass. Includes all particles.
+   * Instantaneous kinetic temperature, T = ke_kcal/(1.5·n·k_B) — units, formula
+   * and the mass-layout contract are documented once, in physics/observables.js.
+   * CG is always the flat per-DOF table (3n) LangevinIntegrator builds, so the
+   * layout is named, not inferred. D1: a per-atom table still reads past its
+   * end and yields NaN here — the historical CG behaviour, kept verbatim.
    */
-  kineticTemp(vel, mass) {
-    let ke = 0;
-    for (let i = 0; i < this.n * 3; i++) ke += mass[i] * vel[i] * vel[i];
-    ke *= 0.5 / KCONV;                   // → kcal/mol
-    return ke / (1.5 * this.n * KB_KCAL);
-  }
+  kineticTemp(vel, mass) { return kineticTemp(vel, mass, this.n, "dof"); }
 
   /**
-   * RMSD to native, restricted to the protein Cα beads (ligand coords are
-   * rigid internal DOF and excluded from the fold-space metric). No alignment;
-   * ENM keeps the COM/orientation nearly fixed.
+   * RMSD to native over the protein Cα beads only (ligand coords are rigid
+   * internal DOF and excluded from the fold-space metric). No alignment; ENM
+   * keeps the COM/orientation nearly fixed. See rmsdTo() for the formula.
    */
-  rmsd(pos) {
-    let s = 0;
-    const r = this.ref;
-    for (let i = 0; i < this.nProt * 3; i++) {
-      const d = pos[i] - r[i];
-      s += d * d;
-    }
-    return Math.sqrt(s / this.nProt);
-  }
+  rmsd(pos) { return rmsdTo(pos, this.ref, this._maskProt, this.nProt); }
 }

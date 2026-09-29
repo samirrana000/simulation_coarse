@@ -1,4 +1,4 @@
-# Ligand Placement — Ghost Preview, Pocket Highlight & Snap (H77)
+# Ligand Placement — Pocket Highlight & Snap; Ghost Preview ABSENT (H77)
 
 This document describes the ligand placement interaction implemented in `src/ligand-panel.js`, `src/placement.js`, and `src/viewer.js`, including the **ghost preview** and **pocket highlight** UX.
 

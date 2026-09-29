@@ -103,8 +103,11 @@ export const SUITES = [
   { file: "tests/test_rev2_issue1_physics_level.js", tier: "FAST" },
   { file: "tests/test_rev2_issue5_placement_escape.js", tier: "FAST" },
   { file: "tests/test_rev3_issue1_heavy_physics.js", tier: "FAST" },
-  // the registry's own dogfood: proves every tests/test_*.js is accounted for
+  { file: "tests/test_observables_parity.js", tier: "FAST", note: "CG/heavy kineticTemp + rmsd parity" },
+  { file: "tests/test_unit_contract.js", tier: "FAST", note: "one unit contract, one value (KB_KCAL was defined twice)" },
+  // anti-rot self-checks: registry wiring + docs/ index no-orphans
   { file: "tests/test_suite_registry.js", tier: "FAST" },
+  { file: "tests/test_docs_index.js", tier: "FAST", note: "every file under docs/ linked from docs/README.md" },
 
   // -------------------------------------------------------------- MEDIUM
   { file: "scripts/test_pocket_entropy.mjs", tier: "MEDIUM", timeout: 300000, note: "~19 s seeded pocket-entropy pilot" },

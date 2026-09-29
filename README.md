@@ -25,6 +25,26 @@ system (PDB **4W52**) as a working binding demo.
 - **Phase 4 — Workflows:** alanine scanning ΔΔG (`src/analysis/alanine_scanning.js`), DCCM + heatmap (`src/analysis/dccm.js`), cryptic-pocket MetaD + volume tracking (`src/analysis/cryptic_pockets.js`), SMD pulling + Jarzynski ΔF (`src/analysis/unbinding_smd.js`)
 - **Phase 5 — Anti-slop cockpit:** Load → Build → Run → Record visible by default, everything else collapsed; top status bar, metrics HUD, bottom dock with timeline/CV strips, keyboard `[Space]/[R]/[M]/[1-7]`; see `WHAT_CHANGED.md`
 
+## Docs: find the doc by your question
+
+**→ [docs/README.md — documentation index](docs/README.md)** routes all 39 files
+under `docs/` by the question you actually have, not by filename. Start with
+**"Can I trust this number?"** — it is the trust boundary, and it points at the
+honest out-of-scope contract in **[ROADMAP.md](ROADMAP.md)** §1
+(*no QM/MM, no explicit membrane, no PME, no rigorous FEP/TI in browser v1*).
+
+| Your question | Section of the index |
+|---|---|
+| Can I trust this ΔG / K_D / k_on? | Q0 — [docs/README.md](docs/README.md#q0--can-i-trust-this-number--the-trust-boundary--read-first) |
+| What does the physics actually model? | Q1 — [docs/README.md](docs/README.md#q1--what-does-the-physics-actually-model) |
+| How do I run it, and what does the UI do? | Q2 — [docs/README.md](docs/README.md#q2--how-do-i-run-it-and-what-does-the-ui-do) |
+| What can I do with it (workflows)? | Q3 — [docs/README.md](docs/README.md#q3--what-can-i-actually-do-with-it-workflows) |
+| How fast is it, will it run on my machine? | Q4 — [docs/README.md](docs/README.md#q4--how-fast-is-it-and-will-it-run-on-my-machine) |
+| How do I cite it / what must I disclose? | Q5 — [docs/README.md](docs/README.md#q5--how-do-i-cite-this-and-what-is-the-trust-boundary-i-must-state) |
+| How do I build on it or hand off to a real engine? | Q6 — [docs/README.md](docs/README.md#q6--how-do-i-build-on-this-or-hand-work-to-a-real-engine) |
+| History of the binding-physics decisions | Q7 — [docs/README.md](docs/README.md#q7--what-is-the-history-of-the-binding-physics-decisions) |
+| How does it compare to GROMACS? | Q8 — [bench/vs_gromacs.md](bench/vs_gromacs.md) |
+
 ## When to use / when not to use
 
 > **Trust boundary:** `simulation_coarse` is a browser-based educational / hypothesis tool, **NOT** a replacement for rigorous MD or free-energy perturbation (FEP). Numbers labeled `ΔG`, `K_D`, or `k_on/k_off` are qualitative — do not report them as binding affinities.

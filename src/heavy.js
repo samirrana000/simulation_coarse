@@ -22,8 +22,10 @@ import {
   METAL_ELEMENT, METAL_ELEMENT_DEFAULT,
   COVALENT_RADIUS, BOND_SLACK,
   LIG_ELEMENT, LIG_ELEMENT_DEFAULT,
-  KB_KCAL, KCONV,
 } from "./ff-params.js?v=10";
+// D2: heavy's k_B came from ff-params.js, CG's from units.js — a 5e-8 split in
+// a HUD number. The observables now read the units.js constant; dropped import.
+import { kineticTemp, rmsdTo } from "./physics/observables.js?v=10";
 import { springForces, dihedralForcesAnalytic } from "./ff-harmonic.js?v=10";
 import { assignCharges, GB_RADII } from "./physics/charges.js?v=10";
 import { GeneralizedBorn, COULOMB_CONST } from "./physics/gb.js?v=10";
@@ -719,6 +721,15 @@ export class HeavyForceField {
     }
     this.forces = new Float64Array(this.n * 3);
     this.energy = 0;
+
+    // Fold-metric masks for rmsd()/rmsdLig(), built once so the HUD's per-frame
+    // calls allocate nothing: _maskProt → protein [0, nProt), _maskLig → ligand
+    // block [ligandStart, n), the slice rmsdLig has always summed (ligandStart +
+    // nLigAtoms === n by construction). Formula: physics/observables.js.
+    this._maskProt = new Uint8Array(this.n);
+    this._maskProt.fill(1, 0, this.nProt);
+    this._maskLig = new Uint8Array(this.n);
+    this._maskLig.fill(1, this.ligandStart, this.n);
 
     // Topology (FP5: prebuilt chunked topo skips the sync O(n²) build).
     const topo = opts?.topo ?? buildTopology(atoms);
@@ -1447,36 +1458,31 @@ export class HeavyForceField {
     return { pi, cpi, xb };
   }
 
+  /**
+   * Instantaneous kinetic temperature, T = ke_kcal/(1.5·n·k_B) — units, formula
+   * and the mass-layout contract are documented once, in physics/observables.js.
+   * D1: heavy used to infer the layout from the array length and fall back to
+   * this.masses; CG assumed flat 3n. The resolution now happens HERE and the
+   * layout is passed as an explicit `mode` — the kernel never guesses. Values
+   * are unchanged on both engines.
+   */
   kineticTemp(vel, mass) {
-    let ke = 0;
     const m = (mass && mass.length === this.n * 3) ? mass : (this.masses || mass);
-    if (m && m.length === this.n * 3) {
-      for (let i = 0; i < this.n * 3; i++) ke += m[i] * vel[i] * vel[i];
-    } else if (m) {
-      for (let i = 0; i < this.n * 3; i++) ke += m[(i / 3) | 0] * vel[i] * vel[i];
-    }
-    ke *= 0.5 / KCONV;
-    return ke / (1.5 * this.n * KB_KCAL);
+    return kineticTemp(vel, m, this.n, m && m.length === this.n * 3 ? "dof" : "atom");
   }
 
   /**
-   * RMSD to native, restricted to the protein heavy atoms (fold-stability
-   * metric). Mirrors ForceField.rmsd (protein-only): ligand/hetero drift is
-   * excluded so HUD RMSD is comparable across CG/heavy and ligand undocking
-   * does not read as fold instability. Use rmsdLig() for the ligand part and
-   * rmsdAll() for the legacy all-atom value.
+   * RMSD to native over the protein heavy atoms only (fold-stability metric).
+   * Mirrors ForceField.rmsd (protein-only): ligand/hetero drift is excluded so
+   * HUD RMSD is comparable across CG/heavy and ligand undocking does not read as
+   * fold instability. No alignment — ENM keeps the COM/orientation nearly fixed.
+   * Use rmsdLig() for the ligand part, rmsdAll() for the legacy all-atom value.
+   * Formula: rmsdTo() in physics/observables.js.
    */
   rmsd(pos) {
     const nP = this.nProt;
     if (!Number.isFinite(nP) || nP <= 0) return this.rmsdAll(pos);
-    let s = 0;
-    const r = this.ref;
-    const lim = Math.min(nP * 3, pos.length, r.length);
-    for (let i = 0; i < lim; i++) {
-      const d = pos[i] - r[i];
-      s += d * d;
-    }
-    return Math.sqrt(s / nP);
+    return rmsdTo(pos, this.ref, this._maskProt, nP);
   }
 
   /**
@@ -1487,31 +1493,14 @@ export class HeavyForceField {
   rmsdLig(pos) {
     const nL = this.nLigAtoms;
     if (!Number.isFinite(nL) || nL <= 0) return 0;
-    const start = (Number.isInteger(this.ligandStart) ? this.ligandStart : this.nProt) * 3;
-    let s = 0;
-    const r = this.ref;
-    const lim = Math.min(pos.length, r.length);
-    for (let i = start; i < lim; i++) {
-      const d = pos[i] - r[i];
-      s += d * d;
-    }
-    return Math.sqrt(s / nL);
+    return rmsdTo(pos, this.ref, this._maskLig, nL);
   }
 
   /**
    * Legacy all-atom RMSD (protein + hetero + ligand). Preserved for backward
    * compatibility with callers/tests that need the old heavy rmsd number.
    */
-  rmsdAll(pos) {
-    let s = 0;
-    const r = this.ref;
-    const lim = Math.min(pos.length, r.length);
-    for (let i = 0; i < lim; i++) {
-      const d = pos[i] - r[i];
-      s += d * d;
-    }
-    return Math.sqrt(s / this.n);
-  }
+  rmsdAll(pos) { return rmsdTo(pos, this.ref, null, this.n); }
 }
 
 function harmonicFlat(pos, f, list, stride, k) {
