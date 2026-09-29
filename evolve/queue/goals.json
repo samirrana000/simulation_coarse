@@ -215,7 +215,11 @@
       ],
       "patterns": [
         "P5-ui-contract-fragility"
-      ]
+      ],
+      "status": "closed",
+      "verdict": "ACCEPTED",
+      "note": "121 ?v= literals removed via sw.js no-store; 27.8h heuristic-freshness staleness eliminated; 64-module graph provably unchanged",
+      "closedAtCycle": 10
     },
     {
       "id": "M9",

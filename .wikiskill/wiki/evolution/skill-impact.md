@@ -153,3 +153,27 @@ cites the wiki pattern that motivated it and the gating outcome.
 - **Motivated by:** P5-ui-contract-fragility
 - **Verdict:** ACCEPTED
 - **Note:** found live k_B 5e-8 split in thermodynamics and 1.9e-4 Coulomb split in worker+GPU; single-sourced at CODATA 332.06371
+## Evolution 11 — M8 — Kill the ?v=10 cache-bust sprawl by making the version real
+
+- **Horizon:** mid (priority P1)
+- **Motivated by:** P5-ui-contract-fragility
+- **Verdict:** ACCEPTED
+- **Note:** 121 ?v= literals removed via sw.js no-store; 27.8h heuristic-freshness staleness eliminated; 64-module graph provably unchanged
+## Evolution 12 — P15 — Eliminate the tracked files >1MB that hold the bloat file penalty open: 1 file(s)
+
+- **Horizon:** short (priority P1)
+- **Motivated by:** P3-unsurfaced-value
+- **Verdict:** ACCEPTED
+- **Note:** 37 broken file:line citations found (planner said 3, a 12x undercount); 600-citation checker registered
+## Evolution 13 — P06 — science=1.0000 is saturated, but the overclaim check reads only 4000 of README.md's 23443 chars and passes on a keyword regex
+
+- **Horizon:** short (priority P1)
+- **Motivated by:** P3-unsurfaced-value
+- **Verdict:** ACCEPTED
+- **Note:** heavy_compute_ms 2.0 was fiction at birth - one-commit file history, 15.17ms measured at that same commit; rebaselined 16.0 with provenance
+## Evolution 14 — P09 — Cut src LOC below the bloat knee: 23403 LOC vs the 20000 penalty start
+
+- **Horizon:** mid (priority P1)
+- **Motivated by:** P3-unsurfaced-value
+- **Verdict:** ACCEPTED
+- **Note:** fps 30 measured by nothing, ever; now null with _meta.measured=false, plus 9 more published fps claims the planner missed

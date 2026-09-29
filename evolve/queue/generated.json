@@ -1,17 +1,17 @@
 {
   "_meta": {
     "planner": "evolve/evolve.mjs plan",
-    "cycle": 10,
-    "generatedAt": "2026-09-29T21:55:49.977Z",
+    "cycle": 14,
+    "generatedAt": "2026-09-29T21:59:37.878Z",
     "gateVector": {
-      "cycle": 10,
+      "cycle": 14,
       "score": 0.799,
       "parts": {
         "syntax": 1,
         "testPass": 1,
         "coverage": 1,
         "dom": 1,
-        "bloat": 0.799024,
+        "bloat": 0.798991,
         "science": 1
       },
       "saturated": [
@@ -77,7 +77,7 @@
     "inconclusive": [
       {
         "probe": "gate-vector/regression",
-        "subject": "prev(cycle 10) vs current(cycle 10)",
+        "subject": "prev(cycle 11) vs current(cycle 14)",
         "why": "every component moved by <= 0.0001 (max 1.00e-6) — that is float noise on an unchanged tree, not a regression, so NO goal was generated"
       },
       {
@@ -110,15 +110,14 @@
       "openIds": [
         "M6",
         "M7",
-        "M8",
         "M9",
         "L11",
         "L12",
         "L13",
         "L14"
       ],
-      "openCount": 8,
-      "closedCount": 7,
+      "openCount": 7,
+      "closedCount": 8,
       "drainedBefore": "generated",
       "rule": "`next` drains evolve/queue/goals.json (authored) before evolve/queue/generated.json, so a re-plan can never starve the authored backlog. `plan` writes generated.json ONLY; goals.json is read-only to it."
     },
@@ -269,7 +268,7 @@
       "horizon": "mid",
       "priority": 0,
       "title": "Give the gate a live gradient: 5/6 components are saturated",
-      "thesis": "gate vector = {\"syntax\":1,\"testPass\":1,\"coverage\":1,\"dom\":1,\"bloat\":0.799024,\"science\":1}; saturated = [testPass, syntax, dom, science, coverage]; only [bloat] still carries gradient. Weights are renormalised over non-saturated components (evolve.mjs:SAT=0.999), so R is currently a function of 1 number(s) alone. A goal that moves any saturated component scores exactly 0 change, so the loop cannot tell \"improved\" from \"unchanged\" on 5 of 6 axes. Measured cost: the R_best-vs-current gap is 0.0000 and 0 of 5 saturated components can close it.",
+      "thesis": "gate vector = {\"syntax\":1,\"testPass\":1,\"coverage\":1,\"dom\":1,\"bloat\":0.798991,\"science\":1}; saturated = [testPass, syntax, dom, science, coverage]; only [bloat] still carries gradient. Weights are renormalised over non-saturated components (evolve.mjs:SAT=0.999), so R is currently a function of 1 number(s) alone. A goal that moves any saturated component scores exactly 0 change, so the loop cannot tell \"improved\" from \"unchanged\" on 5 of 6 axes. Measured cost: the R_best-vs-current gap is 0.0000 and 0 of 5 saturated components can close it.",
       "acceptance": "A new discriminating component exists with measured spread across the repo (report min/median/max over >= 5 real samples) and it appears unsaturated in `node evolve/evolve.mjs gate` output; OR the saturated components are replaced by metrics that provably move. `node evolve/evolve.mjs gate` shows saturated.length <= 4.",
       "read_only": [
         "evolve/evolve.mjs",
@@ -405,7 +404,7 @@
       "priority": 1,
       "title": "Cut src LOC below the bloat knee: 23403 LOC vs the 20000 penalty start",
       "thesis": "bloat=0.7990 is the only non-saturated gate component (everything else is pinned at 1.0), and 18.1% of its remaining headroom is the src-LOC term 1/(1+(L-20000)/20000) evaluated at L=23403. dR/dL = -0.093 per 100 LOC at this point, so the loop currently pays a measurable price for every line of science code it writes — an incentive pointing the wrong way. Cutting L to 20000 recovers 0.0364 of the 0.2010 deficit.",
-      "acceptance": "src LOC (sum of lines over src/**/*.js as counted by evolve.mjs readTrackedStats) <= 20000, or the bloat LOC term is replaced by a term with an argued-for justification. `node evolve/evolve.mjs gate` reports bloat >= 0.8354.",
+      "acceptance": "src LOC (sum of lines over src/**/*.js as counted by evolve.mjs readTrackedStats) <= 20000, or the bloat LOC term is replaced by a term with an argued-for justification. `node evolve/evolve.mjs gate` reports bloat >= 0.8353.",
       "read_only": [
         "evolve/evolve.mjs",
         "docs/PERFORMANCE.md",
@@ -428,7 +427,7 @@
       ],
       "status": "open",
       "origin": "deficit-analysis:gate-vector",
-      "deficit": 0.200976,
+      "deficit": 0.201009,
       "measurement": "bloat-srcloc",
       "read_onlyDropped": []
     },
@@ -609,7 +608,7 @@
       "horizon": "short",
       "priority": 1,
       "title": "Eliminate the tracked files >1MB that hold the bloat file penalty open: 1 file(s)",
-      "thesis": "bloat=0.7990; the filePenalty term is 1/(1+bigFiles/20) = 0.9524 with bigFiles = 1: data/pdbbind_parsed.csv 1147KB. Each big file costs ~0.0227 of R, 11.8% of the live deficit. Total tracked is 15.1MB over 307 files, so the size term is nearly satisfied and the penalty is entirely about 1 outlier file(s).",
+      "thesis": "bloat=0.7990; the filePenalty term is 1/(1+bigFiles/20) = 0.9524 with bigFiles = 1: data/pdbbind_parsed.csv 1147KB. Each big file costs ~0.0227 of R, 11.8% of the live deficit. Total tracked is 15.2MB over 312 files, so the size term is nearly satisfied and the penalty is entirely about 1 outlier file(s).",
       "acceptance": "Zero tracked files exceed 1MB (evolve.mjs readTrackedStats bigFiles == []) OR each remaining one is a regenerable artifact with a recorded fetch manifest. `node evolve/evolve.mjs gate` reports filePenalty == 1.",
       "read_only": [
         "data/README.md",
@@ -633,7 +632,7 @@
       ],
       "status": "open",
       "origin": "deficit-analysis:gate-vector",
-      "deficit": 0.120586,
+      "deficit": 0.120605,
       "measurement": "bloat-bigfiles",
       "read_onlyDropped": []
     }
