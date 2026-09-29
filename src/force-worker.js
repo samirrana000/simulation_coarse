@@ -2,9 +2,32 @@
  * force-worker.js — Web Worker script for parallel force evaluation.
  *
  * Runs non-bonded and bonded force evaluations on a separate CPU core/thread.
+ *
+ * The Coulomb constant is imported from the single src/units.js contract.
+ * It previously carried a bare `332.0` inline in the Coulomb branch, which is
+ * 1.9e-4 below the CODATA value every other non-bonded kernel uses.
+ *
+ * DELIBERATE PER-MODULE EXCEPTION — `R_CUT = 8.5` below is NOT a duplicate of
+ * src/heavy.js's `R_CUT`, and must not be consolidated with it:
+ *   • this kernel's electrostatics is exponential-screened, exp(-r/8)/r^2,
+ *     whereas heavy.js uses a smooth C2 switch over [6.5, 8.5] plus GB. They
+ *     are different potentials that happen to share a truncation radius, so
+ *     binding them would assert a physical identity that does not hold;
+ *   • the value is already parameterised upstream for the GPU path
+ *     (compute/webgpu_backend.js RCUT_DEFAULT, its own default), i.e. it is a
+ *     per-backend tuning constant, not a unit;
+ *   • importing heavy.js to reach one number would add a 26-module / 377 KB
+ *     static-import closure to EVERY worker thread (measured), for a constant
+ *     that is not shared. units.js, by contrast, is a zero-import leaf.
+ * See tests/test_constant_ledger.js ALLOW_MULTI_SITE for the guard entry.
  */
 
 /* global self */
+
+// Loaded as `new Worker(url, { type: "module" })` (see worker-pool.js), so
+// static ES imports are available. units.js has zero imports (it is the leaf
+// of the dependency graph), so this edge cannot create a cycle.
+import { COULOMB_CONST } from "./units.js?v=10";
 
 let system = null;
 let elem = null;
@@ -31,6 +54,8 @@ self.onmessage = function (e) {
     const forces = new Float64Array(n * 3);
 
     let ljTot = 0, elecTot = 0;
+    // Per-backend tuning constant — see the header note on why this is not
+    // src/heavy.js's R_CUT despite the identical value.
     const R_CUT = 8.5;
     const cut2 = R_CUT * R_CUT;
 
@@ -67,7 +92,7 @@ self.onmessage = function (e) {
         if (qi !== 0 && qj !== 0) {
           const qq = qi * qj;
           const fac = Math.exp(-r / 8.0) / (r * r);
-          ee = 332.0 * qq * fac;
+          ee = COULOMB_CONST * qq * fac;
           ef = ee * (-1 / 8.0 - 2 / r);
         }
 

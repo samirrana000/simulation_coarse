@@ -64,6 +64,11 @@ export const SUITES = [
   { file: "scripts/test_bindviz.mjs", tier: "FAST" },
   { file: "scripts/test_bindlog.mjs", tier: "FAST" },
   { file: "scripts/test_bindlog_integration.mjs", tier: "FAST" },
+  // honest-scope doc/code citation validator. Registered so it can actually
+  // gate: it was previously unwired AND failing (exit 1) on a premise that
+  // phase R3 had obsoleted, which is why nobody noticed for so long. 0.02 s,
+  // reads 12 files, so FAST is the correct tier.
+  { file: "scripts/validate_binding_physics_r1.mjs", tier: "FAST", note: "R1 §0 code citations + R3 weak-interaction presence + live ROADMAP/LIMITATIONS scope guard" },
   // numerically-hard physics checks, each ~0.05-1 s
   { file: "tests/test_gb_fd.js", tier: "FAST", note: "GB analytic force vs central difference" },
   { file: "tests/test_forces_fd.js", tier: "FAST", timeout: 120000, note: "HeavyForceField force-field FD" },
@@ -105,6 +110,7 @@ export const SUITES = [
   { file: "tests/test_rev3_issue1_heavy_physics.js", tier: "FAST" },
   { file: "tests/test_observables_parity.js", tier: "FAST", note: "CG/heavy kineticTemp + rmsd parity" },
   { file: "tests/test_unit_contract.js", tier: "FAST", note: "one unit contract, one value (KB_KCAL was defined twice)" },
+  { file: "tests/test_constant_ledger.js", tier: "FAST", note: "every SCREAMING_CASE constant has one home; catches a contract constant re-derived under ANY name, including inside a WGSL template string" },
   // anti-rot self-checks: registry wiring + docs/ index no-orphans
   { file: "tests/test_suite_registry.js", tier: "FAST" },
   { file: "tests/test_docs_index.js", tier: "FAST", note: "every file under docs/ linked from docs/README.md" },

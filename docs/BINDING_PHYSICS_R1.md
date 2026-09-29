@@ -1,5 +1,20 @@
 # R1 — Binding Biophysics Literature Survey (grounded to this repo)
 
+> **⚠ HISTORICAL SNAPSHOT — point-in-time as of R1 (step 1 of 7), NOT a live
+> capability contract.** The "what the code actually does today" section below
+> was verified when this file was written. Phase **R3** then implemented
+> π-stack, cation-π and halogen σ-hole in heavy mode
+> ([BINDING_PHYSICS_R3.md](BINDING_PHYSICS_R3.md)), so the §0 statements that
+> those terms are absent are **out of date by design** — they are kept as the
+> R1 baseline, not as a claim about the current tree.
+> The **live** honest-scope contract is [`ROADMAP.md`](../ROADMAP.md) §1
+> ("No QM/MM, no explicit membrane, no PME in browser v1") plus
+> [`docs/LIMITATIONS.md`](LIMITATIONS.md). Both of those remain accurate.
+> `scripts/validate_binding_physics_r1.mjs` enforces this: it asserts the
+> R3 terms are present as real code paths, asserts the genuinely-absent terms
+> (chalcogen, PME, explicit water) are absent from the *comment-stripped*
+> source, and asserts this snapshot banner is still here.
+
 Step 1/7 of the binding-physics program. Scope: what to model, at what energy
 scale, in which resolution. No `src/` physics was modified for this report.
 
@@ -36,9 +51,15 @@ documented in `src/forcefield.js:723-772`):
 Heavy mode (`src/heavy.js`):
 
 - Non-bonded grid kernel is LJ + GB/screened-Coulomb + directional-H-bond
-  **only** (`src/heavy.js:947-1015`). No PME, no explicit water, no
-  halogen / cation-π / π-stack / chalcogen terms anywhere (absence verified
-  by reading the full kernel).
+  **only** (`src/heavy.js:947-1015`). No PME, no explicit water. *(R1 state,
+  still true.)* No halogen / cation-π / π-stack / chalcogen terms anywhere
+  *(absence verified by reading the full kernel **as of R1** — **since
+  obsoleted**: π-stack, cation-π and halogen σ-hole were implemented in phase R3
+  behind the opt-in flag `par.weak === "on"`, default OFF — `src/heavy.js`
+  imports `piStackForces`/`cationPiForces`/`halogenForces` from
+  `src/physics/weakint.js`, builds ring/cation/halogen lists once per topology,
+  and adds the summed energy to `U` in `_weakInteractions`. Chalcogen bonds
+  are still absent. See [BINDING_PHYSICS_R3.md](BINDING_PHYSICS_R3.md) §1.)*
 - GB-HCT default (`epsIn 4.0, epsOut 78.5, salt 0.15 M`,
   `src/heavy.js:501`; Still/Hawkins formalism `src/physics/gb.js:9-15,134-190`);
   OBC2/LCPO/membrane-slab are opt-in (`src/heavy.js:632-655,779-836`).

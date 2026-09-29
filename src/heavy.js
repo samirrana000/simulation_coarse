@@ -44,7 +44,14 @@ import {
 } from "./physics/weakint.js?v=10";
 import { detectCoordination, enforceCoordination } from "./chem/metals.js?v=10";
 
-export const K_ELEC = 332.0;
+/**
+ * Coulomb constant, kcal·Å/(mol·e²). Public name kept (docs/UNITS.md lists
+ * it), value now single-sourced: this used to read `332.0` — 1.9e-4 below the
+ * CODATA value every other non-bonded kernel used, and it was dead (nothing
+ * in the repo ever imported it), so unifying it costs no numeric result and
+ * removes a trap for the next caller.
+ */
+export const K_ELEC = COULOMB_CONST;
 export const SCREEN_LEN = 8.0; // Å
 export const R_CUT = 8.5;      // Å
 export const R_SWITCH_ON = 6.5;// Å

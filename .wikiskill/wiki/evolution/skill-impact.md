@@ -129,3 +129,9 @@ cites the wiki pattern that motivated it and the gating outcome.
 - **Motivated by:** P5-ui-contract-fragility, P6-node-gates-blind-to-dom
 - **Verdict:** ACCEPTED
 - **Note:** 36 dead tests wired, expect-counts replaced by registry + orphan self-check, 352->738, FAST 16.1s/60s
+## Evolution 7 — L15 — Autonomous next-goal generation from gate deltas (close the evolution loop)
+
+- **Horizon:** long (priority P2)
+- **Motivated by:** P3-unsurfaced-value
+- **Verdict:** ACCEPTED
+- **Note:** planner derives 15 goals from 11 measured probes; it also exposed 4 defects in the gate itself, all fixed

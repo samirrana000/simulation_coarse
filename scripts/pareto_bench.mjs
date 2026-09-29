@@ -6,9 +6,14 @@
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { performance } from "node:perf_hooks";
+import { KB_KCAL } from "../src/units.js";
 
 const QUICK = process.argv.includes("--quick");
-const KB = 0.0019872041, T = 300;
+// kB from the single src/units.js contract — was a fifth literal copy
+// (`0.0019872041`), 5.03e-8 above the value the engine uses. A benchmark that
+// scores with a different k_B than the code it benchmarks measures the
+// wrong thing by a small, invisible amount.
+const KB = KB_KCAL, T = 300;
 
 // ---- Stage-7 allocation tracking (additive; timing logic untouched) ----
 // Debt closed: the heap snapshot column was GC-timing noise (±50% seen across

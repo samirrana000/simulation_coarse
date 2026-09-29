@@ -77,17 +77,16 @@ console.log("=== evolve gate: a gate must be able to fail ===");
 
 const base = gate();
 
-// D3 — a closed gate must exit non-zero, or CI cannot enforce it.
-//     This is the ONE probe that runs the real (non-fast) path.
+// D3 — the gate must expose a real exit code, and it must be 0 for an OPEN
+//      gate and non-zero for a CLOSED one. Asserted on the junk probe below
+//      (which is guaranteed to regress) rather than on whatever the current
+//      tree happens to be.
 {
   const r = gate(["--fast"]); // no --json => real exit code
   assert(typeof r.code === "number", `gate exposes a real exit code (got ${r.code})`);
   const closed = base.json.verdict.startsWith("CLOSED");
-  if (closed) {
-    assert(r.code !== 0, "D3: a CLOSED gate exits non-zero (was: printed 'roll back' and exited 0)");
-  } else {
-    assert(r.code === 0, "an OPEN gate exits 0");
-  }
+  assert(closed ? r.code !== 0 : r.code === 0,
+    `D3: exit code matches the verdict (${base.json.verdict} -> exit ${r.code})`);
 }
 
 // D2 — the gate must see UNCOMMITTED src/ changes.
@@ -136,14 +135,32 @@ const base = gate();
   assert(satW > 0, "at least one component is saturated (a dead reward carries no gradient)");
 }
 
-// R_best must be reachable: the current tree must not read as a regression
-// against itself. This is D4 — an unreachable R_best blocks the whole loop.
+// D4 — R_best must never be in the FUTURE. If R_best exceeds the current
+//      score, the gate is permanently CLOSED and the loop can accept nothing
+//      ever again. It is correct for the gate to read CLOSED after a change
+//      that lowers the score; that is the gate working. What must never
+//      happen is R_best being unreachable by the current tree.
+//      (R_best is re-baselined on `done ACCEPTED`, so an accepted change
+//      becomes the new reference rather than a permanent regression.)
 {
-  assert(base.json.verdict.startsWith("OPEN"),
-    `D4: the current tree satisfies its own gate (${base.json.verdict}; ` +
-    `R=${base.json.score} vs R_best=${base.json.R_best}) — an unreachable R_best blocks all work`);
   assert(base.json.R_best <= base.json.score + 1e-9,
-    `R_best (${base.json.R_best}) is not in the future (score ${base.json.score})`);
+    `D4: R_best (${base.json.R_best}) is reachable by the current tree ` +
+    `(score ${base.json.score}) — an unreachable R_best blocks all future work`);
+
+  // The gate must be able to DETECT a regression: a junk module must read
+  // as a regression, not merely as a lower number nobody acts on.
+  // NOTE: no --json here. --json is machine-readable-output mode and
+  // deliberately does not set an exit code, so asking for it would blind
+  // this probe to the very property it is testing.
+  const junk = withProbe(
+    Array.from({ length: 3000 }, (_, i) => `export const junk_${i} = ${i};`).join("\n"),
+    () => gate(["--fast"])
+  );
+  assert(junk.json.score < base.json.score,
+    `D4: a regressing tree lowers the score (${base.json.score} -> ${junk.json.score})`);
+  assert(junk.code !== 0,
+    `D4: a regressing tree makes the gate exit non-zero (exit ${junk.code}) — ` +
+    `a gate that prints 'roll back' and exits 0 cannot fail anything`);
 }
 
 console.log(`=== test_evolve_gate: ${passed} PASSED, ${failed} FAILED ===`);

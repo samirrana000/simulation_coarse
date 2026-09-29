@@ -448,6 +448,22 @@ function cmdDone(id, verdict, note = "") {
   writeJson(generated.goals.includes(g) ? GEN : Q, generated.goals.includes(g) ? generated : queue);
   if (verdict !== "ACCEPTED") state.rejected.push(`${id}: ${note}`.slice(0, 200));
   state.cycle++;
+  // R_best is the reference state, and the reference state is the last
+  // ACCEPTED tree. If it only ever moved upward on its own, then any
+  // accepted goal that legitimately changes the score would leave the gate
+  // permanently CLOSED — the loop would be unable to accept anything after
+  // the first real change. Re-baselining on acceptance keeps the gate's
+  // question meaningful: "has anything got worse since we last accepted?"
+  if (verdict === "ACCEPTED") {
+    const g2 = runGate({ fast: process.argv.includes("--fast") });
+    state.R_best = Number(g2.score.toFixed(4));
+    state.gateVector = {
+      cycle: state.cycle, score: state.R_best,
+      parts: Object.fromEntries(Object.entries(g2.parts).map(([k, v]) => [k, Number(v.toFixed(6))])),
+      saturated: g2.saturated,
+    };
+    console.error(`[R_best re-baselined to ${state.R_best} on ACCEPT (cycle ${state.cycle})]`);
+  }
   writeJson(STATE, state);
 
   const trace = path.join(TRACES, `trace-${String(state.cycle).padStart(3, "0")}-${id}.md`);

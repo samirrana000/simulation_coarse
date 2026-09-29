@@ -13,8 +13,15 @@
 
 import { SASA_RADII } from "./charges.js?v=10";
 
-// Probe radius of water (Å)
-export const PROBE_RADIUS = 1.4;
+// Probe radius of water (Å). lcpo_sasa.js is the zero-import leaf holding the
+// single definition — this file previously repeated the `1.4` literal. The two
+// SASA models must agree on the probe or buried-surface results depend on
+// which route the caller took.
+//
+// Imported AND re-exported (not `export … from`): SasaModel's constructor
+// reads PROBE_RADIUS as a local binding, and a bare re-export creates none.
+import { PROBE_RADIUS } from "./solvation/lcpo_sasa.js?v=10";
+export { PROBE_RADIUS };
 
 export class SasaModel {
   /**

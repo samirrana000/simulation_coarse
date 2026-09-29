@@ -37,6 +37,11 @@
  * Node for unit testing. Units: Å, ps, kcal/mol.
  */
 
+// units.js is a zero-import leaf (the declared single unit contract), so this
+// keeps analysis.js DOM-free and node-importable while sourcing STANDARD_VOLUME
+// once instead of re-typing 1660.54 in the PMF provenance header.
+import { STANDARD_VOLUME } from "./units.js?v=10";
+
 /** Pearson correlation coefficient between two arrays of equal length. */
 export function pearson(a, b) {
   const n = a.length;
@@ -621,7 +626,11 @@ export function pmfCsv(funnel) {
   const { r, pmf, dG_vol, c_t } = funnel.getPMF();
   const dg = funnel.estimateDG();
   // D40 provenance header: T, gamma, hills, V0
-  const V0 = 1660.54; // STANDARD_VOLUME
+  // STANDARD_VOLUME from the src/units.js contract — this was a local
+  // `= 1660.54` copy. Same value today; a second literal would let the CSV
+  // provenance line disagree with the V° the free energy was actually
+  // computed against (funnel.js:313), which is a reproducibility defect.
+  const V0 = STANDARD_VOLUME;
   const prov = `# T=${funnel.T}, gamma=${funnel.biasFactor}, hills=${funnel._nHills}, V0=${V0.toFixed(2)}`;
   const out = [prov, `# dG_vol=${dG_vol.toFixed(4)}, c_t=${c_t.toFixed(4)}`, "r_Ang,pMF_kcal_per_mol"];
   for (let k = 0; k < r.length; k++) out.push(`${r[k].toFixed(3)},${pmf[k].toFixed(4)}`);

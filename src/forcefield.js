@@ -82,7 +82,7 @@ import { binding } from "./ff-binding.js?v=10";
 import { KB_KCAL, KCONV } from "./units.js?v=10";
 import {
   RES_CLASS, RES_CLASS_OF, CG_FORMAL_CHARGES, LIG_ELEMENT, LIG_ELEMENT_DEFAULT,
-  SEQ_WEIGHT, KBOND_DEFAULT, KANGLE_DEFAULT,
+  SEQ_WEIGHT, KBOND_DEFAULT, KANGLE_DEFAULT, HOLO_FLOOR_RMIN, HOLO_FLOOR_K,
 } from "./ff-params.js?v=10";
 import { buildTirionNetwork, applyTirionToForceField } from "./physics/forcefield/tirion_anm.js?v=10";
 import { buildVirtualSites, coneAxisOf } from "./physics/virtual-sites.js";
@@ -576,7 +576,9 @@ export class ForceField {
     // (holo pairs are excluded from both grid repulsion and the binding pass,
     // so without this term nothing resists r < r_min).
     if (this.holoSprings.length) {
-      const HS = this.holoSprings, RMIN = 2.6, KF = 8.0;
+      // RMIN/KF now come from ff-params.js (HOLO_FLOOR_RMIN/HOLO_FLOOR_K) —
+      // they were duplicated as literals here and in respa.js.
+      const HS = this.holoSprings, RMIN = HOLO_FLOOR_RMIN, KF = HOLO_FLOOR_K;
       for (let a = 0; a < HS.length; a += 3) {
         const i = 3 * HS[a], j = 3 * HS[a + 1];
         const dx = pos[j] - pos[i], dy = pos[j + 1] - pos[i + 1], dz = pos[j + 2] - pos[i + 2];
@@ -856,7 +858,7 @@ export class ForceField {
    * Three short-range cross terms, each cut off smoothly at bindRcut:
    *
    *   U_LJ = 4ε[(σ/r)¹² − (σ/r)⁶]·sw            cross 12-6 (attractive well)
-   *   U_el = 332.0637·q1·q2/(εr·r)·sw            screened electrostatics,
+   *   U_el = COULOMB_CONST·q1·q2/(εr·r)·sw     screened electrostatics,
    *                                              εr(r) = 4 + 76·tanh(r/8)
    *   U_HB = −epsHB·exp(−(r−r0)²/2w²)·sw          H-bond well, r0=3.2, w=0.6
    *

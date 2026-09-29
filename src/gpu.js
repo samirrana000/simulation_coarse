@@ -6,6 +6,23 @@
  * G64 — GPU vs CPU correlation R>0.999 is aspirational, not yet benchmarked (placeholder target)
  */
 
+// The Coulomb constant is interpolated into the WGSL source from the single
+// src/units.js contract. The shader previously hardcoded `332.0`, 1.9e-4 below
+// the CODATA value the CPU kernels use — the same physical constant, evaluated
+// two different ways depending on which backend ran. units.js is a zero-import
+// leaf, so this edge is acyclic and costs nothing at module load.
+import { COULOMB_CONST } from "./units.js?v=10";
+
+/**
+ * GPU non-bonded truncation radius (Å). Per-backend tuning constant for the
+ * exponential-screened kernel below — deliberately NOT src/heavy.js's R_CUT:
+ * that one belongs to a smooth C2 switch over [6.5, 8.5] plus GB, a different
+ * potential that merely shares a radius. Same reasoning as force-worker.js.
+ * It is interpolated into the WGSL source so the shader and this file cannot
+ * drift apart.
+ */
+const GPU_R_CUT = 8.5;
+
 const WGSL_NONBONDED = `
 struct AtomParams {
   sigma: f32,
@@ -29,7 +46,7 @@ fn main(@builtin(global_invocation_id) global_id : vec3<u32>) {
   let param_i = params[i];
   var f_i = vec3<f32>(0.0, 0.0, 0.0);
 
-  let R_CUT = 8.5;
+  let R_CUT = ${GPU_R_CUT};
   let cut2 = R_CUT * R_CUT;
 
   for (var j = 0u; j < n; j = j + 1u) {
@@ -57,7 +74,7 @@ fn main(@builtin(global_invocation_id) global_id : vec3<u32>) {
       if (param_i.q != 0.0 && param_j.q != 0.0) {
         let qq = param_i.q * param_j.q;
         let fac = exp(-r / 8.0) / (r * r);
-        let ee = 332.0 * qq * fac;
+        let ee = ${COULOMB_CONST} * qq * fac;
         ef = ee * (-0.125 - 2.0 / r);
       }
 

@@ -7,6 +7,7 @@ import { schlitterEntropy, computeThermodynamics, torsionEntropy, formatThermoTa
 import { parseCa, selectSystem, parseLigands } from "../src/pdb.js";
 import { ForceField } from "../src/forcefield.js";
 import { LangevinIntegrator } from "../src/integrator.js";
+import { KB_KCAL } from "../src/units.js";
 
 let passed = 0, failed = 0;
 const assert = (c, m) => { if (c) { passed++; console.log(`  ✓ ${m}`); } else { failed++; console.error(`  ✗ FAIL: ${m}`); } };
@@ -43,9 +44,16 @@ for (let i = 0; i < 600; i++) {
 }
 const S_locked = torsionEntropy(lockedFrames, [[0, 1, 2, 3]]);
 const S_uniform = torsionEntropy(uniformFrames, [[0, 1, 2, 3]]);
-console.log(`locked ${S_locked.toFixed(4)} (expect 0) vs uniform-ish ${S_uniform.toFixed(4)} (expect ~kB·ln(12)≈${(0.0019872041 * Math.log(12)).toFixed(4)})`);
+// kB is READ from the single src/units.js contract. It used to be a fourth
+// literal copy (`0.0019872041`), 5.03e-8 above the value torsionEntropy now
+// uses. The 1e-3 tolerance below is far wider than that split, so the drift
+// was invisible here — but it is the same defect class, and an expectation
+// computed from a different k_B than the code under test is not an
+// independent check of anything.
+const KB_EXPECT = KB_KCAL;
+console.log(`locked ${S_locked.toFixed(4)} (expect 0) vs uniform-ish ${S_uniform.toFixed(4)} (expect ~kB·ln(12)≈${(KB_EXPECT * Math.log(12)).toFixed(4)})`);
 assert(S_locked < 0.001, `locked rotor S≈0 (${S_locked.toFixed(5)})`);
-assert(Math.abs(S_uniform - 0.0019872041 * Math.log(12)) < 0.001, `uniform rotor S≈kB ln12 (${S_uniform.toFixed(4)})`);
+assert(Math.abs(S_uniform - KB_EXPECT * Math.log(12)) < 0.001, `uniform rotor S≈kB ln12 (${S_uniform.toFixed(4)})`);
 
 // ---- (c) full pipeline: real 4W52 CG holo vs apo ----
 console.log("=== (c) real 4W52 pipeline (holo vs apo, 2000 steps, stride 2) ===");

@@ -1,14 +1,40 @@
 #!/usr/bin/env bash
 # check.sh — A01 deterministic syntax gate.
 #
-# Recursively runs `node --check` on EVERY .js module under src/ and exits
-# non-zero if any file fails. Replaces the old `node --check src/*.js
-# src/physics/*.js` gate, which was broken two ways:
-#   1. it never descended into src/chem, src/compute, src/analysis,
-#      src/capture or src/physics/{forcefield,solvation,integrators};
-#   2. `node --check` accepts exactly ONE file argument — any further
-#      arguments land in process.argv and are silently ignored, so the
-#      whole command only ever checked src/analysis-panel.js (1 of 67).
+# Runs `node --check` on EVERY JavaScript source file in the repo and exits
+# non-zero if any file fails.
+#
+# HISTORY OF THIS GATE (both bugs were silent, so both are worth recording)
+#
+#   Bug 1 — it never descended into subdirectories. The original gate was
+#   `node --check src/*.js src/physics/*.js`, which missed src/chem,
+#   src/compute, src/analysis, src/capture and src/physics/{forcefield,
+#   solvation,integrators}.
+#
+#   Bug 2 — `node --check` accepts exactly ONE file argument. Any further
+#   arguments land in process.argv and are silently ignored, so the whole
+#   command only ever checked src/analysis-panel.js (1 of 67).
+#
+#   Bug 3 (fixed here) — the recursive version only globbed `*.js`. The repo
+#   also carries `.mjs` modules: 14 of them under scripts/ and evolve/,
+#   including every doc-citation validator, several SLOW-tier validation
+#   scripts, and evolve/evolve.mjs itself (the evolution gate). A syntax
+#   error in any of those shipped green and only blew up at runtime.
+#   .mjs is the extension this project uses for anything run directly by
+#   node rather than imported by a browser, so it is load-bearing, not
+#   incidental.
+#
+# SCOPE
+#   Roots: every directory that actually contains JavaScript, plus the repo
+#   root for root-level files (cli.js). An EXTENSION is declared in EXTS
+#   below, not globbed implicitly, so a new file type cannot slip in
+#   unannounced: adding one means adding it here, where the count prints.
+#
+# VACUITY GUARD
+#   Per-extension totals are checked for non-zero. An empty `find` (wrong
+#   root, renamed directory, bad glob) must never read as "all clear".
+#   Declared roots are also required to exist, so a rename cannot silently
+#   drop a whole subtree from coverage.
 #
 # Usage: npm run check  OR  bash scripts/check.sh  OR  ./scripts/check.sh
 # Zero dependencies: bash + node only.
@@ -16,26 +42,75 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-COUNT=0
+# Directories to scan. Must all exist (checked below).
+ROOTS=(src scripts tests bench evolve)
+# File extensions to syntax-check. The vacuity guard is per entry.
+EXTS=(.js .mjs)
+# The repo root itself, non-recursively, for root-level entry points.
+ROOT_FILES=1
+
+for r in "${ROOTS[@]}"; do
+  if [ ! -d "$r" ]; then
+    echo "[check] FAIL: declared root '$r' does not exist — coverage is silently reduced" >&2
+    exit 1
+  fi
+done
+
+declare -A EXT_COUNT=()
+declare -A EXT_FAILED=()
+for e in "${EXTS[@]}"; do
+  EXT_COUNT["$e"]=0
+  EXT_FAILED["$e"]=0
+done
+
 FAILED=0
+TOTAL=0
 
 # LC_ALL=C sort for a stable, locale-independent file order. Repo paths
 # contain no spaces/newlines, so newline-delimited find output is safe.
-while IFS= read -r f; do
-  COUNT=$((COUNT + 1))
-  if ! node --check "$f"; then
-    echo "[check] SYNTAX ERROR: $f" >&2
-    FAILED=$((FAILED + 1))
+for e in "${EXTS[@]}"; do
+  for r in "${ROOTS[@]}"; do
+    while IFS= read -r f; do
+      TOTAL=$((TOTAL + 1))
+      EXT_COUNT["$e"]=$((EXT_COUNT["$e"] + 1))
+      if ! node --check "$f"; then
+        echo "[check] SYNTAX ERROR: $f" >&2
+        FAILED=$((FAILED + 1))
+        EXT_FAILED["$e"]=$((EXT_FAILED["$e"] + 1))
+      fi
+    done < <(find "$r" -type f -name "*${e}" -not -path '*/node_modules/*' | LC_ALL=C sort)
+  done
+  if [ "$ROOT_FILES" -eq 1 ]; then
+    while IFS= read -r f; do
+      TOTAL=$((TOTAL + 1))
+      EXT_COUNT["$e"]=$((EXT_COUNT["$e"] + 1))
+      if ! node --check "$f"; then
+        echo "[check] SYNTAX ERROR: $f" >&2
+        FAILED=$((FAILED + 1))
+        EXT_FAILED["$e"]=$((EXT_FAILED["$e"] + 1))
+      fi
+    done < <(find . -maxdepth 1 -type f -name "*${e}" -not -path './node_modules/*' | LC_ALL=C sort)
   fi
-done < <(find src -type f -name '*.js' | LC_ALL=C sort)
+done
 
-if [ "$COUNT" -eq 0 ]; then
-  echo "[check] FAIL: found 0 .js files under src/ — the gate would be vacuous" >&2
-  exit 1
-fi
+# Vacuity guard, per extension: an empty result set is a broken gate, not a
+# clean bill of health.
+SUMMARY=""
+SEP=""
+for e in "${EXTS[@]}"; do
+  n="${EXT_COUNT[$e]}"
+  f="${EXT_FAILED[$e]}"
+  SUMMARY="${SUMMARY}${SEP}${e}: ${n} checked, ${f} failed"
+  SEP=" | "
+  if [ "$n" -eq 0 ]; then
+    echo "[check] FAIL: found 0 ${e} files under ${ROOTS[*]} — that extension's gate would be vacuous" >&2
+    exit 1
+  fi
+done
 
 if [ "$FAILED" -ne 0 ]; then
-  echo "[check] FAIL: $FAILED of $COUNT file(s) failed node --check" >&2
+  echo "[check] FAIL: $FAILED of $TOTAL file(s) failed node --check" >&2
+  echo "[check]   per-extension: $SUMMARY" >&2
   exit 1
 fi
 
@@ -49,4 +124,7 @@ if [ -z "$SRC_VERSION" ] || [ "$SRC_VERSION" != "$PKG_VERSION" ]; then
   exit 1
 fi
 
-echo "[check] PASS: $COUNT files checked, 0 syntax errors (VERSION=$SRC_VERSION)"
+echo "[check] PASS: $TOTAL files checked, 0 syntax errors"
+echo "[check]   per-extension: $SUMMARY"
+echo "[check]   roots: ${ROOTS[*]} (+ repo root)"
+echo "[check]   VERSION=$SRC_VERSION"

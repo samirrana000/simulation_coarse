@@ -386,7 +386,11 @@
       ],
       "patterns": [
         "P3-unsurfaced-value"
-      ]
+      ],
+      "status": "closed",
+      "verdict": "ACCEPTED",
+      "note": "planner derives 15 goals from 11 measured probes; it also exposed 4 defects in the gate itself, all fixed",
+      "closedAtCycle": 6
     }
   ]
 }

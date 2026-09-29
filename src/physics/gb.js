@@ -10,14 +10,21 @@
  *   f_GB(r_ij) = sqrt( r_ij^2 + R_i * R_j * exp(-r_ij^2 / (4 * R_i * R_j)) )
  *
  *   Delta G_solv = -166.0 * (1/eps_in - exp(-kappa * f_GB) / eps_out) * sum_{i,j} (q_i * q_j / f_GB)
- *   U_Coulomb    = (332.0 / eps_in) * sum_{i<j} (q_i * q_j / r_ij)
+ *   U_Coulomb    = (COULOMB_CONST / eps_in) * sum_{i<j} (q_i * q_j / r_ij)
  *
  * Analytic gradients are computed directly.
  */
 
 import { GB_RADII } from "./charges.js?v=10";
 
-export const COULOMB_CONST = 332.06371; // kcal·Å/(mol·e²)
+// kcal·Å/(mol·e²). RE-EXPORTED from src/units.js, the declared single unit
+// contract. This file carried its own `= 332.06371` literal while
+// gb_obc2.js / membrane_slab.js / webgpu_backend.js carried theirs and
+// ff-binding.js / gpu.js / force-worker.js carried 332.0637 / 332.0 — three
+// live values for one physical constant. units.js is a leaf (zero imports),
+// so this edge cannot close a cycle.
+import { COULOMB_CONST } from "../units.js?v=10";
+export { COULOMB_CONST };
 
 export class GeneralizedBorn {
   /**

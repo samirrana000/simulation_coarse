@@ -37,7 +37,10 @@
 
 export const MEMBRANE_HALF_THICKNESS = 15.0;
 export const MEMBRANE_WIDTH = 2.0;
-export const COULOMB_CONST = 332.06371;
+// kcal·Å/(mol·e²) — re-exported from the src/units.js contract (see the note
+// there); this file previously repeated the literal.
+import { COULOMB_CONST } from "../../units.js?v=10";
+export { COULOMB_CONST };
 
 /**
  * Default water→membrane transfer free energies (kcal/mol) per element.

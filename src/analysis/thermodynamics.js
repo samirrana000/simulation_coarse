@@ -13,7 +13,20 @@
  * Cholesky ln-det (verified vs analytic Gaussian: err 0.20%, r4 prototype).
  */
 
-const KB = 0.0019872041; // kcal/mol/K
+// Boltzmann constant, kcal/mol/K — imported from the single src/units.js
+// contract.
+//
+// This file carried its own `const KB = 0.0019872041`, which is 5.03e-8
+// ABOVE the units.js KB_KCAL (0.001987204) — the identical divergence that
+// was found and fixed between units.js and ff-params.js, still live here.
+// Impact: the two entropy estimators below (Schlitter quasi-harmonic, used
+// for ΔS_pocket, and torsion Shannon, used for ΔS_lig) were evaluated with a
+// k_B that disagreed with every other module in the repo, so ΔG = ΔH − TΔS
+// mixed constants. Measured effect is quantified in
+// tests/test_constant_ledger.js (ΔS shifts by ~5e-8 relative, i.e. ~1.7e-5
+// kcal/mol/K at 300 K). units.js is a zero-import leaf, so this edge is
+// acyclic.
+import { KB_KCAL as KB } from "../units.js?v=10";
 
 /**
  * Hydrophobic burial scale for the solvent-entropy term (R4 scale, ±50% band).

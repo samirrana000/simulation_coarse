@@ -8,12 +8,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Syntax check (recursive src/)
+      - name: Syntax check (recursive, .js AND .mjs)
         # The old `node --check src/*.js src/physics/*.js` was a no-op:
         # `node --check` takes ONE file and ignores the rest, so only
         # src/analysis-panel.js was ever checked (1 of 67 modules).
-        # scripts/check.sh walks every .js under src/ and fails on the first
-        # syntax error.
+        # It then missed every subdirectory, and then missed .mjs entirely —
+        # 14 node-run modules (all scripts/validate_*.mjs, scripts/test_*.mjs
+        # and evolve/evolve.mjs) were never syntax-checked at all.
+        # scripts/check.sh now walks src/ scripts/ tests/ bench/ evolve/ plus
+        # the repo root, for both extensions, prints per-extension counts, and
+        # fails if any extension's file set is empty.
         run: npm run check
       - name: Unit tests (FAST tier)
         # No `|| node tests/test_all.js` fallback — that swallowed every

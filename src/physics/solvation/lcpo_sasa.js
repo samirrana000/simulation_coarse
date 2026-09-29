@@ -38,6 +38,16 @@
  * Reference: Weiser, Shenkin & Still, J. Comput. Chem. 20, 217–230 (1999).
  */
 
+/**
+ * Solvent probe radius (Å) — the Lee–Richards / Connolly 1.4 Å water probe.
+ *
+ * Single home for this value. src/physics/sasa.js (the other SASA model)
+ * previously carried its own `= 1.4`; identical today, but two literals for
+ * one physical probe radius is the same maintenance hazard as two literals
+ * for k_B, and the two models MUST agree or a protein's buried surface
+ * depends on which SASA route the caller took. This module is a zero-import
+ * leaf, so re-exporting from here cannot create a cycle.
+ */
 export const PROBE_RADIUS = 1.4;
 
 /**

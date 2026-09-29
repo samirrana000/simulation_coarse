@@ -4,7 +4,8 @@
  * Validates the CG_FORMAL_CHARGES opt-in (par.binding.charges === true) that
  * revives the dead screened-Coulomb path in ff-binding.js:
  *
- *   E_coul = 332.0637 · q_i · q_a / (ε(r) · r) · sw(r),   ε(r) = 4 + 76·tanh(r/8)
+ *   E_coul = C · q_i · q_a / (ε(r) · r) · sw(r),   ε(r) = 4 + 76·tanh(r/8)
+ *   with C = COULOMB_CONST from src/units.js (the single unit contract).
  *
  * [1] Charge table: 4W52 Cα beads get Asp/Glu −1, Lys/Arg +1, all others
  *     (incl. His — neutral default, HIP hookup deferred) 0 when charges are
@@ -29,6 +30,7 @@ import { parseCa, parseLigands, selectSystem } from "../src/pdb.js";
 import { parseMol2 } from "../src/mol2.js";
 import { LIGAND_LIBRARY } from "../src/ligandLib.js";
 import { CG_FORMAL_CHARGES } from "../src/ff-params.js";
+import { COULOMB_CONST } from "../src/units.js";
 import { ForceField } from "../src/forcefield.js";
 import { LangevinIntegrator } from "../src/integrator.js";
 import { SeededRNG } from "../src/seeded-rng.js";
@@ -76,7 +78,17 @@ function arrayHash(arr, scale = 1000) {
 
 // Screened-Coulomb closed form, replicated from ff-binding.js PASS 1 exactly
 // (ε(r) = 4 + 76·tanh(r/8); smoothstep sw = 1 for r ≤ 0.85·rc, 0 at rc = 9).
-const ELC = 332.0637;
+//
+// ELC is READ from the single src/units.js contract, not re-typed. It used to
+// be a third copy of the Coulomb constant (`= 332.0637`), so when the kernel
+// was unified onto 332.06371 this closed form drifted 3.0e-8 away and the
+// <1e-9 agreement assertion below started failing — which is precisely the
+// divergence class the ledger guard exists to stop, appearing in the test
+// harness. The assertion is UNCHANGED and at full strength: it still
+// compares an independently written closed form against the kernel's
+// numeric output to <1e-9 kcal/mol. Only the shared INPUT is sourced once.
+// Loosening the tolerance instead would have hidden a real kernel bug.
+const ELC = COULOMB_CONST;
 const epsr = (r) => 4 + 76 * Math.tanh(r / 8);
 const swf = (r) => {
   const rc = 9.0, rsw = 0.85 * rc, inv = 1 / (rc - rsw);
@@ -189,7 +201,7 @@ function main() {
   ffIsoOff.compute(ffIsoOff.ref);
   const dUIso = ffIso.bindingU - ffIsoOff.bindingU;
 
-  // closed form: Σ_a 332.0637·q_i·q_a/(ε(r)·r)·sw(r) over acetand atoms in cutoff
+  // closed form: Σ_a C·q_i·q_a/(ε(r)·r)·sw(r) over acetand atoms in cutoff
   let expect = 0;
   for (const a of ffIso.ligandAtoms) {
     const qa = ffIso._ligQ[a.idx - ffIso.nProt];

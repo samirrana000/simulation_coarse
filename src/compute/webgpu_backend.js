@@ -31,8 +31,9 @@ import { SpatialGrid } from "../spatial-grid.js?v=10";
 export const RCUT_DEFAULT = 12.0;
 /** Default LJ switch start (A). */
 export const SWITCH_ON_DEFAULT = 10.0;
-/** Coulomb constant (kcal·A/mol/e^2). */
-export const COULOMB_CONST = 332.06371;
+/** Coulomb constant (kcal·A/mol/e^2) — re-exported from src/units.js. */
+import { COULOMB_CONST } from "../units.js?v=10";
+export { COULOMB_CONST };
 /** Threads per workgroup (must match both .wgsl files). */
 export const WORKGROUP = 64;
 /** Max dense-grid cells per axis (caps VRAM for pathological boxes). */

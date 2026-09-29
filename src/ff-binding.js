@@ -3,6 +3,10 @@
  * electrostatics + H-bond + EEF1-lite desolvation) for the ForceField class
  * in forcefield.js (item 5 modularization).
  *
+ * Imports only the src/units.js unit contract (a leaf), so the Coulomb
+ * constant used here is bit-identical to the one the GB, worker and GPU
+ * kernels use. See tests/test_constant_ledger.js.
+ *
  * Verbatim body of the original ForceField._binding with `this` replaced by
  * an explicit `ff` parameter; the spatial-hash helpers (_cellKey,
  * _encodeCell, _decodeX/Y/Z, _pairKey) stay on the ForceField instance and
@@ -28,6 +32,12 @@
  *   Pass 2 — burial fraction/energy per ligand atom, then desolvation
  *            forces over the recorded pairs.
  */
+
+// The Coulomb constant, from the single src/units.js contract. This kernel
+// previously carried a local `ELC = 332.0637`, 3.0e-8 below the value every
+// other non-bonded kernel used — see the header note and
+// tests/test_constant_ledger.js.
+import { COULOMB_CONST } from "./units.js?v=10";
 
 /**
  * Revolution 1 / Issue 3: read-only wiring descriptor for the binding kernel.
@@ -164,7 +174,9 @@ export function binding(ff, pos, f) {
   // PASS 1 — pair terms (LJ / electrostatics / H-bond) + density
   // =============================================================
   let U = 0;
-  const EPSHB = 0.8, HB_R0 = 3.2, HB_W = 0.6, ELC = 332.0637;
+  // ELC was a local `= 332.0637`, 3.0e-8 below the CODATA value used by every
+  // other non-bonded kernel. It is now the single units.js contract constant.
+  const EPSHB = 0.8, HB_R0 = 3.2, HB_W = 0.6, ELC = COULOMB_CONST;
   const w2 = HB_W * HB_W;
 
   for (let a = 0; a < ff.nLigAtoms; a++) {

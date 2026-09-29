@@ -9,7 +9,7 @@
  *
  * Energy (kcal/mol, COULOMB_CONST = 332.06371 kcal·Å/mol/e²):
  *   Self:   G_self,i = −166.0317·q_i²/R_i·(1/ε_in − e^(−κR_i)/ε_out)
- *   Pair:   G_pair   = −332.0637·(q_i q_j/f_GB)·(1/ε_in − e^(−κf)/ε_out)
+ *   Pair:   G_pair   = −C·(q_i q_j/f_GB)·(1/ε_in − e^(−κf)/ε_out),  C = COULOMB_CONST
  *           summed once over i<j (the 1/2 double-sum folded in).
  *   Total ΔG_GB = Σ_i G_self,i + Σ_{i<j} G_pair,ij.
  * Coulomb in solute dielectric is NOT included here (caller adds it or uses
@@ -21,7 +21,7 @@
  *   dU/dr  via df_GB/dr = r(1 − e/4)/f,  e = exp(−r²/4RiRj),
  *           dP/df with P(f) = 1/ε_in − e^(−κf)/ε_out, dP/df = κe^(−κf)/ε_out,
  *           dg/df with g = P/f, dg/df = (f·dP/df − P)/f²,
- *           dU/dr = −C·qq·dg/df·df/dr   (C = 332.0637 per pair).
+ *           dU/dr = −C·qq·dg/df·df/dr   (C = COULOMB_CONST, per pair).
  *   dU/dR_i via df/dR_i = Rj·e·(1 + r²/4a)/(2f), a = Ri·Rj, plus self-term
  *           dG_self/dR analytic. Returned as dGdR[i] so callers doing
  *           dR/dx propagation (full OBC forces) can contract it.
@@ -41,8 +41,12 @@ export const OBC_BETA = 0.8;
 export const OBC_GAMMA = 4.85;
 export const OBC_OFFSET = 0.09;
 export const HCT_SCALE = 0.8;
-export const COULOMB_CONST = 332.06371;
 export const R_MAX = 30.0;
+
+// kcal·Å/(mol·e²) — re-exported from the src/units.js contract (see the note
+// there); this file previously repeated the literal.
+import { COULOMB_CONST } from "../../units.js?v=10";
+export { COULOMB_CONST };
 
 /**
  * Inverse Debye length κ (Å⁻¹) from ionic strength (Debye–Hückel).

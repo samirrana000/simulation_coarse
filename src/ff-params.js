@@ -75,7 +75,7 @@ export const RES_CLASS_OF = {
  * (R2 term b, docs/BINDING_PHYSICS_R2.md §2b; Loop-2 S1).
  *
  * Revives the dead screened-Coulomb path in ff-binding.js
- * (`E_coul = 332.0637·q_i·q_a/(ε(r)·r)·sw(r)`, ε(r) = 4+76·tanh(r/8)) by
+ * (`E_coul = COULOMB_CONST·q_i·q_a/(ε(r)·r)·sw(r)`, ε(r) = 4+76·tanh(r/8)) by
  * giving the Cα bead of each charged residue its formal charge:
  *   ASP/GLU −1 (deprotonated carboxylate), LYS/ARG +1 (ammonium/guanidinium).
  *
@@ -206,3 +206,20 @@ export const SEQ_WEIGHT = {
 // Derived via Boltzmann inversion (see header). k_B T(300K)=0.6 kcal/mol.
 export const KBOND_DEFAULT = 100.0;  // kcal/mol/Å²  — Cα–Cα bond (Tirion 1996; AMBER ff14SB)
 export const KANGLE_DEFAULT = 20.0;  // kcal/mol/rad² — Cα pseudo-angle (Tirion 1996)
+
+// ── Holo-pair one-sided compression floor ─────────────────────────────
+// A flat-bottom harmonic wall on holo-pinned pairs: no energy while r >=
+// HOLO_FLOOR_RMIN, then ½·HOLO_FLOOR_K·(r − r_min)² below it. Stops the
+// funnel or the desolvation term from squeezing the ligand through a pocket
+// wall (holo pairs are excluded from both grid repulsion and the binding
+// pass, so without this term nothing resists r < r_min).
+//
+// These two numbers were typed into BOTH forcefield.js (the _holoFloor
+// kernel) and physics/integrators/respa.js (splitCoarsegrained's bondedFn
+// replica) — the duplication is load-bearing for parity, not accidental, but
+// a silent edit to one copy is exactly the divergence class this repo has
+// been bitten by, so the values live here once. respa.js's docstring
+// ("keep in sync with src/forcefield.js if that kernel changes") is now
+// satisfied structurally: there is only one copy to keep in sync.
+export const HOLO_FLOOR_RMIN = 2.6;   // Å
+export const HOLO_FLOOR_K = 8.0;     // kcal/mol/Å²

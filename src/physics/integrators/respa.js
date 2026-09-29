@@ -32,6 +32,11 @@
  */
 
 import { KB_KCAL, KCONV } from "../../units.js?v=10";
+// Holo compression floor (RMIN 2.6 Å, KF 8.0 kcal/mol/Å²). These were typed
+// into this file's bondedFn replica AND into forcefield.js's kernel; ff-params
+// is the single home, so the "keep in sync" instruction above is now
+// structural. ff-params.js imports only units.js, so this edge is acyclic.
+import { HOLO_FLOOR_RMIN, HOLO_FLOOR_K } from "../../ff-params.js?v=10";
 import {
   harmonicPairs,
   springForces,
@@ -270,7 +275,7 @@ export function splitCoarsegrained(ff) {
     if (ff.holoSprings.length) U += ff._harmonicPairs(pos, fOut, ff.holoSprings, 3, ff.holoGamma);
     if (ff.nativeContacts.length) U += ff._harmonicPairs(pos, fOut, ff.nativeContacts, 3, 1.0);
     if (ff.holoSprings.length) {
-      const HS = ff.holoSprings, RMIN = 2.6, KF = 8.0;
+      const HS = ff.holoSprings, RMIN = HOLO_FLOOR_RMIN, KF = HOLO_FLOOR_K;
       for (let a = 0; a < HS.length; a += 3) {
         const i = 3 * HS[a], j = 3 * HS[a + 1];
         const dx = pos[j] - pos[i], dy = pos[j + 1] - pos[i + 1], dz = pos[j + 2] - pos[i + 2];
