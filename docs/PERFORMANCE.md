@@ -1,6 +1,6 @@
 # Performance — HPC Wiring (G62–G70)
 
-This document tracks HPC-related performance wiring. All targets marked aspirational are not yet benchmarked and must be validated before enabling by default.
+This document tracks HPC-related performance wiring. All targets marked aspirational are not yet benchmarked and must be validated before enabling by default. Entries that were implemented, measured and then REJECTED say so and carry their measurement rather than their aspiration — an aspirational target nobody measured is a claim, and this document is where the reader would otherwise believe it.
 
 ## Worker Pool (G62)
 
@@ -17,9 +17,31 @@ This document tracks HPC-related performance wiring. All targets marked aspirati
 
 ## Neighbor List Skin (G66)
 
-- **Verlet skin 2Å, rebuild every 10 steps, 20% cut** — aspirational target, not yet implemented.
-- Current: `SpatialGrid` rebuilds every `compute()` call with `R_CUT=8.5Å` and no skin (`src/heavy/nonbonded.js:162`, `src/spatial-grid.js:9`).
-- Desired: introduce 2 Å skin (effective cutoff 10.5 Å), rebuild every 10 steps, yielding ~20% reduction in pair-list rebuild cost. Until implemented, the O(N) grid still beats O(N²) but incurs per-step hash cost.
+- **Verlet skin 2Å, rebuild every 10 steps** — ~~aspirational target, not yet
+  implemented~~ — **implemented, measured, and rejected 2026-10-03.** This entry
+  used to claim a "20% cut"; that number was never measured and is false.
+- Measured: the skin is CORRECT (forces and energies agree with a full rebuild to
+  1.4e-14 / 1.9e-15 relative over a 120-step trajectory, 3,565,227 pairs inside
+  the C2 switch zone compared) and worth a real **7.5 %** on a trajectory
+  (13.41 → 12.41 ms, 2 rebuilds per 200 steps). Measured optimum skin 1–2 Å, so
+  the documented 2 Å was right for the wrong reason.
+- Not landed for one reason: a retained pair list cannot be BIT-EXACT against a
+  per-step rebuild — traversal order depends on which cell an atom occupies, so
+  reuse sums the same pairs in a different order (~1e-14), which moves 18 of 57
+  heavy-golden assertions. Landing it would mean regenerating
+  `tests/golden/heavy_4w52_fp.json`, the net that exists to catch changes nobody
+  intended.
+- **The original premise was false.** `grid.build()` is **0.06 %** of a compute
+  (0.009 ms of 13.6 ms), so "rebuild every 10 steps" would have bought 0.06 %,
+  not 20 %. The real bottleneck is the per-candidate stencil walk: 1.93 ms
+  (14 %) over 300,399 candidates through hash lookup + linked-list step +
+  3-load collision check, to keep 103,280 real pairs. A flat scan of a retained
+  pair array recovers ~1.05 ms with **no skin at all** — that is the real G66,
+  and it is the working spec (~60 lines on `src/spatial-grid.js`) for anyone who
+  accepts a documented floating-point-reordering budget.
+- Current (unchanged): `SpatialGrid` rebuilds every `compute()` call with
+  `R_CUT=8.5Å` and no skin (`src/heavy/nonbonded.js:162`, `src/spatial-grid.js:9`).
+- Full measurement and reasoning: `src/spatial-grid.js:6` and `ROADMAP.md` section 4.
 
 ## dt Auto-Tuning Honest (G67)
 

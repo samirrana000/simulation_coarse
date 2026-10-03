@@ -145,7 +145,10 @@ function stripJs(src, keepStrings = false) {
 
 const ffB = R("../src/ff-binding.js");
 // M9 (2026-10 CG split): src/forcefield.js was 947 LOC and became a facade over
-// eight modules under src/cg/ — the same move M8 made for src/heavy.js. Every
+// nine modules under src/cg/ — the same move M8 made for src/heavy.js. (This
+// sentence said "eight" from the split until the pluggable-physics-terms work
+// added src/cg/terms.js; re-measured, do not trust the count by eye.)
+// Every
 // "does the CG ENGINE declare X" question below is asked of that whole family,
 // so the premise ("the CG force field") is unchanged while its file layout is
 // not. Reading the family is a STRICTER subject than reading one file for the
@@ -167,7 +170,7 @@ const ffp = R("../src/ff-params.js");
 // facade would be asking a file that no longer contains a single number.
 const paramsMod = R("../src/physics/params.js");
 // M8 (2026-10 heavy split): src/heavy.js was 1674 LOC and became a facade over
-// eleven modules under src/heavy/. Every "does the HEAVY ENGINE implement X"
+// twelve modules under src/heavy/, later thirteen. Every "does the HEAVY ENGINE implement X"
 // question below is asked of that whole family, so the premise ("the heavy
 // kernel") is unchanged while its file layout is not. Reading the family is a
 // STRICTER subject than reading one file for the positive assertions (the

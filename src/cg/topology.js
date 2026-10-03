@@ -114,7 +114,7 @@ function buildEnmContacts(ff, par, segments) {
   // the model predicts to be in contact.
   ff.springK = new Float64Array(ff.springs.length / 3).fill(ff.gamma);
   ff.springScaleActive = false;
-  // ── Sequence-dependent ENM (Bahar-style, stub) ──────────────────────
+  // ── Sequence-dependent ENM (Bahar-style; opt-in, applied by springs.js) ──
   // Alternative springK_seq: K = gamma * (1 + 0.2*(w_i + w_j)/2)
   // where w_i = SEQ_WEIGHT[resClass(i)], w_j = SEQ_WEIGHT[resClass(j)].
   // H=1.0, A=0.9, P=1.1, Cp/Cn=1.05 (see src/ff-params.js:SEQ_WEIGHT).

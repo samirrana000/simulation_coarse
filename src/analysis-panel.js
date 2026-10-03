@@ -227,9 +227,7 @@ function setThermoCaption(txt) {
 }
 /**
  * Refresh the thermo ligand picker from the live ligand list (Stage-2).
- * Additive: called on buildSystem (see src/main.js) + lazily on click;
- * in-memory default auto (persist NOT required); headless-safe.
- * @returns {string} effective picker value ("auto" default)
+ * Additive, headless-safe; @returns the effective picker value ("auto" default).
  */
 export function refreshThermoLigPicker() {
   try {
@@ -398,6 +396,7 @@ if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
               (holoEnergies.length ? "" : "\n(note: BindLog capture was off — ΔH from recorded-frame recomputation skipped; run with BindLog on for the component split)")) +
             sasaNote;
           ui.analysisOut.textContent = _lastThermoText;
+          state.thermoResult = res; // #dgChain audit panel expands THIS object, not the text
           setThermoCaption(`ΔH/ΔS done — ${pocketIdx.length} pocket residues, ${holoFrames.length} holo frames (${resolved.label}), ΔSASA ${sasa.dsasa.toFixed(1)} ± ${sasa.se.toFixed(1)} Å².`);
         }).catch((err) => {
           if (myGen !== _thermoGen) return;
@@ -412,6 +411,7 @@ if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
               `\n(ligand ${resolved.label} [${thermoRotCount} rotatable]; pocket ${pocketIdx.length} residues @8Å of selected COM)` +
               `\n(note: real-SASA failed (${err?.message ?? err}) — solvent term is the legacy ΔSASA = 0)`;
             ui.analysisOut.textContent = _lastThermoText;
+            state.thermoResult = res; // #dgChain audit panel expands THIS object, not the text
             setThermoCaption("thermo done (legacy solvent term — SASA failed).");
           } catch (err2) {
             try { ui.analysisOut.textContent = "⚠ " + (err2 && err2.message ? err2.message : String(err2)); } catch (e) { ignore(e, "analysisOut@thermoLegacyLeg", "#analysisOut is null in a headless import"); }

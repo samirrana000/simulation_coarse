@@ -352,6 +352,17 @@
         <div class="panel-body">
           <canvas id="pmfPlot" class="live-canvas" role="img" aria-label="Potential of mean force plot along the funnel collective variable" style="width:100%;height:140px;background:#0f172a;border:1px solid #334155;border-radius:5px;"></canvas>
           <div id="pmfCaption" class="caption mono">PMF: enable Funnel bias in Dynamics &rarr; Advanced sampling, then Run.</div>
+          <details class="subpanel" style="margin-top:8px;">
+            <summary>ΔG audit chain (which estimator, and on what)</summary>
+            <div class="subpanel-body">
+              <div class="row btns">
+                <button id="dgChainHud" type="button" class="btn" style="flex:1;" title="Expand the live HUD ΔG (well-tempered funnel bias) into its terms, each tagged measured / assumed / out-of-scope">Expand HUD ΔG</button>
+                <button id="dgChainThermo" type="button" class="btn" style="flex:1;" title="Expand the ΔH − TΔS decomposition ΔG into its terms — the estimator docs/VALIDATION.md reports">Expand ΔH − TΔS ΔG</button>
+              </div>
+              <pre id="dgChain" class="summary mono" style="white-space:pre-wrap;margin-top:6px;">ΔG audit chain — press a button to expand. Every term is tagged measured / assumed / out-of-scope, and a term with no error bar says so instead of printing 0.</pre>
+              <div class="summary">Two estimators, two sets of legs, one system. This chain states the gap and names the physics that would close it rather than averaging the two numbers.</div>
+            </div>
+          </details>
           <div class="row btns" style="margin-top:6px;">
             <button id="anaBtn" type="button" class="btn primary" style="flex:1;">Analyze Trajectory</button>
             <button id="anaPmfBtn" type="button" class="btn" style="flex:1;">Export PMF (CSV)</button>

@@ -29,15 +29,27 @@ import { RESPAStepper, splitForceField } from "../physics/integrators/respa.js";
 /**
  * G62 — Wire worker pool (minimal, feature-flagged) — speedup≥1.5× is aspirational, not yet benchmarked
  * Feature flag: settingsState.backend === "workers" && state.ff.n > 800 routes to workerPool.computeParallel
- * backend workers computeParallel — G62 wiring validated via bench/worker_speedup.js (estimated 1.5× on 4 cores)
  * When enabled, offload non-bonded force evaluation to workerPool.computeParallel().
  * Currently guarded by n > 800 and backend === "workers" to avoid overhead on small systems.
- * NOTE: speedup≥1.5× is aspirational, not yet benchmarked — placeholder; validate via bench/worker_speedup.js
- * and per-step timing before enabling by default. Fallback is ff.compute().
- * worker_speedup — aspirational target, see bench/worker_speedup.js
- * If too invasive to wire directly into the LangevinIntegrator step loop, this stub provides
- * the intended call site; main tick should call useWorkerPoolIfNeeded() and await the result
- * when the guard passes, otherwise do synchronous ff.compute(pos).
+ * NOTE: speedup≥1.5× is aspirational, not yet benchmarked — validate via per-step
+ * timing before enabling by default. Fallback is ff.compute().
+ * NOT WIRED: useWorkerPoolIfNeeded() below is exported (src/main.js re-exports
+ * it) but has NO caller — src/controllers/tick.js imports only respaWanted,
+ * ensureRespa and warnRespaFallbackOnce from this module, and the call site at
+ * the bottom of this file is still commented out. That is honest scope, not a
+ * defect, and it is why the flag defaults are what they are.
+ *
+ * MEASURED 2026-10-03 (removing-redundancy pass). This block previously claimed
+ * "G62 wiring validated via bench/worker_speedup.js (estimated 1.5× on 4 cores)"
+ * and pointed at that script three times as the thing to run. It validates
+ * NOTHING: bench/worker_speedup.js opens with
+ * `console.log("estimated 1.5× on 4 cores")` — an unconditional literal — and
+ * then prints an Amdahl result computed from a hardcoded parallelFrac = 0.8. It
+ * never constructs a worker, never times a compute, and never imports anything
+ * from src/. So "validated" was false and is now deleted rather than softened.
+ * The speedup figure remains unmeasured, which is the honest state:
+ * worker_speedup is not a key in bench/budget.json, so
+ * tests/test_budget_coverage.js does not (and must not) treat it as measured.
  */
 export function useWorkerPoolIfNeeded(pos) {
   if (settingsState.backend === "workers" && state.ff && state.ff.n > 800) {

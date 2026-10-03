@@ -92,7 +92,8 @@ function main() {
   // -----------------------------------------------------------------
   console.log("\n[0] source wiring (grep, no kernel edits)...");
   // 2026-10 split: src/heavy.js became a facade and the implementation moved
-  // into eleven modules under src/heavy/ (see the layout map in src/heavy.js).
+  // into twelve modules under src/heavy/ at the split, thirteen today (see the
+  // layout map in src/heavy.js).
   // These five greps pin facts about the HEAVY ENGINE, not about one file, so
   // they are asked of the whole heavy module family. The patterns themselves are
   // UNCHANGED — none was weakened, relaxed or reworded to make the split pass.

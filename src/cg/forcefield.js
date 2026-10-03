@@ -136,7 +136,7 @@ export class ForceField {
   clearSpringScale() { clearSpringScale(this); }
 
   /**
-   * Sequence-dependent ENM (Bahar-style) — opt-in stub.
+   * Sequence-dependent ENM (Bahar-style) — implemented, opt-in.
    * Rebuilds springK as K_seq(i,j) = gamma * (1 + 0.2*(w_i + w_j)/2). Preserves
    * the uniform topology — only the stiffness is chemistry-weighted. See
    * src/ff-params.js:SEQ_WEIGHT, docs/CG_HEAVY.md, tests/test_enm_seq.js.

@@ -42,7 +42,11 @@
  *
  * ── Sequence-dependent ENM weights (Bahar-style) ────────────────────────
  *   SEQ_WEIGHT[resClass] = dimensionless stiffness multiplier w_i per bead
- *   used to build springK_seq (see forcefield.js:234). The stub formula
+ *   used to build springK_seq. This pointer used to read "forcefield.js:234";
+ * after the 2026-10 CG split src/forcefield.js is a 121-line facade, so that
+ * line does not exist and a reader following it found nothing. The loop that
+ * consumes these weights now lives in src/cg/springs.js:applySeqWeights.
+ * The formula
  *       K_seq(i,j) = gamma * (1 + 0.2*(w_i + w_j)/2)
  *   makes hydrophobic contacts (H) reference 1.0, aromatic (A) slightly softer
  *   (0.9, delocalized π cloud), polar/charged (P/Cp/Cn) slightly stiffer
@@ -99,7 +103,8 @@ export {
 
 // ── Sequence-dependent ENM (Bahar-style) ───────────────────────────────
 // Per-residue-class stiffness multiplier w_i (dimensionless). Used by
-// forcefield.js springK_seq stub: K = gamma * (1 + 0.2*(w_i+w_j)/2).
+// forcefield.js springK_seq (now src/cg/springs.js:applySeqWeights):
+//   K = gamma * (1 + 0.2*(w_i+w_j)/2).
 // w_i = SEQ_WEIGHT[RES_CLASS_OF[resName]] (w_j likewise). Uniform is
 // default; sequence-weighted ENM is opt-in via ForceField.applySeqWeights().
 // Scale chosen so (w_i+w_j)/2 ∈ [0.9,1.1] → K ∈ [0.98,1.02]*gamma for

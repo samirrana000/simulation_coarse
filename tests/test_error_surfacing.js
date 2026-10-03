@@ -300,8 +300,15 @@ assert(bareOutside.length === 0,
   bareOutside.length === 0
     ? `no bare catch outside ${RECORDER} — all ${totalCatches - bareInRecorder.length} catches there rethrow, recover, record, or document`
     : `bare catch (empty body, no throw) at ${bareOutside.length} site(s): ${bareOutside.join(", ")}`);
-assert(bareInRecorder.length > 0 && bareInRecorder.length <= 6,
-  `${RECORDER}'s terminal guards are the only empty bodies, and they are few enough to read (${bareInRecorder.length}: ${bareInRecorder.join(", ")})`);
+// The bound was `<= 6` with no measurement behind it, so the exemption had two
+// slots of silent headroom: two more bare catches could be planted in
+// src/errors.js and this would still pass. Measured 2026-10-03: there are 4, and
+// all 4 are annotated (asserted immediately below). Pinning the ceiling to the
+// measured count closes those slots — the exemption can now only ever shrink,
+// which is the property the comment above already claimed it had.
+assert(bareInRecorder.length > 0 && bareInRecorder.length <= 4,
+  `${RECORDER}'s terminal guards are the only empty bodies, and there are no more of them ` +
+  `than the 4 this ceiling was pinned to (${bareInRecorder.length}: ${bareInRecorder.join(", ")})`);
 // …and each one must SAY why a terminal guard is the right answer there, so the
 // exemption is a documented decision rather than a quiet hole. Counted on the
 // raw source, since the comment is exactly what the scanner blanks out.

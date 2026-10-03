@@ -189,13 +189,17 @@ const ALLOW_MULTI_SITE = [
   {
     name: "R_CUT",
     why:
-      "src/heavy.js R_CUT=8.5 terminates a smooth C2 switch over [6.5, 8.5] " +
-      "plus GB; src/force-worker.js R_CUT=8.5 terminates an exponential-" +
-      "screened exp(-r/8)/r^2 kernel with no switch. Different potentials " +
-      "that happen to share a truncation radius — binding them would assert " +
-      "an identity that does not hold, and the worker value is a per-backend " +
-      "tuning constant already parameterised as RCUT_DEFAULT in " +
-      "compute/webgpu_backend.js. Both sites carry this justification.",
+      "src/heavy/params.js R_CUT=8.5 terminates a smooth C2 switch over " +
+      "[6.5, 8.5] plus GB; src/force-worker.js R_CUT=8.5 terminates an " +
+      "exponential-screened exp(-r/8)/r^2 kernel with no switch. Different " +
+      "potentials that happen to share a truncation radius — binding them would " +
+      "assert an identity that does not hold, and the worker value is a " +
+      "per-backend tuning constant already parameterised as RCUT_DEFAULT in " +
+      "compute/webgpu_backend.js. Both sites carry this justification. (The " +
+      "heavy site moved here in the 2026-10 heavy split; this string said " +
+      "src/heavy.js for the whole life of the exemption, which after that split " +
+      "named a facade that no longer declares anything. A justification that " +
+      "points at the wrong file is worse than no justification.)",
   },
 ];
 
@@ -247,8 +251,9 @@ const ALLOW_ELEMENT_TABLE = [
       "The two genuinely differ and are used for different things: params.js " +
       "ELEMENT_LJ drives both engines' non-bonded LJ grid, this one is the " +
       "AMBER fallback consulted by getNonbondedParams(). Worst-case epsilon gap " +
-      "between them is 81.8% (I: 0.22 vs 0.400), so silently merging or " +
-      "syncing them would be a physics change. tests/test_element_params.js " +
+      "between them is 45% (I: 0.4 vs 0.22), measured 2026-10-03 across every " +
+      "element the two tables share; so silently merging or syncing them would " +
+      "be a physics change. tests/test_element_params.js " +
       "measures the gap on every run; docs/CHARGES.md scopes the heavy model.",
   },
   {
@@ -410,6 +415,31 @@ assert(unallowed === 0,
     }
   }
   assert(stale === 0, `no stale ALLOW_MULTI_SITE entries; ${stale} found`);
+
+  // ALLOW_CONTRACT_ALIAS and ALLOW_UNIT_SHADOW are exemptions too, and the
+  // file header promises "every entry is asserted to be STILL IN USE". Until
+  // 2026-10-03 only the two lists above were rot-checked, so an alias or a
+  // unit-shadow exemption could outlive its justification while the header
+  // claimed the opposite. Both lists are checked here for the same reason: an
+  // entry for a condition that no longer exists is a permanent hole, and this
+  // is where the hole gets closed.
+  const aliasOrShadow = [
+    ...ALLOW_CONTRACT_ALIAS.map((e) => ({
+      key: `${e.name} (alias of ${e.aliases})`,
+      live: byName.has(e.name) && byName.get(e.name).some((d) => d.file === path.join("src", "units.js")),
+    })),
+    ...ALLOW_UNIT_SHADOW.map((e) => ({
+      key: `${e.name}@${e.file}`,
+      live: decls.some((d) => d.name === e.name && d.file === path.join("src", e.file)),
+    })),
+  ];
+  const deadExemptions = aliasOrShadow.filter((e) => !e.live);
+  for (const e of deadExemptions) {
+    console.error(`      STALE EXEMPTION "${e.key}" — the declaration it excuses no longer exists; delete it`);
+  }
+  assert(deadExemptions.length === 0,
+    `every ALLOW_CONTRACT_ALIAS / ALLOW_UNIT_SHADOW entry still excuses a live declaration ` +
+    `(${aliasOrShadow.length} entries checked); ${deadExemptions.length} stale`);
 }
 
 // ── 3. Unit-shadowing: no re-derivation under a different name ────────

@@ -25,21 +25,27 @@
  * because it is the root of the heavy engine's import graph, one unparseable
  * line in any of them — a parsing loop, a ring DFS, a force kernel — took down
  * every heavy consumer with nothing but a SyntaxError in a browser console.
- * It is now eleven modules under src/heavy/, one per responsibility:
+ * It is now thirteen modules under src/heavy/, one per responsibility. (The
+ * prose in this header, and in the tests and validators that repeat it, said
+ * "eleven" for the whole of the split's life while the map immediately below
+ * listed twelve and the directory held twelve; the pluggable-physics-terms work
+ * added terms.js, the thirteenth. Counts like this go stale silently, so the
+ * numbers are re-measured here and in each file that repeats them.)
  *
  *   src/heavy/parse.js        PDB text -> heavy atoms + hetero groups    (171)
  *   src/heavy/select.js      chain/residue selection + ligand append     (90)
  *   src/heavy/topology.js    bond rows, rings, angles, propers,
- *                            metal coordination, flat typed lists       (308)
+ *                            metal coordination, flat typed lists       (309)
  *   src/heavy/params.js      cutoffs, C2 switch, K_ELEC, METAL_K,
  *                            heavyMass                                    (107)
  *   src/heavy/level.js       L0/L1/L2 resolver + describePhysics         (76)
  *   src/heavy/kernels.js     harmonicFlat / angleFlat (+ per-entry k)    (134)
- *   src/heavy/nonbonded.js   the three spatial-grid kernels              (240)
- *   src/heavy/weak.js        pi-stack / cation-pi / halogen + metal upgrade(162)
- *   src/heavy/energy.js      compute(): the term order                   (202)
+ *   src/heavy/nonbonded.js   the three spatial-grid kernels              (272)
+ *   src/heavy/weak.js        pi-stack / cation-pi / halogen + metal upgrade(200)
+ *   src/heavy/terms.js       the term registry seam + per-term dispatch  (302)
+ *   src/heavy/energy.js      compute(): the term order                   (217)
  *   src/heavy/observables.js kineticTemp / rmsd / rmsdLig / rmsdAll      (64)
- *   src/heavy/forcefield.js  the HeavyForceField class + prototype wiring (385)
+ *   src/heavy/forcefield.js  the HeavyForceField class + prototype wiring (392)
  *   src/heavy/pairs.js       the exclusion key                             (13)
  *
  * `src/heavy/` rather than `src/physics/heavy/`, because everything under
@@ -55,12 +61,17 @@
  * -------------
  * This module re-exports the same 21 names it always exported, so every
  * existing `import { … } from "./heavy.js"` keeps working untouched — no
- * consumer was repointed. Four of the validators in this repo read src/heavy.js
- * as TEXT (tests/test_rev3_issue1_heavy_physics.js, tests/test_element_params.js,
- * scripts/validate_binding_physics_r1.mjs, tests/test_doc_citations.js); those
- * were repointed at the heavy module family and the facts they pin are
- * unchanged. tests/test_module_size.js fails if any src/ module regrows past
- * 600 LOC, so this cannot silently happen again.
+ * consumer was repointed. Six of the checks in this repo read the heavy engine
+ * as TEXT and were repointed at the heavy module family (or at the specific
+ * module the fact moved into); the facts they pin are unchanged:
+ * tests/test_rev3_issue1_heavy_physics.js, tests/test_element_params.js,
+ * scripts/validate_binding_physics_r1.mjs and tests/test_heavy_obc2_trackterms.js
+ * read the family or its members, tests/test_physics_terms.js greps the whole
+ * src/ tree for third-party term ids, and tests/test_doc_citations.js resolves
+ * the doc pointers that named heavy.js. This list said "four" and named four for
+ * the whole of the split's life; it is now six, measured by which files read
+ * src/heavy/ off disk. tests/test_module_size.js fails if any src/ module regrows
+ * past 600 LOC, so this cannot silently happen again.
  *
  * Zero dependencies. No build step. Zero DOM globals.
  */

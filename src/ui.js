@@ -38,6 +38,11 @@ export const ui = {
   protAssign: $("protAssign"), gaffLig: $("gaffLig"),
   funnelToggle: $("funnelToggle"), pmfReset: $("pmfReset"), pmfPlot: $("pmfPlot"),
   pmfCaption: $("pmfCaption"),
+  // ΔG audit chain (src/dg-chain-ui.js). A SUBPANEL of the existing
+  // "PMF & Analysis" panel, never a new top-level panel: Digit1-7 maps to
+  // `#controls > .panel` in DOM order (src/controllers/transport.js), so a new
+  // top-level panel would silently shift every hotkey after it.
+  dgChain: $("dgChain"), dgChainHud: $("dgChainHud"), dgChainThermo: $("dgChainThermo"),
   nnContacts: $("nnContacts"), poseScore: $("poseScore"),
   contactsFile: $("contactsFile"), scorerFile: $("scorerFile"), nnInfo: $("nnInfo"),
   anaBtn: $("anaBtn"), anaPmfBtn: $("anaPmfBtn"), analysisOut: $("analysisOut"),

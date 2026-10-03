@@ -99,7 +99,7 @@ export function clearSpringScale(ff) {
 }
 
 /**
- * Sequence-dependent ENM (Bahar-style) — opt-in stub.
+ * Sequence-dependent ENM (Bahar-style) — implemented, opt-in.
  * Rebuilds springK as K_seq(i,j) = gamma * (1 + 0.2*(w_i + w_j)/2)
  * where w_i = SEQ_WEIGHT[RES_CLASS_OF[beads[i].resName]] (w_j likewise).
  * H=1.0, A=0.9, P=1.1, Cp/Cn=1.05; mean modulation ~0 so ⟨K⟩≈gamma.
@@ -139,7 +139,6 @@ export function applySeqWeights(ff, beads = null) {
     K[s] = gamma * (1 + 0.2 * (w_i + w_j) * 0.5);
   }
   ff.springScaleActive = true; // marks non-uniform (reuse flag for UI)
-  // For debugging: ff._seqW = wPerBead; // keep per-bead w_i if needed
 }
 
 /**

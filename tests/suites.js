@@ -62,6 +62,18 @@ export const SUITES = [
   { file: "tests/test_input_errors.js", tier: "FAST" },
   { file: "tests/test_session_roundtrip.js", tier: "FAST" },
   { file: "tests/test_results_record.js", tier: "FAST", note: "results-record-v1 round-trip (JSON + CSV), the uncertainty-is-never-zero rule, the run-health gate, and the ROADMAP.md §1 scope-drift detector with fault injection" },
+  // THE ΔG DRIFT GUARD. Recomputes BOTH headline ΔG stories from the code paths
+  // they name (src/funnel.js estimateDG for the HUD, computeThermodynamics +
+  // sasaBurial + scanPocket for docs/VALIDATION.md) and holds the document's
+  // PRINTED numbers to them, then proves the detector can fail four ways. Also
+  // owns the DOM-id / subpanel / Digit1-7 contracts and the enumeration sweep.
+  // TIER: measured 1.85 s standalone steady-state (2.98 s cold, `node
+  // tests/test_dg_drift.js`, 76 asserts) — well under the ~10 s FAST cut and
+  // under 4% of the 60 s FAST budget: four seeded CG legs at 2000 steps + one
+  // 12-residue alanine scan, all seeded, no wall-clock dependence. FAST also
+  // keeps it in the same gate as test_results_record.js, which reads the same
+  // scopeBlock() honesty surface.
+  { file: "tests/test_dg_drift.js", tier: "FAST", note: "~1.9 s deterministic drift guard: recomputes the HUD funnel ΔG and the docs/VALIDATION.md ΔG − TΔS story from their own code paths, compares them to what the document PRINTS, enumerates every ΔG-like estimator, and asserts the #dgChain subpanel + DOM-id + Digit1-7 contracts" },
   { file: "scripts/test_bindviz.mjs", tier: "FAST" },
   { file: "scripts/test_bindlog.mjs", tier: "FAST" },
   { file: "scripts/test_bindlog_integration.mjs", tier: "FAST" },
@@ -120,12 +132,12 @@ export const SUITES = [
   { file: "tests/test_element_params.js", tier: "FAST", note: "one element, one sigma/eps/q: CG (forcefield.js) and heavy (heavy.js) resolve byte-identically; re-planting the deleted HEAVY_ELEMENT_DEFAULT fails; pins + prints the live CG-vs-heavy metal coverage gap" },
   { file: "tests/test_cache_contract.js", tier: "FAST", note: "no version query literal on any module edge (121 were hand-typed); sw.js exists, is wired up, and re-fetches with cache:no-store — executed in a node:vm sandbox, not grepped" },
   { file: "tests/test_main_module_size.js", tier: "FAST", note: "main.js stays a composition root: <= 400 LOC (was 1686), <= 20 module specifiers (was 23), no physics/rendering imports, and every controllers/ module its header advertises must exist. A refactor without this guard regrows." },
-  { file: "tests/test_module_size.js", tier: "FAST", note: "class-level god-module guard, because a per-file limit only guards the file it names: main.js was split in 2026-09 and heavy.js (1674 LOC) silently inherited the crown in 2026-10 without tripping that guard. Every src/ module <= 600 LOC unless it is in a ratchet budget pinned to its exact measured size; the 8 pre-existing over-size modules may shrink but never grow; src/main.js and src/heavy.js additionally <= 400/200 as facades; largest/median module ratio <= 6x (the ratio evolve/evolve.mjs penalises); and the src/ import graph is acyclic (Tarjan SCC over comment-stripped specifiers). A 700-LOC probe and a 2-module cycle both turn it red." },
+  { file: "tests/test_module_size.js", tier: "FAST", note: "class-level god-module guard, because a per-file limit only guards the file it names: main.js was split in 2026-09 and heavy.js (1674 LOC) silently inherited the crown in 2026-10 without tripping that guard. Every src/ module <= 600 LOC unless it is in a ratchet budget pinned to its exact measured size; the 7 pre-existing over-size modules may shrink but never grow (the 8th, forcefield.js at 948, was deleted from the budget on the CG-split day and now lives under the 200-LOC facade limit instead); src/main.js and src/heavy.js additionally <= 400/200 as facades; largest/median module ratio <= 6x (the ratio evolve/evolve.mjs penalises); and the src/ import graph is acyclic (Tarjan SCC over comment-stripped specifiers). A 700-LOC probe and a 2-module cycle both turn it red." },
   // anti-rot self-checks: registry wiring + docs/ index no-orphans
   { file: "tests/test_suite_registry.js", tier: "FAST" },
   { file: "tests/test_docs_index.js", tier: "FAST", note: "every file under docs/ linked from docs/README.md" },
   // honest-scope gates: the two categories of claim that cannot be falsified
-  { file: "tests/test_doc_citations.js", tier: "FAST", note: "every path:line claim in every tracked .md resolves to a real, non-blank line (13 allowlisted, all in dated artifacts)" },
+  { file: "tests/test_doc_citations.js", tier: "FAST", note: "every path:line claim in every tracked .md resolves to a real, non-blank line (48 allowlisted, all in dated artifacts; a stale entry fails the suite)" },
   { file: "tests/test_error_surfacing.js", tier: "FAST", note: "no bare catch in src/ (was 56), the recorder counts and surfaces, and a deliberately-failing operation reaches the top status bar" },
   { file: "tests/test_budget_coverage.js", tier: "FAST", note: "every bench/budget.json key is measured by a named producer or explicitly unmeasured with a reason; no published surface claims an fps number" },
   { file: "tests/test_evolve_planner.js", tier: "FAST", note: "plan emits 15 schema-valid goals whose read_only paths all exist" },

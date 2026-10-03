@@ -413,8 +413,9 @@ assert(NONBONDED_DEFAULT.sigma === 3.400 && NONBONDED_DEFAULT.eps === 0.1200,
 
 // ── [7] heavy carries no per-element parameter literal of its own ────────
 console.log("\n[7] the heavy engine declares no per-element parameter literal...");
-// 2026-10 split: src/heavy.js became a facade over eleven modules under
-// src/heavy/. These three assertions are about the heavy ENGINE's rule for
+// 2026-10 split: src/heavy.js became a facade over twelve modules under
+// src/heavy/ at the split, thirteen today (the layout map in src/heavy.js is
+// the measured list). These three assertions are about the heavy ENGINE's rule for
 // per-element parameters, so they are asked of the whole family. The patterns
 // are UNCHANGED — the point of this rule is that NO heavy module may declare a
 // private table, and scanning the family is a STRICTER subject than scanning

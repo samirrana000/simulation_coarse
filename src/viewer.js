@@ -72,8 +72,8 @@ export class Viewer {
     this.showHBonds = true;
     this.showStates = true;
     this.motionGain = 1.0;
-    this._amp = null;
-    this._mean = null;
+    // 2026-10-03: `_amp` and `_mean` were assigned here and read nowhere, in any commit.
+    // Removed 1-for-1 so this file's 57 `src/viewer.js:N` doc citations still resolve.
 
     this.n = 0;
     this.nProt = 0;
@@ -125,7 +125,7 @@ export class Viewer {
       ? Uint32Array.from(ff.holoSprings.filter((_, k) => k % 3 !== 2))
       : null; // heuristic, not DSSP — ribbon assignment is Ca-distance heuristic, see docs/VIEWER.md
     this.segments = segments;
-    this._mean = null;
+    // 2026-10-03: `this._mean = null` (second write, no reader) removed, 1-for-1.
 
     // DSSP Secondary structure assignment — heuristic, not DSSP (Ca d3 distance, not Kabsch-Sander H-bonds)
     this.secStruct = new Array(this.nProt).fill("C");
@@ -225,7 +225,7 @@ export class Viewer {
 
   clear() {
     this.n = 0;
-    this._requestClear = true;
+    // 2026-10-03: `this._requestClear = true` — assigned, read nowhere in any commit.
   }
 
   setMotionGain(g) {

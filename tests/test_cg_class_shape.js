@@ -5,7 +5,8 @@
  * WHY THIS TEST EXISTS
  * --------------------
  * src/forcefield.js was one 947-line file holding one class. It is now a
- * facade over eight modules under src/cg/, and src/cg/forcefield.js declares
+ * facade over eight modules under src/cg/ at the split (nine today), and
+ * src/cg/forcefield.js declares
  * the class. The obvious risk of that move is the class METHOD becoming
  * something other than a class method: if the methods were attached with
  * Object.assign, every one of them becomes an ENUMERABLE OWN property, and

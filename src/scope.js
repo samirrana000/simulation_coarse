@@ -53,6 +53,15 @@
  */
 export const BROWSER_V1_GUARD = "No QM/MM, no explicit membrane, no PME in browser v1";
 
+// src/dg-estimators.js owns the estimator enumeration and the reconciliation
+// bridge; src/dg-chain.js owns the three nature tags and the chain builders.
+// Imported (not duplicated) so the record's `scope.deltaGChain` is the live
+// table. All three are leaves over src/units.js, so this adds no cycle —
+// tests/test_module_size.js's acyclicity check is the thing that would say
+// otherwise if that ever stopped being true.
+import { DG_ESTIMATORS, DG_BRIDGE } from "./dg-estimators.js";
+import { TERM_NATURE } from "./dg-chain.js";
+
 /**
  * Documents the scope statement is sourced from. `file` is repo-relative;
  * `section` is the heading inside it. Kept as data so the record cites
@@ -421,7 +430,17 @@ export function scopeDrift({ roadmap = "", limitations = "", validation = "" } =
 /**
  * The `scope` block as it appears in an exported record: built from the tables
  * at call time, so a record can never disagree with the table it ships with.
- * @returns {{browserV1Guard:string, verdict:string, outOfScope:object[], sources:object[], derivation:object}}
+ *
+ * `deltaGChain` is the pointer to src/dg-chain.js — the ONE enumeration of every
+ * ΔG-like estimator in the app, each tagged measured / assumed / out-of-scope,
+ * plus the `bridge` stating why the HUD estimator and the VALIDATION.md estimator
+ * cannot be reconciled with what this tool implements. It is embedded by
+ * REFERENCE, not by value: scope.js and dg-chain.js are both leaves over
+ * src/units.js, and duplicating the table would create a second copy of the
+ * honesty claim — which is the exact failure src/results-record.js's header
+ * describes for hand-copied strings. tests/test_dg_drift.js asserts the shipped
+ * record's pointer resolves to the live table.
+ * @returns {{browserV1Guard:string, verdict:string, outOfScope:object[], sources:object[], derivation:object, deltaGChain:object}}
  */
 export function scopeBlock() {
   return {
@@ -434,9 +453,23 @@ export function scopeBlock() {
       documentedIn: "ROADMAP.md §1",
     })),
     sources: SCOPE_SOURCES.map((s) => ({ ...s })),
+    deltaGChain: {
+      module: "src/dg-chain.js",
+      estimators: DG_ESTIMATORS.map((e) => ({
+        id: e.id, label: e.label, codePath: e.codePath,
+        nature: e.nature, onDisplayPath: e.onDisplayPath,
+        uncertaintyKind: e.uncertainty?.kind ?? null,
+        noErrorBar: e.uncertainty ? null : (e.noErrorBar ?? null),
+      })),
+      chainNatureTagSet: [...TERM_NATURE],
+      bridge: DG_BRIDGE.map((b) => ({ id: b.id, headline: b.headline, nature: b.nature, missing: b.missing ?? null })),
+      rule: "every ΔG-like number the app prints is in `estimators`; a ΔG that appears in the UI and is not in this table is a bug (tests/test_dg_drift.js)",
+      canReconcile: false,
+      canReconcileWhy: "the HUD estimator (WTM funnel bias, one radial CV) and the VALIDATION.md estimator (ΔH − T·ΔS, holo vs internal apo) share no term; `bridge` names the missing physics term by term",
+    },
     derivation: {
-      builtFrom: "src/scope.js OUT_OF_SCOPE + VALUE_TRUST_BOUNDARY",
-      heldToDocsBy: "tests/test_results_record.js (scopeDrift), FAST tier",
+      builtFrom: "src/scope.js OUT_OF_SCOPE + VALUE_TRUST_BOUNDARY, plus src/dg-chain.js DG_ESTIMATORS + DG_BRIDGE",
+      heldToDocsBy: "tests/test_results_record.js (scopeDrift) + tests/test_dg_drift.js (doc↔code number drift), FAST tier",
       runtimeDocRead: false,
       runtimeDocReadWhy:
         "no build step and zero dependencies: the browser cannot inline ROADMAP.md at export time and a file:// origin cannot read it at all, so the table ships as code and a failing test is what catches an edit to the document",

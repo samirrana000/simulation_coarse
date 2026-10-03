@@ -90,7 +90,7 @@ export const ALLOWLIST = [
   { doc: "AUDIT_REPORT.md", cite: "src/settings-panel.js:73-85", why: "2026-08-29 line numbers inside a block labelled 'verbatim'" },
   { doc: "AUDIT_REPORT.md", cite: "src/settings-panel.js:78", why: "2026-08-29 line number in the P0 fix checklist" },
   { doc: "AUDIT_REPORT.md", cite: "viewer.js:226-234", why: "2026-08-29 line numbers of the dead-code _resize() guard" },
-  { doc: "AUDIT_REPORT.md", cite: "src/viewer.js:226-234", why: "2026-08-29 line numbers, same snippet, path-prefixed form" },
+  { doc: "AUDIT_REPORT.md", cite: "src/viewer.js:226-234", why: "2026-08-29 line numbers, same snippet, path-prefixed form. NOTE: this is now a MISLEADING pair — src/viewer.js's dead-code _resize() guard and the _requestClear write both sat in that region and were removed 2026-10-03, so 226-234 no longer points at anything the report describes. Kept rather than deleted because the report is a dated artifact and the entry documents where its claim went; see the STATUS banner in the file." },
   { doc: "AUDIT_REPORT.md", cite: "src/viewer.js:226", why: "2026-08-29 line number in the P1 fix checklist" },
   { doc: "AUDIT_REPORT.md", cite: "viewer.js:150-167", why: "2026-08-29 line numbers of the centroid/radius sizing bug" },
   // The file's own STATUS banner already declares ALL of its `file:line`

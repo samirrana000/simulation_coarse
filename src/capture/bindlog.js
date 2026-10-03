@@ -288,16 +288,7 @@ export class BindLog {
   }
 
   /**
-   * Attach to a live simulation loop (optional, additive). Calls the capture
-   * hooks if the objects expose them; silently skips absent ones.
-   * @param {object} sim {recorder?, ff?, funnel?, network?}
-   */
-  attach(sim) {
-    this._attached = sim || {};
-    return this;
-  }
-
-  /** Drain a recorded Recorder's frames into the dense channel.
+   * Drain a recorded Recorder's frames into the dense channel.
    * @param {import('./recorder.js').Recorder} recorder */
   importRecorder(recorder) {
     for (let i = 0; i < recorder.frames.length; i++) {

@@ -13,7 +13,7 @@
  *                 gradient in evolve/evolve.mjs's bloat score. main.js's guard
  *                 said nothing about it, so it silently inherited the crown and
  *                 the structural goal stayed unfinished. Split 2026-10 into
- *                 src/heavy.js (a facade) plus eleven modules under src/heavy/.
+ *                 src/heavy.js (a facade) plus the modules under src/heavy/.
  *
  * The lesson is not "main.js needs a bigger limit". It is that a per-file limit
  * only guards the file it names. This test is the class-level version: it
@@ -24,14 +24,15 @@
  *
  * WHAT IT ASSERTS
  *   1. SIZE (ratchet). Every module under src/ must be <= 600 LOC, with ONE
- *      documented exception: the eight files that were ALREADY over 600 before
- *      this guard existed are pinned to their exact measured line count in
- *      BUDGET below and may not grow by a single line. That is the honest way
- *      to adopt a limit the codebase does not yet meet: a limit with eight
- *      permanent carve-outs is theatre, and a limit that starts red is a guard
- *      nobody runs. The ratchet means those eight can only go DOWN — delete a
- *      BUDGET entry as part of the commit that shrinks the file below 600, and
- *      the test tells you to.
+ *      documented exception: the files that were ALREADY over 600 before this
+ *      guard existed are pinned to their exact measured line count in BUDGET
+ *      below and may not grow by a single line. That is the honest way to
+ *      adopt a limit the codebase does not yet meet: a limit with a permanent
+ *      block of carve-outs is theatre, and a limit that starts red is a guard
+ *      nobody runs. The ratchet means those can only go DOWN — delete a BUDGET
+ *      entry as part of the commit that shrinks the file below 600, and the test
+ *      tells you to. That clause has fired: it removed src/forcefield.js (948) on
+ *      the CG split day, which is why BUDGET now holds seven entries, not eight.
  *   2. TOPOLOGY. The largest module is <= OUTLIER_RATIO x the median (6.0x) —
  *      the same shape evolve/evolve.mjs's bloat component penalises, asserted
  *      here so a structural regression is a test failure and not only a lower
@@ -47,9 +48,17 @@
  *      static import / export-from specifiers after COMMENTS ARE STRIPPED, so a
  *      commented-out import cannot fabricate an edge (that bug produced 16
  *      phantom cycles here before it was fixed).
- *   5. NOT VACUOUS. MAX_MODULE_LOC must be below the largest unbudgeted real
- *      module, i.e. it must be doing work. A limit above every file would pass
- *      forever while protecting nothing.
+ *   5. NOT VACUOUS. BUDGET must not be universal. The assertion is that at
+ *      least one src/ module exists OUTSIDE BUDGET, so MAX_MODULE_LOC is applied
+ *      to a real population rather than to a file list that has all been
+ *      exempted. An earlier version of this comment claimed a STRONGER invariant
+ *      than the code implemented ("MAX_MODULE_LOC must be below the largest
+ *      unbudgeted real module"). That is not merely unimplemented — it is
+ *      unsatisfiable together with rule 1, since a module above the ceiling and
+ *      outside BUDGET is exactly what rule 1 fails. It was therefore a comment
+ *      describing a rule the file could never satisfy, which is the same defect
+ *      class this repo exists to prevent. Corrected to the invariant that is both
+ *      true and enforced.
  *
  * WHY 600
  *   The heavy split put its largest module at 385 LOC. 600 is ~1.55x that: high
@@ -77,7 +86,16 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = path.join(ROOT, "src");
 
-/** Ceiling for any src/ module that is not in BUDGET. Largest new module: 385. */
+/**
+ * Ceiling for any src/ module that is not in BUDGET. Largest new module: 385.
+ *
+ * MEASURED HEADROOM (2026-10-03): the largest UNBUDGETED module is
+ * src/analysis/thermodynamics.js at 592, so the 600 ceiling has 8 lines of
+ * slack before the next unbudgeted file needs its own BUDGET entry. Recorded
+ * because "the ceiling is 600" reads as a comfortable margin and is not one —
+ * the seven budgeted modules above it are the only reason the number has not
+ * already been ratcheted down.
+ */
 const MAX_MODULE_LOC = 600;
 /**
  * Pre-existing over-size modules, pinned to their measured line count BY THE
@@ -253,8 +271,10 @@ function main() {
   // ---- 5. NOT VACUOUS ---------------------------------------------------
   const largestUnbudgeted = sorted.find((l) => BUDGET[l.m] === undefined);
   assert(largestUnbudgeted !== undefined,
-    `the ${MAX_MODULE_LOC}-LOC ceiling is a live constraint: ${Object.keys(BUDGET).length} budgeted ` +
-    `modules sit above it and ${mods.length - Object.keys(BUDGET).length} are under it`);
+    `BUDGET is not universal: ${Object.keys(BUDGET).length} modules are pinned above the ` +
+    `${MAX_MODULE_LOC}-LOC ceiling and ${mods.length - Object.keys(BUDGET).length} are not, so the ` +
+    `ceiling is applied to a real population (largest unbudgeted ` +
+    `${largestUnbudgeted?.m} ${largestUnbudgeted?.loc})`);
 
   console.log(`\n${passed} PASSED, ${failed} FAILED`);
   process.exit(failed > 0 ? 1 : 0);

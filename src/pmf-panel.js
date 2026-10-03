@@ -1,8 +1,16 @@
 /**
  * pmf-panel.js — binding-PMF panel: funnel reset button + PMF plot drawing
+ *
+ * Also the init point for the ΔG audit chain subpanel (`initChainUi`), which
+ * lives INSIDE this panel. Deliberately not in src/main.js: main.js is already
+ * at its 20-module-specifier ceiling (tests/test_main_module_size.js) and a new
+ * top-level panel would shift every Digit1-7 hotkey (src/controllers/transport.js
+ * maps them to `#controls > .panel` in DOM order).
  */
 
 import { ui, state } from "./ui.js";
+import { initChainUi, renderChain } from "./controllers/dg-chain-ui.js";
+import { ignore } from "./errors.js";
 
 let _lastPmfDraw = 0;
 
@@ -15,8 +23,14 @@ if (ui.funnelToggle) {
 if (ui.pmfReset) {
   ui.pmfReset.addEventListener("click", () => {
     if (state.funnel) state.funnel.reset();
+    renderChain(true); // the chain's nHills/ΔG row is stale after a reset
   });
 }
+
+// ΔG audit chain subpanel: two buttons that expand the HUD ΔG or the ΔH − T·ΔS
+// ΔG into its measured/assumed/out-of-scope terms. Registered in src/ui.js as
+// #dgChain/#dgChainHud/#dgChainThermo and in index.html inside THIS panel.
+initChainUi();
 
 function setPmfCaption(txt) {
   if (ui.pmfCaption) ui.pmfCaption.textContent = txt;
@@ -168,6 +182,11 @@ export function updatePMFPlot(force = false) {
       setPmfCaption(`PMF live: ΔG ≈ ${state.funnel.estimateDG().toFixed(2)} kcal/mol — PMF(r) · ┆ CV`);
     }
   }
+
+  // The caption above prints a bare ΔG; the audit subpanel below expands it.
+  // One call, already at the 1 Hz-ish redraw cadence, and renderChain() is keyed
+  // on the hill count so it costs nothing until the hills actually move.
+  try { renderChain(); } catch (e) { ignore(e, "dgChain@updatePMFPlot", "#dgChain is absent in a headless import; the PMF plot itself is unaffected"); }
 
   // Current CV marker
   if (state.funnel && Number.isFinite(state.funnel.lastCV)) {

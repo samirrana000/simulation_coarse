@@ -86,12 +86,14 @@ export class ChemicalNetworkModel {
     // (hard-coded 2.5/3.8/4.5 are heuristic baselines; this stub blends them with PMF)
     // For now, keep topology but optionally rescale the highest barrier to match PMF
     const scale = barrierPMF / 4.5; // 4.5 = hard-coded Intermediate→Native baseline
-    // Store derived barriers for next rebuild (if needed, override barriers array there)
-    this._pmfDerivedBarrier = barrierPMF;
-    this._pmfScale = scale;
-    // Example: rebuild with scaled barriers (uncomment to activate)
-    // this.rebuildRateMatrixWithPMF(barrierPMF);
-    // Minimal stub return for testability
+    // Measured 2026-10-03: this used to store `this._pmfDerivedBarrier` and
+    // `this._pmfScale` "for next rebuild", which was a claim about a future
+    // consumer that never arrived — both were write-only in every commit and the
+    // commented-out `rebuildRateMatrixWithPMF(barrierPMF)` below them named a
+    // method that does not exist. The function's actual contract is its RETURN
+    // value, which carries barrierPMF and scale to the caller; a caller that wants
+    // the barriers applied must do it itself. Nothing is stored now because
+    // nothing reads it. See docs/BINDING_PHYSICS_R*.md for the stub's scope.
     return { barrierPMF, wellVal, peakVal, wellIdx, peakIdx, scale };
   }
 
