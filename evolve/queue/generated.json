@@ -2,14 +2,14 @@
   "_meta": {
     "planner": "evolve/evolve.mjs plan",
     "cycle": 16,
-    "generatedAt": "2026-10-03T11:16:54.892Z",
+    "generatedAt": "2026-10-03T11:24:40.023Z",
     "gateVector": {
       "cycle": 16,
-      "score": 0.5228,
+      "score": 0.5197,
       "parts": {
         "syntax": 1,
         "testPass": 0,
-        "coverage": 0.933333,
+        "coverage": 0.921053,
         "dom": 1,
         "bloat": 0.868393,
         "science": 1
@@ -20,16 +20,16 @@
         "science"
       ]
     },
-    "R_best": 0,
+    "R_best": 0.891,
     "PLAN_SIZE": 15,
-    "candidatesMeasured": 13,
-    "emitted": 13,
+    "candidatesMeasured": 14,
+    "emitted": 14,
     "deficitPoolExhausted": true,
-    "deficitPoolNote": "Only 13 distinct measurable deficits were found; emitted 13 of a nominal 15. NOT padded — an unmeasured filler goal costs a full agent call and returns nothing. Remaining debt is listed under \"considered\" with the reason it produced no goal.",
+    "deficitPoolNote": "Only 14 distinct measurable deficits were found; emitted 14 of a nominal 15. NOT padded — an unmeasured filler goal costs a full agent call and returns nothing. Remaining debt is listed under \"considered\" with the reason it produced no goal.",
     "probeCensus": [
       {
         "source": "gate-vector",
-        "found": 3
+        "found": 4
       },
       {
         "source": "gate-blind-spot",
@@ -112,7 +112,8 @@
       "drainedBefore": "generated",
       "rule": "`next` drains evolve/queue/goals.json (authored) before evolve/queue/generated.json, so a re-plan can never starve the authored backlog. `plan` writes generated.json ONLY; goals.json is read-only to it."
     },
-    "considered": []
+    "considered": [],
+    "droppedByContract": 0
   },
   "goals": [
     {
@@ -153,7 +154,7 @@
       "horizon": "mid",
       "priority": 0,
       "title": "The gate's only live gradient punishes the work the loop exists to do: dR/dLOC = -0.0006 R per 100 LOC",
-      "thesis": "Measured: bloat is the only non-saturated component (all others are pinned at 1.0), and its src-LOC term is 1/(1+(L-20000)/20000) with L = 29501. The derivative is dR/dL = -0.25 x 20000/L^2 = -5.745e-6 per LOC, i.e. -0.0006 R per 100 lines. Two consequences, both measured: (1) writing correct code LOWERS R, so a goal that improves the science and adds 500 LOC is scored as a regression; (2) the composite on the CURRENT, UNMODIFIED tree is 0.8684 while R_best is 0, so `node evolve/evolve.mjs gate` prints \"CLOSED (roll back)\" for a no-op — the loop is currently in a state where nothing it evaluates can be accepted. An incentive gradient that points away from the loop's purpose is worse than no gradient, because it is trusted.",
+      "thesis": "Measured: bloat is the only non-saturated component (all others are pinned at 1.0), and its src-LOC term is 1/(1+(L-20000)/20000) with L = 29501. The derivative is dR/dL = -0.25 x 20000/L^2 = -5.745e-6 per LOC, i.e. -0.0006 R per 100 lines. Two consequences, both measured: (1) writing correct code LOWERS R, so a goal that improves the science and adds 500 LOC is scored as a regression; (2) the composite on the CURRENT, UNMODIFIED tree is 0.8684 while R_best is 0.891, so `node evolve/evolve.mjs gate` prints \"CLOSED (roll back)\" for a no-op — the loop is currently in a state where nothing it evaluates can be accepted. An incentive gradient that points away from the loop's purpose is worse than no gradient, because it is trusted.",
       "acceptance": "The composite is monotonically non-decreasing in work that improves the project: a change that raises any other component and adds LOC does not lower R. Demonstrated by a test that evaluates the score function at srcLoc and srcLoc+1000 with all other components held fixed and asserts score(L+1000) >= score(L); OR by replacing the LOC term with a justified one and re-baselining R_best with an updated rBaselineNote.",
       "read_only": [
         "evolve/evolve.mjs",
@@ -184,6 +185,39 @@
     },
     {
       "id": "P03",
+      "horizon": "short",
+      "priority": 0,
+      "title": "The gate reports a regression and still exits 0: score 0.5197 < R_best 0.891",
+      "thesis": "Measured: `node evolve/evolve.mjs gate` printed verdict \"CLOSED (roll back)\" at score 0.5197 against R_best 0.891, and `echo $?` was 0. .github/workflows/check.yml runs the gate as a build step, so a step that can only ever pass gates nothing: the loop's own \"reject\" signal is discarded by the shell. A gate that cannot fail is not a gate.",
+      "acceptance": "node evolve/evolve.mjs gate exits non-zero when score < R_best and 0 when score >= R_best; a planted regression makes the CI step red. Proven by a test that sets R_best above the current score and asserts a non-zero exit.",
+      "read_only": [
+        "evolve/evolve.mjs",
+        ".github/workflows/check.yml",
+        "package.json"
+      ],
+      "touch": [
+        "evolve/evolve.mjs",
+        "tests/",
+        ".github/workflows/check.yml"
+      ],
+      "do_not_touch": [
+        "data/coreset/**",
+        "node_modules/**",
+        "evolve/queue/goals.json",
+        "evolve/traces/**"
+      ],
+      "patterns": [
+        "P3-unsurfaced-value",
+        "P6-node-gates-blind-to-dom"
+      ],
+      "status": "open",
+      "origin": "deficit-analysis:gate-vector",
+      "deficit": 0.9,
+      "measurement": "gate-exit-code",
+      "read_onlyDropped": []
+    },
+    {
+      "id": "P04",
       "horizon": "short",
       "priority": 1,
       "title": "science=1.0000 is saturated, but the overclaim check reads only 4000 of README.md's 25569 chars and passes on a keyword regex",
@@ -217,7 +251,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P04",
+      "id": "P05",
       "horizon": "short",
       "priority": 2,
       "title": "2 docs/ files exceed 400 LOC (largest docs/BINDING_LOOP2_DONE.md at 1326 LOC, 1746 LOC combined)",
@@ -252,7 +286,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P05",
+      "id": "P06",
       "horizon": "mid",
       "priority": 1,
       "title": "6 declared constants (SCREAMING_CASE = number) are defined in more than one src/ file",
@@ -286,7 +320,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P06",
+      "id": "P07",
       "horizon": "short",
       "priority": 1,
       "title": "1 private fields are ASSIGNED in src/ and never read anywhere: src/viewer.js this._requestClear",
@@ -320,7 +354,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P07",
+      "id": "P08",
       "horizon": "mid",
       "priority": 0,
       "title": "The DOM gate checks 117 ids from src/ui.js and misses 24 of the 141 ids the app actually references",
@@ -356,7 +390,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P08",
+      "id": "P09",
       "horizon": "mid",
       "priority": 1,
       "title": "Cut src LOC below the bloat knee: 29501 LOC vs the 20000 penalty start",
@@ -389,12 +423,12 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P09",
+      "id": "P10",
       "horizon": "short",
       "priority": 0,
-      "title": "The syntax gate checks 110 files under src/ and ZERO of the 15 .mjs files that run the loop itself",
-      "thesis": "evolve.mjs:runGate walks path.join(ROOT,\"src\") for *.js and scripts/check.sh does `find src -type f -name '*.js'` — both scoped to src/. The 15 non-src modules (evolve/evolve.mjs, scripts/calibration_4w52.mjs, scripts/fetch_coreset.mjs, scripts/pareto_bench.mjs, scripts/smoke_browsers.mjs, scripts/test_bindlog.mjs, ...) are never node --check'd by any gate, including evolve/evolve.mjs itself. The loop that gates the project is ungated: a syntax error in it makes the loop silently do nothing while CI stays green. Measured: 110 gated vs 15 ungated.",
-      "acceptance": "scripts/check.sh (and the gate's syntax component) covers every tracked .js/.mjs outside node_modules/ and tests/ — at minimum all of: evolve/evolve.mjs, scripts/calibration_4w52.mjs, scripts/fetch_coreset.mjs, scripts/pareto_bench.mjs. A planted syntax error in evolve/evolve.mjs makes `npm run check` exit non-zero.",
+      "title": "The syntax gate checks 110 files under src/ and ZERO of the 16 .mjs files that run the loop itself",
+      "thesis": "evolve.mjs:runGate walks path.join(ROOT,\"src\") for *.js and scripts/check.sh does `find src -type f -name '*.js'` — both scoped to src/. The 16 non-src modules (evolve/evolve.mjs, evolve/gate-measure.mjs, scripts/calibration_4w52.mjs, scripts/fetch_coreset.mjs, scripts/pareto_bench.mjs, scripts/smoke_browsers.mjs, ...) are never node --check'd by any gate, including evolve/evolve.mjs itself. The loop that gates the project is ungated: a syntax error in it makes the loop silently do nothing while CI stays green. Measured: 110 gated vs 16 ungated.",
+      "acceptance": "scripts/check.sh (and the gate's syntax component) covers every tracked .js/.mjs outside node_modules/ and tests/ — at minimum all of: evolve/evolve.mjs, evolve/gate-measure.mjs, scripts/calibration_4w52.mjs, scripts/fetch_coreset.mjs. A planted syntax error in evolve/evolve.mjs makes `npm run check` exit non-zero.",
       "read_only": [
         "scripts/check.sh",
         "evolve/evolve.mjs",
@@ -419,15 +453,15 @@
       ],
       "status": "open",
       "origin": "deficit-analysis:gate-blind-spot",
-      "deficit": 0.12,
+      "deficit": 0.126984,
       "measurement": "gate-syntax-scope",
       "read_onlyDropped": []
     },
     {
-      "id": "P10",
+      "id": "P11",
       "horizon": "mid",
       "priority": 1,
-      "title": "coverage=0.9333 is saturated by counting only tests/test_*.js — 9 scripts/ validators are outside the denominator",
+      "title": "coverage=0.9211 is saturated by counting only tests/test_*.js — 9 scripts/ validators are outside the denominator",
       "thesis": "countTests() globs the tests/ directory for /^test_.*\\.js$/ and finds 68, all wired, so coverage = (68+0)/68 = 1.0 and is reported saturated. The scripts/ directory holds 9 more test-bearing files (scripts/test_bindlog.mjs, scripts/test_bindlog_integration.mjs, scripts/test_bindviz.mjs, scripts/test_pocket_entropy.mjs, scripts/test_thermo.mjs, scripts/test_thermo_heavy.mjs, scripts/validate_1crn_null.mjs, scripts/validate_binding_physics_r1.mjs, scripts/validate_flexlig.mjs) that no component counts. One of them, scripts/validate_binding_physics_r1.mjs, currently exits 1 — the gate is saturated on a population that excludes the failing member. Measured coverage of the real population is 68/77 = 88.3%, not 100%.",
       "acceptance": "The coverage component counts every test-bearing file (tests/test_*.js AND scripts/{test,validate}_*.mjs not in tests/manual/), and the number it reports equals (wired+manual)/total over that full population. A validator moved into scripts/ can change the score.",
       "read_only": [
@@ -458,7 +492,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P11",
+      "id": "P12",
       "horizon": "mid",
       "priority": 1,
       "title": "4 empty catch blocks in src/ swallow every error they see",
@@ -493,7 +527,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P12",
+      "id": "P13",
       "horizon": "mid",
       "priority": 1,
       "title": "1 of 25 TODO/stub/placeholder hits in src/ are on lines that EXECUTE, not in comments",
@@ -528,11 +562,11 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P13",
+      "id": "P14",
       "horizon": "short",
       "priority": 1,
       "title": "Eliminate the tracked files >1MB that hold the bloat file penalty open: 1 file(s)",
-      "thesis": "bloat=0.8684; the filePenalty term is 1/(1+bigFiles/20) = 0.9524 with bigFiles = 1: data/pdbbind_parsed.csv 1147KB. Each big file costs ~0.0227 of R, 18.1% of the live deficit. Total tracked is 15.9MB over 382 files, so the size term is nearly satisfied and the penalty is entirely about 1 outlier file(s).",
+      "thesis": "bloat=0.8684; the filePenalty term is 1/(1+bigFiles/20) = 0.9524 with bigFiles = 1: data/pdbbind_parsed.csv 1147KB. Each big file costs ~0.0227 of R, 18.1% of the live deficit. Total tracked is 15.9MB over 384 files, so the size term is nearly satisfied and the penalty is entirely about 1 outlier file(s).",
       "acceptance": "Zero tracked files exceed 1MB (evolve.mjs readTrackedStats bigFiles == []) OR each remaining one is a regenerable artifact with a recorded fetch manifest. `node evolve/evolve.mjs gate` reports filePenalty == 1.",
       "read_only": [
         "data/README.md",

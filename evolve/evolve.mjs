@@ -1607,6 +1607,33 @@ function cmdPlan(args = []) {
         if (!emitted.some((e) => e.id === g.id)) emitted.push(g);
       }
     }
+    // CONTRACT SELF-ENFORCEMENT. `plan` must never emit a goal the loop's own
+    // test suite rejects, or the loop ships a queue that is red by
+    // construction. Which probes fire depends on the live gate vector, so a
+    // thesis could satisfy the contract on one run and not the next — an
+    // intermittent red the planner cannot explain. Every thesis is therefore
+    // checked here against the same two rules tests/test_evolve_planner.js
+    // enforces (cites a number; names the measurement), and a goal that fails
+    // is DROPPED rather than padded into compliance: a goal we cannot evidence
+    // is exactly the unmeasurable filler this command exists to avoid.
+    const EVIDENCE_VOCAB = /(measured|grep|node |exit|lines|LOC|MB|files|ids|components|saturated|coverage=|bloat=|deficit)/i;
+    const keepable = [];
+    for (const g of emitted) {
+      const t = String(g.thesis || "");
+      const hasNumber = /\d/.test(t);
+      const hasEvidence = EVIDENCE_VOCAB.test(t);
+      if (hasNumber && hasEvidence) { keepable.push(g); continue; }
+      // A closed goal keeps its record regardless — its verdict already stands.
+      if (g.status && g.status !== "open") { keepable.push(g); continue; }
+      skipped.push({
+        id: g.id, deficit: 0,
+        reason: `thesis did not satisfy the evidence contract ` +
+                `(citesNumber=${hasNumber}, namesMeasurement=${hasEvidence}) — dropped rather than padded`,
+      });
+    }
+    emitted.length = 0;
+    emitted.push(...keepable);
+    meta.droppedByContract = skipped.filter((s) => String(s.reason).includes("evidence contract")).length;
     writeJson(GEN, { _meta: meta, goals: emitted });
     console.error(`\n[plan] wrote ${emitted.length} goals -> ${path.relative(ROOT, GEN)} (goals.json untouched)`);
   } else {
