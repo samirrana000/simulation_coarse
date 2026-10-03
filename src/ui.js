@@ -47,6 +47,10 @@ export const ui = {
   thermoDlBtn: $("thermoDlBtn"),
   dccmBtn: $("dccmBtn"), dccmCanvas: $("dccmCanvas"), dccmCaption: $("dccmCaption"),
   dccmDlBtn: $("dccmDlBtn"),
+  // FP7 structured results record (src/results-record.js). One extra handle on
+  // the Recording panel's existing export block — NOT a new top-level panel, so
+  // the Digit1-7 hotkey contract is untouched.
+  resultsDlBtn: $("resultsDlBtn"),
   smdBtn: $("smdBtn"), crypticBtn: $("crypticBtn"),
   bindvizTimeline: $("bindvizTimeline"), bindvizEnergy: $("bindvizEnergy"),
   bindvizPmf: $("bindvizPmf"), bindvizCaption: $("bindvizCaption"),

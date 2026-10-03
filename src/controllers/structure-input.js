@@ -44,8 +44,12 @@ let _updateGuide = null;
  * Parse a PDB text into the app and rebuild.
  * @param {string} text raw PDB text
  * @param {string} sourceLabel caption prefix (e.g. "PDB 4W52")
+ * @param {object} [source] provenance for the results record
+ *   (`{origin, pdbId, fileName}`; see state.inputSource). Additive and
+ *   optional: omitting it leaves state.inputSource null and the results record
+ *   reports origin "unknown" rather than guessing.
  */
-export async function loadStructure(text, sourceLabel) {
+export async function loadStructure(text, sourceLabel, source = null) {
   // FP2: pre-validate raw text so empty/garbage inputs get an actionable
   // failure class (what + next click) instead of a raw parser dump.
   const preErr = validatePdbText(text);
@@ -73,6 +77,17 @@ export async function loadStructure(text, sourceLabel) {
 
   state.libraryLigand = null;
   state.heteroOverrides = {};
+  // Where the bytes came from, for the exported results record
+  // (src/results-record.js). The CONTENT HASH is the identity; this is the
+  // human-readable route, and it is null when the caller did not say.
+  state.inputSource = source && typeof source === "object"
+    ? {
+      origin: String(source.origin ?? "unknown"),
+      pdbId: String(source.pdbId ?? ""),
+      fileName: String(source.fileName ?? ""),
+      label: String(sourceLabel ?? ""),
+    }
+    : null;
   if (ui.structSummary) {
     if (state.parsed) {
       ui.structSummary.textContent = `${sourceLabel}\n` + summarizeStructure(state.parsed);
@@ -104,7 +119,8 @@ export function initStructureInput({ buildSystem, updateGuide }) {
       if (!id) return;
       if (ui.structSummary) ui.structSummary.textContent = `Fetching ${id}…`;
       try {
-        await loadStructure(await fetchPdb(id), `PDB ${id.toUpperCase()}`);
+        await loadStructure(await fetchPdb(id), `PDB ${id.toUpperCase()}`,
+          { origin: "pdb-id-fetch", pdbId: id, fileName: `${id.toLowerCase()}.pdb` });
       } catch (err) {
         reportInputError(err);
       }
@@ -142,7 +158,8 @@ export function initStructureInput({ buildSystem, updateGuide }) {
       const f = ui.fileInput.files[0];
       if (!f) return;
       try {
-        await loadStructure(await f.text(), f.name);
+        await loadStructure(await f.text(), f.name,
+          { origin: "file-upload", pdbId: "", fileName: f.name });
       } catch (err) {
         reportInputError(err);
       }

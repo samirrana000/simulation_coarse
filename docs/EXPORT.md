@@ -51,6 +51,74 @@ This document describes trajectory export formats implemented in `src/recorder.j
 - **Residue mapping:** Each Cα bead becomes one `ATOM  CA` with original `resName` (`b.resName||"GLY"`), `chain` (`"_"`→`" "` per PDB convention), `resSeq` (`src/recorder.js:163` `b0`). Ligand atoms when present are exported with their own names (heavy mode uses `state.sel.atoms` metadata).
 - **Loading:** `MDAnalysis.Universe("traj.pdb")` (`docs/BRIDGE.md:35` `Universe("cg_traj_500frames.pdb")`) — MDAnalysis reads `MODEL/ENDMDL` as trajectory; `u.trajectory` length equals `recorder.count`. Align then RMSF as in `docs/BRIDGE.md:46` `AlignTraj` + `RMSF`.
 
+## Structured Results Record (`results-record-v1`)
+
+- **What it is:** ONE small JSON file carrying everything needed to reproduce or
+  cite a number from this tool — code version + build date, run timestamp, seed,
+  every physics parameter actually used, the input structure's identity, each
+  computed value **with its real uncertainty**, the run-health error count, and a
+  machine-readable statement of what the numbers do **not** mean. Built by
+  `buildResultsRecord` in `src/results-record.js`; the button is
+  **Export Results Record (JSON)** (`index.html` `#resultsDlBtn`) in the
+  Recording panel, wired by `initResultsExport` in
+  `src/controllers/results-export.js`.
+- **Why it exists:** before this, an answer lived in three artefacts — a
+  trajectory file with a REMARK header, a PMF CSV, and the operator's notes.
+  Reproducing or citing a number was guesswork. See `docs/RESULTS_RECORD.md`
+  for the field-by-field schema.
+- **Invocation:** `serializeResultsRecord(record)` → JSON text, plus
+  `resultsCsv(record)` → the flat tabular half. Both round-trip
+  (`parseResultsRecord` / `parseResultsCsv`), asserted by
+  `tests/test_results_record.js`.
+- **Not a trajectory dump.** No frames, no coordinates, no PDB text: the record
+  is a summary with provenance and is size-capped at 64 KiB
+  (`RESULTS_MAX_BYTES`; a realistic record is ~10 KiB). Frames go to the
+  recorder export above; the `coverage.notIncluded` block names, per analysis
+  family, exactly what this export does not carry.
+- **Honesty is derived, not typed.** The `scope` block is built from
+  `src/scope.js` at call time, and `src/scope.js` is held to `ROADMAP.md` §1
+  (the "No QM/MM, no explicit membrane, no PME" guard + its five hard-no
+  bullets), `docs/LIMITATIONS.md` and `docs/VALIDATION.md` by
+  `scopeDrift()` in `tests/test_results_record.js`. Adding a hard "no" to
+  ROADMAP.md without a matching scope row **fails a FAST-tier test**.
+- **An uncertainty is never zero.** `uncertainty` is either a finite positive
+  value with its estimator named, or `null` plus an `uncertaintyReason`
+  sentence. The analysis modules return `0` for "not computed" in places
+  (`computeThermodynamics` `dH_se` with fewer than two bootstrap blocks), and
+  the record converts that to `null` + reason rather than writing a zero error
+  bar. A sample SD of a per-frame track travels in `dispersion`, which is a
+  different thing and never an uncertainty on the mean.
+- **A dirty run does not export as if it were clean.** `resultsExportGate()`
+  refuses when `src/errors.js` has recorded any error, when a value has no
+  trust-boundary statement, or when the input bytes could not be hashed. An
+  *unseeded* run is a warning rather than a block (that is the default browser
+  path, and the record already says the run is not reproducible) — hiding it
+  would add no honesty and would make the export unusable for most sessions.
+  Measured in a real browser (Playwright, served locally): with one error
+  injected through `recordError()`, the export is refused with the count, the
+  last error's context and message, and the remedy — and no file is downloaded.
+- **A value that could not be computed is absent, not `0`.** RMSIP with no
+  elastic network and ΔG with no deposited hills yield no row at all, so
+  `coverage.included` is worth reading; a genuinely measured zero survives as
+  `0`, with no invented error bar.
+- **Sizes and caps:** `RESULTS_RECORD_VERSION = 1`, `RESULTS_MAX_VALUES = 24`
+  result rows, `RESULTS_MAX_BYTES = 64 KiB` serialize cap,
+  `RESULTS_FILE_MAX_BYTES = 1 MiB` load cap.
+
+### Python one-liner
+
+```python
+import json
+r = json.load(open("results_4W52_v1.1.0-fp7.json"))
+for v in r["results"]:
+    bar = f"± {v['uncertainty']['value']}" if v["uncertainty"] else "NO ERROR BAR"
+    print(f"{v['id']:>26} = {v['value']:>10.3f} {v['unit']:<12} {bar}")
+    print(f"{'':>26}   means: {v['meaning']}")
+    print(f"{'':>26}   NOT:   {v['notA']}")
+print("clean run:", r["runHealth"]["clean"], "| errors:", r["runHealth"]["errors"])
+print("scope:", r["scope"]["browserV1Guard"])
+```
+
 ## DCD Export
 
 - **Native support:** `src/recorder.js` does not write DCD directly (DCD is a binary FORTRAN unformatted format requiring typed arrays). The recommended path is **PDB topology + DCD** via one-time conversion in MDAnalysis/MDTraj (`docs/BRIDGE.md:64` `Option B — PDB topology + DCD`):

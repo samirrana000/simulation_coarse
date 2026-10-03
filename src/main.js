@@ -32,6 +32,7 @@
  *   controllers/system-build.js       selection → force field → integrator
  *   controllers/transport.js          run/reset/display toggles + hotkeys
  *   controllers/recording.js          recorder, exports, session save/restore
+ *   controllers/results-export.js     structured results record (JSON+CSV)
  *   controllers/guide.js              FP1 onboarding checklist
  *   controllers/tick.js               the requestAnimationFrame loop
  *
@@ -62,6 +63,7 @@ import { initStructureInput } from "./controllers/structure-input.js";
 import { initSystemBuild, buildSystem } from "./controllers/system-build.js";
 import { initTransport } from "./controllers/transport.js";
 import { initRecording } from "./controllers/recording.js";
+import { initResultsExport } from "./controllers/results-export.js";
 import { startTick } from "./controllers/tick.js";
 import { ignore } from "./errors.js";
 
@@ -143,6 +145,7 @@ initStructureInput({ buildSystem, updateGuide });
 initGuide();
 initTransport();
 initRecording();
+initResultsExport();
 
 startTick();
 

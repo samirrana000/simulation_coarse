@@ -336,6 +336,9 @@
           <div class="row btns" style="margin-top:4px;">
             <button id="sessSaveBtn" class="btn" type="button" style="flex:1;" title="Save settings, picker, and recorder counts as a session JSON file (frames stay in memory)">Save Session (JSON)</button>
           </div>
+          <div class="row btns" style="margin-top:4px;">
+            <button id="resultsDlBtn" class="btn" type="button" style="flex:1;" title="Download ONE results record: code version, seed, every physics parameter, the input structure's SHA-256, each value with its real uncertainty (or an explicit 'no error bar'), the run-health error count, and the machine-readable statement of what the numbers do NOT mean">Export Results Record (JSON)</button>
+          </div>
           <label class="field" style="margin-top:4px;">
             <span class="lbl">Session file (load)</span>
             <input id="sessFile" type="file" accept=".json,application/json" />

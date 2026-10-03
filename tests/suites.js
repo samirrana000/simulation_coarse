@@ -61,6 +61,7 @@ export const SUITES = [
   { file: "tests/test_ala_noise_floor.js", tier: "FAST" },
   { file: "tests/test_input_errors.js", tier: "FAST" },
   { file: "tests/test_session_roundtrip.js", tier: "FAST" },
+  { file: "tests/test_results_record.js", tier: "FAST", note: "results-record-v1 round-trip (JSON + CSV), the uncertainty-is-never-zero rule, the run-health gate, and the ROADMAP.md §1 scope-drift detector with fault injection" },
   { file: "scripts/test_bindviz.mjs", tier: "FAST" },
   { file: "scripts/test_bindlog.mjs", tier: "FAST" },
   { file: "scripts/test_bindlog_integration.mjs", tier: "FAST" },
