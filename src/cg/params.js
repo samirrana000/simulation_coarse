@@ -10,7 +10,10 @@
  *   - per-protein-bead residue class + LJ sigma/eps + formal charge + HB flag
  *     (RES_CLASS / CG_FORMAL_CHARGES);
  *   - the Cα-triplet virtual O-sites built when hbMode === "directional";
- *   - per-ligand-atom element parameters (σ, ε, q, hb flag, ΔG).
+ *   - the per-ligand-atom element parameters (σ, ε, q, hb flag, ΔG), INCLUDING
+ *     metals, which resolve from the shared METAL_ELEMENT ion table (a
+ *     one-line user warning is emitted because CG builds no coordination
+ *     restraint — see the block at the foot of assignParticleParams).
  *
  * WHY IT IS ITS OWN MODULE
  * ------------------------
@@ -128,13 +131,47 @@ export function assignParticleParams(ff, beads) {
   ff._ligQ = new Float64Array(ff.nLigAtoms);
   ff._ligHB = new Uint8Array(ff.nLigAtoms);
   ff._ligdG = new Float64Array(ff.nLigAtoms);
+  const metalsHere = [];
   for (let a = 0; a < ff.nLigAtoms; a++) {
     // M7: `LIG_ELEMENT[el] ?? LIG_ELEMENT_DEFAULT` is now the shared
     // `resolveElementParams` from src/physics/params.js — the SAME function
     // heavy.js calls, so an element cannot resolve to a different sigma/eps
     // in the two engines. Identical values (ELEMENT_LJ is LIG_ELEMENT).
+    // 2026-10: the resolver is METAL-aware (ELEMENT_LJ → METAL_ELEMENT →
+    // ELEMENT_LJ_DEFAULT), so a metal ligand atom gets its ion row (sigma/eps/
+    // q/coordR/coordN) on BOTH engines. This is a sound lookup in CG because
+    // CG ligand atoms are explicit united-atom particles, not beads
+    // (cg/system.js: one particle per ligand heavy atom) — only the protein is
+    // coarsened to Cα. The `hb` and `dG` fields the CG binding pass reads
+    // (_ligHB / _ligdG) are carried on the metal row too: hb=false (an ion
+    // coordinates, it is not a donor/acceptor) and dG=-0.30, the EEF1-lite
+    // placeholder. The placeholder is a declared LIMITATION, not a claim about
+    // ion hydration — see the dG block in src/physics/params.js and
+    // docs/LIMITATIONS.md. CG still builds NO metal-coordination restraint
+    // (heavy/topology.js buildMetalCoordination is heavy-only) — hence the
+    // one-line warning below.
     const e = resolveElementParams(ff.ligandAtoms[a].element);
+    if (e.coordR !== undefined) metalsHere.push(ff.ligandAtoms[a].element);
     ff._ligSigma[a] = e.sigma; ff._ligEps[a] = e.eps; ff._ligQ[a] = e.q;
     ff._ligHB[a] = e.hb ? 1 : 0; ff._ligdG[a] = e.dG;
+  }
+  // User-facing honesty about what CG cannot do with a metal. Measured before
+  // this warning existed (tools/exp_cg_metal_stability.mjs, 4 000 steps): the
+  // ion is NOT ejected — a +2 charge here does not blow up, because the CG
+  // Coulomb term is screened by ε(r)=4+76·tanh(r/8) and there is no
+  // ion-atmosphere monopole to diverge. What CG cannot do is hold the ion's
+  // COORDINATION SPHERE: with no metal–donor springs a Zn spends ~13 % of a
+  // short run outside the physical 1.5–3.5 Å Zn–O band, and its formal charge
+  // attracts it to the whole-residue Cα bead of a charged residue, so it can
+  // sit ~2 Å from a bead instead of 2 Å from a donor ATOM. Silent metal-site
+  // results are the failure mode this warns about; heavy mode is the path that
+  // builds the coordination polyhedron. Once per ForceField, never per atom.
+  if (metalsHere.length) {
+    const kinds = [...new Set(metalsHere)].join(", ");
+    console.warn(`[cg] metal ion(s) ${kinds} present: CG gives them real ion parameters ` +
+      `(METAL_ELEMENT: σ/ε/formal charge) but builds NO metal–donor coordination ` +
+      `restraint, so the coordination sphere is not held. Expect a ~2 Å metal–bead ` +
+      `approach and occasional unphysical metal–donor distances. Use heavy mode for ` +
+      `metal sites (see docs/LIMITATIONS.md).`);
   }
 }

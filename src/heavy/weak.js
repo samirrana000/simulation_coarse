@@ -160,3 +160,41 @@ export const weakKernels = {
     return { pi, cpi, xb };
   },
 };
+
+/**
+ * `heavy.weak` — the registry descriptor that drives _weakInteractions above.
+ *
+ * WHY IT LIVES HERE AND NOT IN heavy/terms.js
+ * -------------------------------------------
+ * scripts/validate_binding_physics_r1.mjs asserts the CODE VIEW of the whole
+ * src/heavy.js + src/heavy/* family contains `const w =
+ * this._weakInteractions(pos, f)`, `U += this.weakU` and `if (this.weakOn)` —
+ * i.e. that all three weak kernels are called inside the method and that the
+ * result provably REACHES the energy rather than being computed and dropped.
+ * Those literals have to exist inside src/heavy/, so the descriptor does.
+ *
+ * The body below is the pre-registry force-loop block LITERALLY, including its
+ * own local `U`: the registry contract is "return one float64", and the block
+ * already had exactly one `U +=` plus an else-branch that zeroes the four
+ * accumulators (which the heavy golden reads, so it must run whether or not the
+ * term is on). Returning that `U` for the dispatcher to add once is the same
+ * float64 arithmetic at the same position.
+ */
+export const weakTerm = {
+  id: "heavy.weak", engine: "heavy", order: 50,
+  label: "Weak interactions — π-stack, cation-π, halogen σ-hole (opt-in)",
+  reports: ["weakU", "piU", "cpiU", "xbU"],
+  report: function () { return this.weakU; },
+  energy: function (pos, f) {
+    let U = 0;
+    if (this.weakOn) {
+      const w = this._weakInteractions(pos, f);
+      this.weakU = w.pi + w.cpi + w.xb;
+      this.piU = w.pi; this.cpiU = w.cpi; this.xbU = w.xb;
+      U += this.weakU;
+    } else {
+      this.weakU = 0; this.piU = 0; this.cpiU = 0; this.xbU = 0;
+    }
+    return U;
+  },
+};

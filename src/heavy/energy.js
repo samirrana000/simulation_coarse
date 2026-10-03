@@ -26,14 +26,37 @@
  *   motivated this: it silently produced pure-HCT energy with OBC2-GB +
  *   HCT-everything forces.
  *
+ * THE TERM REGISTRY (2026-10) — WHERE THE STAGES WENT
+ * ---------------------------------------------------
+ * The nine `U += …` stages are no longer written in this file. They are
+ * declarative descriptors in src/heavy/terms.js (and, for `heavy.weak`, in
+ * src/heavy/weak.js next to its kernel), validated by
+ * src/physics/terms/registry.js, and compute() below walks the resulting plan:
+ *
+ *     const plan = heavyPlan();                 // memoised; 1 int compare
+ *     for (let t = 0; t < plan.length; t++) {
+ *       const d = plan[t];
+ *       const en = d.enabled;
+ *       if (en !== null && !en.call(this)) continue;
+ *       U += d.energy.call(this, pos, f);
+ *     }
+ *
+ * Each iteration performs the identical call sequence, publishes the identical
+ * ff.*U accumulators, and adds the identical float64 at the identical position —
+ * including the three stages that sum SEVERAL terms in one `+=`, which stay one
+ * descriptor each precisely so the inner partial sums round the same way. The
+ * full per-stage summation-order argument is in src/heavy/terms.js's header, and
+ * tests/test_heavy_golden.js is the proof: 6 configurations x 12 poses x 24
+ * accumulators, bit-exact, before and after this move.
+ *
+ * What deliberately stayed here: the three force-transaction primitives the
+ * substitutable stages call, stage 5a (the per-term binding accounting, which
+ * contributes neither U nor forces), and the NaN/∞ guard — none of which is a
+ * term.
+ *
  * Zero DOM globals. Node-importable.
  */
-import { springForces, dihedralForcesAnalytic } from "../ff-harmonic.js";
-import { lcpoSasa } from "../physics/solvation/lcpo_sasa.js";
-import { membraneEnergyForces } from "../physics/solvation/membrane_slab.js";
-import { enforceCoordination } from "../chem/metals.js";
-import { harmonicFlat, angleFlat, harmonicFlatPerK, angleFlatPerK } from "./kernels.js";
-import { METAL_K } from "./params.js";
+import { heavyPlan, bindingTrackers } from "./terms.js";
 
 /** Attached to HeavyForceField.prototype by heavy/forcefield.js. */
 export const energyMethods = {
@@ -110,6 +133,12 @@ export const energyMethods = {
   /**
    * Total potential energy and forces evaluation.
    *
+   * THE BODY IS A PLAN WALK, NOT A SUMMATION SEQUENCE (2026-10)
+   * ----------------------------------------------------------
+   * The stage-by-stage `U += …` sequence this method used to contain now lives
+   * in src/heavy/terms.js as declarative descriptors; this file owns the walk,
+   * the two blocks that are not terms, and nothing else. See the header.
+   *
    * G65 ZERO-ALLOC AUDIT — hot loop (called every integration step):
    *   Expected allocs per compute(): ideally 0, but CURRENTLY 3 × Float64Array(n) via SasaModel.compute()
    *   (s0, radii, burial — see src/physics/sasa.js:47-54). These allocate O(n) each call and cause
@@ -119,7 +148,9 @@ export const energyMethods = {
    *   ~zero-alloc claim does not hold for heavy mode; see bench/alloc.js for heap delta measurement.
    *   _forceSnapshot() above follows that same recommended pattern for the
    *   guarded stages (lazily allocated + reused, so steady-state alloc count is
-   *   unchanged). Remaining kernels (harmonicFlat, angleFlat, dihedralForcesAnalytic,
+   *   unchanged). The registry walk adds NOTHING to this budget: heavyPlan() is
+   *   a memoised frozen array and a term returns a number, never a record.
+   *   Remaining kernels (harmonicFlat, angleFlat, dihedralForcesAnalytic,
    *   _nonBondedGrid via SpatialGrid.head/next/cellCoords) are zero-alloc in steady
    *   state (grid resizes only when n exceeds maxAtoms).
    */
@@ -129,126 +160,35 @@ export const energyMethods = {
     f.fill(0);
     let U = 0;
 
-    // 1. Covalent bonds + metal coordination (AMBER14 per-bond k when opted in)
-    if (this.useAmber14 && this._bondK && this._bondK.length === this.bonds.length / 3) {
-      this.bondU = harmonicFlatPerK(pos, f, this.bonds, 3, this._bondK);
-    } else {
-      this.bondU = harmonicFlat(pos, f, this.bonds, 3, this.kBond);
-    }
-    // Metal coordination: legacy k=40 distance springs for metals WITHOUT a
-    // detected coordination geometry. When par.metalAngles === true (R3 §1e),
-    // metals WITH a geometry are handled below by enforceCoordination (radial
-    // k=40 + cross-angle k=20) instead of these springs.
-    const me = this._metalEnforce;
-    this.coordU = 0;
-    if (this.coord.length > 0) {
-      this.coordU = harmonicFlat(pos, f, this.coord, 3, this.metalK);
-    }
-    if (me) {
-      const sub = me.metals.filter((m) => me.hasGeometry.has(m.index));
-      if (sub.length > 0) {
-        const res = enforceCoordination(pos, sub, me.elements, {
-          forces: f, kRadial: this.metalK, kAngle: 20.0, ideal: true,
-        });
-        this.coordU += res.energy;
-      }
-    }
-    U += this.bondU + this.coordU;
-
-    // 2. Angles (AMBER14 per-angle k when opted in)
-    if (this.useAmber14 && this._angleK && this._angleK.length === this.angles.length / 4) {
-      this.angleU = angleFlatPerK(pos, f, this.angles, 4, this._angleK);
-    } else {
-      this.angleU = angleFlat(pos, f, this.angles, 4, this.kAngle);
-    }
-    U += this.angleU;
-
-    // 3. Fast Analytic Proper & Improper Dihedrals
-    this.improperU = dihedralForcesAnalytic(pos, f, this.impropers, 5, this.kImproper);
-    this.properU = dihedralForcesAnalytic(pos, f, this.propers, 5, this.kProper);
-    U += this.improperU + this.properU;
-
-    // 4. Fast Spatial-Grid Non-Bonded (LJ + Generalized Born + Screened Coulomb + H-bonds)
-    // gbModel "obc2" routes the GB reaction field through gb_obc2.js with
-    // OBC-II radii (LJ/Coulomb/H-bond stay on the grid kernel); default "hct"
-    // preserves the legacy GeneralizedBorn path so existing tests pass.
-    //
-    // The try/catch is a physics substitution, not an error swallow: OBC2 and
-    // HCT are DIFFERENT force fields, so falling back changes the answer. The
-    // snapshot makes the substitution self-consistent (the substitute sees the
-    // pre-OBC2 force state, so forces are pure HCT to match the pure-HCT
-    // energy) and _notePhysicsFallback makes it visible on the field.
-    let nb;
-    if (this.gbModel === "obc2") {
-      const snap = this._forceSnapshot();
-      try {
-        nb = this._nonBondedGridOBC2(pos, f);
-      } catch (e) {
-        this._forceRestore(snap);
-        this._notePhysicsFallback("OBC2 non-bonded", "HCT non-bonded", e);
-        nb = this._nonBondedGrid(pos, f);
-      }
-    } else {
-      nb = this._nonBondedGrid(pos, f);
-    }
-    this.elecU = nb.elec;
-    this.repU = nb.lj;
-    this.gbU = nb.gb;
-    this.hbondU = nb.hbond;
-    U += nb.lj + nb.elec + nb.gb + nb.hbond;
-
-    // 4b. Weak interactions (opt-in par.weak === "on", Loop-2 S3 / R3 §1a–c):
-    // π-stack ring-ring, cation-π cation-ring, halogen σ-hole X···acceptor.
-    // Runs nonbonded-adjacent (after the grid pass); pairs already excluded
-    // by _excluded (1-2/1-3/intra-ligand) or same-ring are skipped.
-    if (this.weakOn) {
-      const w = this._weakInteractions(pos, f);
-      this.weakU = w.pi + w.cpi + w.xb;
-      this.piU = w.pi; this.cpiU = w.cpi; this.xbU = w.xb;
-      U += this.weakU;
-    } else {
-      this.weakU = 0; this.piU = 0; this.cpiU = 0; this.xbU = 0;
-    }
-
-    // 5. Hydrophobic SASA burial ("lcpo" routes through lcpo_sasa.js)
-    if (this.sasaModel === "lcpo") {
-      const snap = this._forceSnapshot();
-      try {
-        const res = lcpoSasa(pos, this._lcpoElements, { gamma: this.sasa.gamma, excluded: this._excluded, forces: f });
-        this.sasaU = res.energy;
-        this.bindingU = nb.bindE;
-        if (this.trackTerms === true) this._bindSasaE = 0; // LCPO: bindE carries no SASA part
-        U += this.sasaU;
-      } catch (e) {
-        // Same defect class as the OBC2 catch above: lcpoSasa accumulates into
-        // `f` per pair, so a mid-pass throw would leave burial forces behind for
-        // the legacy SASA kernel to double up on. Roll back first, then
-        // substitute. (Unreachable today — lcpo_sasa.js has no throw statement —
-        // but the invariant is what makes that fact unimportant.)
-        this._forceRestore(snap);
-        this._notePhysicsFallback("LCPO SASA", "legacy SASA", e);
-        const sasaRes = this.sasa.compute(pos, f, this._elem, this.n, this.nProt, this.ligandStart);
-        this.sasaU = sasaRes.energy;
-        this.bindingU = nb.bindE + sasaRes.bindSasaE;
-        if (this.trackTerms === true) this._bindSasaE = sasaRes.bindSasaE;
-        U += this.sasaU;
-      }
-    } else {
-      const sasaRes = this.sasa.compute(pos, f, this._elem, this.n, this.nProt, this.ligandStart);
-      this.sasaU = sasaRes.energy;
-      this.bindingU = nb.bindE + sasaRes.bindSasaE;
-      if (this.trackTerms === true) this._bindSasaE = sasaRes.bindSasaE;
-      U += this.sasaU;
+    // Stages 1-7, in the order they contribute to U. Each descriptor performs
+    // the identical call sequence and returns the identical float64 the
+    // inlined `U += …` statement produced, at the identical position; a
+    // descriptor whose `enabled` predicate is false is skipped entirely, so U
+    // is not touched — which is what the original `if (…) U += …` guards did.
+    const plan = heavyPlan();
+    const nTerms = plan.length;
+    for (let t = 0; t < nTerms; t++) {
+      const d = plan[t];
+      const en = d.enabled;
+      if (en !== null && !en.call(this)) continue;
+      U += d.energy.call(this, pos, f);
     }
 
     // 5a. Loop-2 S4 per-term binding accumulators (R4 §5 item 1, R6 §5).
     // trackTerms === true splits bindingU into {lj, coul, hb, desolv} from
     // the per-pair trackers filled in _nonBondedGrid/_nonBondedGridNoGB
-    // (bindTerms) + the SASA cross-burial part captured above (bindSasaE);
-    // the S3 weak terms join via piU/cpiU/xbU (bindU vector). DEFAULT OFF —
-    // trk branches in the kernels are skipped, path bit-identical to pre-S4.
+    // (bindTerms) + the SASA cross-burial part captured by the sasa term
+    // (_bindSasaE); the S3 weak terms join via piU/cpiU/xbU (bindU vector).
+    // DEFAULT OFF — trk branches in the kernels are skipped, path bit-identical
+    // to pre-S4.
+    //
+    // NOT A TERM: it contributes no U and no force, only accounting, and it
+    // needs two stages' results at once. It runs AFTER the whole plan instead
+    // of between SASA and membrane; nothing the membrane / restraint / funnel
+    // stages touch is read here, so the move cannot change a number. See the
+    // third bullet in src/heavy/terms.js's header.
     if (this.trackTerms === true) {
-      const bt = nb.bindTerms || {};
+      const bt = bindingTrackers() || {};
       this.bindLJU = bt.lj || 0;
       this.bindCoulU = bt.coul || 0;
       this.bindHBU = bt.hb || 0;
@@ -264,40 +204,8 @@ export const energyMethods = {
     }
     this._bindSasaE = null;
 
-    // 5b. Implicit membrane slab (opt-in via par.membrane = {on:true,...})
-    if (this.membraneOpts?.on) {
-      const snap = this._forceSnapshot();
-      try {
-        const radii = new Float64Array(this.n);
-        for (let i = 0; i < this.n; i++) radii[i] = 2.0;
-        const mem = membraneEnergyForces(pos, this._charges, radii, this._lcpoElements, f, {
-          thickness: this.membraneOpts.thickness ?? 15,
-          width: this.membraneOpts.width ?? 2,
-          epsWater: this.membraneOpts.epsWater ?? this.gbEpsOut ?? 78.5,
-          epsMem: this.membraneOpts.epsMem ?? 2.0,
-          zCenter: this.membraneOpts.zCenter ?? 0,
-        });
-        this.membraneU = mem.energy;
-        U += mem.energy;
-      } catch (e) {
-        // "skipped" is only true if the slab's forces are removed too — a
-        // mid-loop throw in membraneEnergyForces leaves per-atom z-forces in `f`
-        // that no energy term accounts for. Roll back, then skip.
-        this._forceRestore(snap);
-        this._notePhysicsFallback("membrane slab", "no membrane term", e);
-        this.membraneU = 0;
-      }
-    } else {
-      this.membraneU = 0;
-    }
-
-    // 6. ML contact restraints (if active)
-    this.springU = this.springs.length ? springForces(this, pos, f) : 0;
-    U += this.springU;
-
-    // 7. Funnel bias (if active)
-    if (this.funnel && this.funnelOn) U += this.funnel.addForces(pos, f);
-
+    // NaN/∞ guard — not a term either. Sanitize the force buffer and leave
+    // ff.energy = NaN so the app can auto-pause on the next frame.
     if (!Number.isFinite(U)) {
       for (let i = 0; i < f.length; i++) if (!Number.isFinite(f[i])) f[i] = 0;
       this._nanStrikes++;

@@ -21,14 +21,36 @@
  * proof that this file still produces the same bits.
  *
  * The inlined holo-pinned compression floor is deliberately NOT delegated to
- * a kernel module. It is the only energy term that lives directly in the
- * assembly rather than in ff-harmonic.js, and it accumulates U between the
- * holo-spring call and the angle call — moving it would change the
- * summation order. It stays here, byte-identical.
+ * a kernel module and is deliberately NOT a registry term. It is the only
+ * energy term that lives directly in the assembly rather than in ff-harmonic.js,
+ * and it accumulates U pair-by-pair into the running total that already carries
+ * bonds + springs + holo springs + native contacts. A registry term returns ONE
+ * float64, so giving the floor its own accumulator would reassociate the sum
+ * and move the last bits. It stays here, byte-identical, and the plan walk in
+ * computeForces is SPLIT AROUND IT at HOLO_FLOOR_BARRIER_ORDER.
+ *
+ * THE TERM REGISTRY (2026-10)
+ * ----------------------------
+ * The nine remaining `U += …` statements are no longer written here. They are
+ * declarative descriptors in src/cg/terms.js, validated by
+ * src/physics/terms/registry.js, and this file walks the resulting plan:
+ *
+ *     const plan = cgPlan();                     // memoised, 1 int compare
+ *     for (let t = 0; t < plan.barrier; t++) { … }   // orders <  50
+ *     …inlined holo floor, byte-identical…
+ *     for (let t = plan.barrier; t < n; t++) { … }   // orders >= 50
+ *
+ * Each iteration is `U += d.energy.call(ff, pos, f)` — the identical call the
+ * inlined statement made, returning the identical scalar, at the identical
+ * position. A third-party term added to the registry lands in the same walk
+ * with no edit to this file; see docs/PHYSICS_TERMS.md. Dispatch costs one
+ * ~2 ns `.call` per term against a 0.167 ms compute (0.011 %), i.e. inside the
+ * benchmark's own spread.
  *
  * ZERO-ALLOC AUDIT — hot loop (called every integration step):
  *   Expected heap allocs per compute(): ~0 in steady state.
  *   - f.fill(0) reuses preallocated Float64Array(ff.forces) — no alloc.
+ *   - cgPlan() returns a memoised frozen object; the walk allocates nothing.
  *   - harmonicPairs / springForces / angleForces / ligandInternal: pure loops on flat
  *     Float64Array views; only scalar locals (no `new` inside loops).
  *   - _repulsion / _binding: uniform-grid cell list uses preallocated Maps
@@ -43,6 +65,7 @@
  */
 
 import { HOLO_FLOOR_RMIN, HOLO_FLOOR_K } from "../ff-params.js";
+import { cgPlan } from "./terms.js";
 
 /**
  * compute(pos) → fills ff.forces and returns total potential energy.
@@ -55,15 +78,31 @@ export function computeForces(ff, pos) {
   f.fill(0);
   let U = 0;
 
-  // --- 1/3. Harmonic two-body terms (bonds + ENM springs share the kernel)
-  U += ff._harmonicPairs(pos, f, ff.bonds, 3, ff.kBond);
-  U += ff._springForces(pos, f);
-  if (ff.holoSprings.length) U += ff._harmonicPairs(pos, f, ff.holoSprings, 3, ff.holoGamma);
-  if (ff.nativeContacts.length) U += ff._harmonicPairs(pos, f, ff.nativeContacts, 3, 1.0);
-  // One-sided compression floor on holo-pinned pairs — keeps the funnel or
-  // desolvation from ever squeezing the ligand through a pocket wall
+  // --- Registry plan, segment 1: terms with order < HOLO_FLOOR_BARRIER_ORDER.
+  // Bonds (cg.bonds, 10), ENM springs (cg.enm, 20), holo springs (cg.holoSprings,
+  // 30) and intra-ligand native contacts (cg.nativeContacts, 40) — descriptors
+  // in src/cg/terms.js. Each is `U += <the identical scalar>` at the identical
+  // position as the statement it replaced; a disabled term is SKIPPED, so U is
+  // not touched, which is what the `if (ff.holoSprings.length)` guard did.
+  const plan = cgPlan();
+  const terms = plan.terms;
+  const bar = plan.barrier;
+  const nTerms = terms.length;
+  for (let t = 0; t < bar; t++) {
+    const d = terms[t];
+    const en = d.enabled;
+    if (en !== null && !en.call(ff)) continue;
+    U += d.energy.call(ff, pos, f);
+  }
+
+  // --- 1/4. One-sided compression floor on holo-pinned pairs — keeps the
+  // funnel or desolvation from ever squeezing the ligand through a pocket wall
   // (holo pairs are excluded from both grid repulsion and the binding pass,
   // so without this term nothing resists r < r_min).
+  // NOT A REGISTRY TERM, and byte-identical to the pre-registry statement:
+  // it accumulates U PAIR BY PAIR into the running total, so it cannot return
+  // one float64 (see the header note and docs/PHYSICS_TERMS.md). This is why
+  // the plan walk above is cut in two here.
   if (ff.holoSprings.length) {
     // RMIN/KF now come from ff-params.js (HOLO_FLOOR_RMIN/HOLO_FLOOR_K) —
     // they were duplicated as literals here and in respa.js.
@@ -82,22 +121,18 @@ export function computeForces(ff, pos) {
     }
   }
 
-  // --- 2. Angle bending ---------------------------------------------------
-  U += ff._angleForces(pos, f);
-
-  // --- 3b. Ligand united-atom internal terms (no-op without ligands) ------
-  U += ff._ligandInternal(pos, f);
-
-  // --- 4. Excluded volume via grid ----------------------------------------
-  U += ff._repulsion(pos, f);
-
-  // --- 5. Protein–ligand binding (cross LJ, electrostatics, H-bonds) -------
-  // (physical documentation lives on the _binding wrapper in cg/forcefield.js;
-  //  the kernel itself is in ff-binding.js)
-  U += ff._binding(pos, f);
-
-  // --- 5c. Optional funnel + well-tempered metadynamics bias (off by default)
-  if (ff.funnel && ff.funnelOn) U += ff.funnel.addForces(pos, f);
+  // --- Registry plan, segment 2: orders >= HOLO_FLOOR_BARRIER_ORDER.
+  // Angle bending (60), ligand united-atom internal FF (70), grid excluded
+  // volume (80), protein–ligand binding incl. EEF1-lite desolvation (90) and
+  // the optional funnel bias (100). The physical documentation for the binding
+  // kernel lives on the _binding wrapper in cg/forcefield.js; the kernel itself
+  // is in ff-binding.js.
+  for (let t = bar; t < nTerms; t++) {
+    const d = terms[t];
+    const en = d.enabled;
+    if (en !== null && !en.call(ff)) continue;
+    U += d.energy.call(ff, pos, f);
+  }
 
   // --- 6. NaN/∞ guard ------------------------------------------------------
   // A non-finite coordinate or force kills every downstream pair test and

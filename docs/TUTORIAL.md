@@ -112,7 +112,7 @@ cannot capture.
 **Why it fails:** Force fields are protein Cα ENM (`src/forcefield.js:91`)
 or heavy LJ/GB/SASA (`src/heavy/forcefield.js:82`) — no lipid TIP3P, no
 CHARMM36 lipid dihedrals, no membrane insertion free energy
-(`docs/LIMITATIONS.md:39` **Out of scope: membranes, nucleic acids, QM**).
+(`docs/LIMITATIONS.md:44` **Out of scope: membranes, nucleic acids, QM**).
 
 ### How to diagnose a failed run
 

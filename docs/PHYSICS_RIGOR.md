@@ -15,3 +15,13 @@ All off by default; legacy paths unchanged unless flags set.
 
 Validation (1CRN, 10k steps): NVE drift 0.061% (gate 0.05%; 50-step gate passes), NVT RMSD 1.199 Å PASS, 25–33k steps/s.
 Finite-difference: GB-OBC2 1.5e-9, LCPO ≤7.5e-12. `test_all` 32/32 PASS.
+
+## Terms are pluggable
+
+Every term above (and every default one) is a declarative descriptor in
+`src/physics/terms/registry.js`, walked by `src/cg/compute.js` and
+`src/heavy/energy.js`. A new term is a data object, not an edit inside
+`compute()` — see [PHYSICS_TERMS.md](PHYSICS_TERMS.md) for the interface, a
+worked example, and what the registry does not support. `order` is the position
+in the running-U sum and is therefore physics: the bit-exact goldens
+(`tests/test_heavy_golden.js`, `tests/test_cg_ligand_golden.js`) pin it.

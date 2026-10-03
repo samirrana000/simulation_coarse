@@ -87,6 +87,14 @@
  *      asserts both q columns separately and pins each, so neither can drift
  *      into the other unnoticed.
  *
+ *  (d) METAL_ELEMENT (ions, now read by BOTH engines) is NOT merged into
+ *      ELEMENT_LJ, because an ion is not an organic element row: it carries a
+ *      FORMAL charge and a coordination geometry (coordR/coordN) that no
+ *      ELEMENT_LJ row has, and its σ lives on a different scale (ionic radius,
+ *      not van der Waals) — see the provenance block in §2. The two tables stay
+ *      separate and disjoint so the one-element-one-owner rule remains true and
+ *      the ion model stays reviewable as a unit.
+ *
  * Zero imports (like src/units.js) so it can sit anywhere in the graph.
  * Node-importable with no DOM globals.
  */
@@ -119,20 +127,24 @@ export const ELEMENT_LJ = {
  * also carry a private `HEAVY_ELEMENT_DEFAULT = { sigma: 3.4, eps: 0.12, q: 0.0 }`
  * in src/heavy.js, one edit away from disagreeing on the LJ well depth.
  *
- * PROVENANCE / OPEN PHYSICS QUESTION (not a refactor — reported, not changed):
- * this fallback is what the CG engine hands a METAL. ELEMENT_LJ has no metal
- * rows, so `resolveElementParams("ZN")` in CG mode returns these generic values
- * — σ 3.4 Å, ε 0.12 kcal/mol, q 0 — while the heavy engine hands the same atom
- * METAL_ELEMENT.ZN — σ 1.40 Å, ε 0.05 kcal/mol, q +2.0 e — plus coordination
- * springs. Measured gap: σ up to 2.62× too large (MG), ε uniformly 2.40× too
- * deep, and the ion's entire formal charge (Δq = −2.0 e for the divalents,
- * −1.0 e for Na⁺/K⁺) missing. It is REACHABLE: pdb.js parseLigands keeps any
- * HETATM group with ≥ 2 atoms, so a Zn coordinated inside a multi-atom
- * hetero group arrives in CG mode as a neutral, oversized, carbon-sized bead.
- * tests/test_element_params.js pins the current numbers so the gap cannot
- * silently widen, and prints the full table on every run. Closing it is a
- * physics decision (does the CG model want explicit ions? a metal-aware
- * desolvation term? coordination?), so M7 does not make it.
+ * PROVENANCE / STATUS (was an open physics question, closed 2026-10):
+ * this fallback used to be what the CG engine handed a METAL. ELEMENT_LJ has
+ * no metal rows, so `resolveElementParams("ZN")` in CG mode returned these
+ * generic values — σ 3.4 Å, ε 0.12 kcal/mol, q 0 — while the heavy engine
+ * handed the same atom METAL_ELEMENT.ZN — σ 1.40 Å, ε 0.05 kcal/mol,
+ * q +2.0 e — plus coordination springs. Measured gap: σ up to 2.62× too large
+ * (MG), ε uniformly 2.40× too deep, and the ion's entire formal charge
+ * (Δq = −2.0 e for the divalents, −1.0 e for Na⁺/K⁺) missing. It was
+ * REACHABLE: pdb.js parseLigands keeps any HETATM group with ≥ 2 atoms, so a
+ * Zn coordinated inside a multi-atom hetero group arrived in CG mode as a
+ * neutral, oversized, carbon-sized bead.
+ *
+ * THAT GAP IS CLOSED. `resolveElementParams` now consults METAL_ELEMENT
+ * between ELEMENT_LJ and this default, so the CG engine hands a metal the SAME
+ * σ/ε/q row the heavy engine does (see §2). This default is once again purely
+ * the "element nobody typed a row for" fallback (B, SE, SI, AL, H, XX …), and
+ * tests/test_element_params.js pins the metal columns as AGREEING rather than
+ * as a measured divergence.
  */
 export const ELEMENT_LJ_DEFAULT = { sigma: 3.4, eps: 0.12, q: 0.0, hb: false, dG: -0.30 };
 
@@ -140,64 +152,149 @@ export const ELEMENT_LJ_DEFAULT = { sigma: 3.4, eps: 0.12, q: 0.0, hb: false, dG
  * THE resolution rule, in one place, so the two engines cannot resolve an
  * element by two different code paths ever again.
  *
- * Both engines call this for the non-metal case (forcefield.js for ligand
- * atoms, heavy.js via resolveHeavyElementParams for everything that is not a
- * metal). It is a pure function of the element symbol: `ELEMENT_LJ[el] ??
- * ELEMENT_LJ_DEFAULT`, i.e. exactly the expression both modules used before.
+ * BOTH engines call this (forcefield.js via src/cg/params.js for ligand atoms,
+ * heavy.js via resolveHeavyElementParams for every atom it builds). It is a
+ * pure function of the element symbol with a THREE-step precedence:
+ *
+ *     ELEMENT_LJ[el]  →  METAL_ELEMENT[el]  →  ELEMENT_LJ_DEFAULT
+ *
+ * i.e. the per-element organic table first, then the ion table, then the
+ * generic fallback. The metal step was added when CG gained metal parameters
+ * (see ELEMENT_LJ_DEFAULT's note above): the two key sets are DISJOINT, so the
+ * order of the first two steps cannot change any value.
  *
  * @param {string} el uppercase element symbol
  * @returns {{sigma:number, eps:number, q:number, hb:boolean, dG:number}}
  *   the live table object (NOT a copy) — callers that mutate must copy first
  */
 export function resolveElementParams(el) {
-  return ELEMENT_LJ[el] ?? ELEMENT_LJ_DEFAULT;
+  return ELEMENT_LJ[el] ?? METAL_ELEMENT[el] ?? ELEMENT_LJ_DEFAULT;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 2. METAL IONS — a DIFFERENT model (explicit ions with coordination
-//    geometry), consumed ONLY by the heavy engine. Kept out of ELEMENT_LJ on
-//    purpose: see the note on ELEMENT_LJ_DEFAULT for the CG-side gap.
+// 2. METAL IONS — explicit ions with coordination geometry. Read by BOTH
+//    engines since 2026-10: heavy.js has always read it, and the CG engine
+//    reads it through resolveElementParams (§1). Kept out of ELEMENT_LJ on
+//    purpose — different physical object, disjoint key set, and the test
+//    asserts the disjointness so a future merge cannot happen by accident.
 // ═══════════════════════════════════════════════════════════════════════════
 /**
- * Metal-ion parameters for the all-atom heavy mode (heavy.js).
+ * Metal-ion parameters. NOW SHARED BY BOTH ENGINES — the CG engine resolves a
+ * metal here too (previously it fell through to ELEMENT_LJ_DEFAULT and got a
+ * neutral, carbon-sized bead with no formal charge; see the
+ * ELEMENT_LJ_DEFAULT note above for the measured gap this closed).
+ *
+ * This is defensible in CG precisely because CG ligand atoms are NOT beads:
+ * src/cg/system.js appends one explicit united-atom particle per ligand heavy
+ * atom (`buildLigandInternalFF`), and only the protein is coarsened to Cα. A
+ * metal arriving through pdb.js parseLigands is therefore an ATOM-resolution
+ * particle in CG mode, so its own ion parameters are the right lookup at that
+ * resolution — no coarse-graining assumption is being smuggled in.
+ *
+ * Fields:
  *   sigma/eps — LJ size & well (Å, kcal/mol) for non-bonded repulsion,
  *   q         — formal charge (e), used for screened electrostatics,
  *   coordR    — metal–donor coordination distance (Å) used to build the
  *               coordination springs (heavy.js detects donors within coordR of
- *               the ion), and
+ *               the ion; CG has no equivalent — see docs/LIMITATIONS.md),
  *   coordN    — target coordination number (how many donor springs to build;
- *               capped by however many donors are actually within coordR).
+ *               capped by however many donors are actually within coordR),
+ *   hb        — H-bond capability flag, read by the CG binding pass
+ *               (ff-binding.js `_ligHB`). False for every ion: a bare cation
+ *               is not a donor or acceptor, it COORDINATES.
+ *   dG        — EEF1-lite burial/desolvation term (kcal/mol), read by the CG
+ *               binding pass (`ff._ligdG`). See the HONEST LIMIT below — this
+ *               is the generic placeholder, deliberately, and it is NOT a
+ *               statement about Zn²⁺ hydration.
  * Metals are treated as explicit +2/+1 ions that coordinate N/O/S donors
  * (histidine N, carboxylate O, thiolate S, backbone carbonyl O) rather than
  * forming covalent bonds.
+ *
+ * PROVENANCE OF sigma/eps — READ THIS BEFORE TRUSTING THE NUMBERS
+ * -------------------------------------------------------------
+ * The heavy mode's ion rows predate the 2026 refactors and this module's own
+ * docstring never carried a source, so there is NO published ion-LJ set behind
+ * them. What CAN be said, and is measured on every run by
+ * tests/test_element_params.js §5, is that they form one self-consistent set:
+ *
+ *   • eps = 0.05 kcal/mol for ALL ten ions — one rounded value, not ten fitted
+ *     ones. That is the "ions are soft in the LJ well" convention, the same
+ *     shallow-well choice AMBER/CHARMM ion sets make, at a single round number.
+ *   • sigma tracks ≈ 2 × the Shannon (1976) EFFECTIVE IONIC RADIUS
+ *     (Acta Cryst. A32, 751, VI coordination): Zn 0.74→σ1.40, Fe 0.78→1.50,
+ *     Mg 0.72→1.30, Cu 0.73→1.40, Ni 0.69→1.40, Co 0.745→1.40, Mn 0.83→1.45,
+ *     Ca 1.00→1.70, Na 1.02→1.70, K 1.38→2.00. Pearson r = 0.978, mean
+ *     deviation −0.20 Å (σ systematically a little smaller), largest deviation
+ *     −0.76 Å (K). That is a MEASURED relationship, recomputed and pinned on
+ *     every run by tests/test_element_params.js §5, not a claimed derivation:
+ *     σ is on an ionic-ROD scale, not a van-der-Waals or AMBER 12-6 set scale.
+ *   • Consequence to be aware of: these σ are 0.9–1.2 Å SMALLER than AMBER's
+ *     parm99/parm10 ion σ (Zn 2.27, Mg 2.49, Na 2.44, K 3.04 Å; Li/Miyamoto/
+ *     MacDonald TIP3P, J. Phys. Chem. B 2005, 109, 13673). An ion in this model
+ *     is smaller and softer than in AMBER. It is the heavy path's pre-existing
+ *     choice and this change does not touch it; it is documented so nobody
+ *     reads the CG/heavy agreement as "these are AMBER ion parameters".
+ *   • coordR/coordN: detection radius and target CN. coordR sits 0.2–0.4 Å
+ *     above the CSD ideal M–donor distances already tabulated in
+ *     src/chem/metals.js (Harding 1999/2004; Barber & Clark, rounded:
+ *     Zn–N/O 2.00, Fe–N/O 2.05, Mg–O 2.10, Mn–N/O 2.15, Ca–O 2.40 Å), which
+ *     is the right offset for a DETECTION shell rather than a bond length.
+ *     coordN are the textbook coordination numbers for those geometries
+ *     (Zn/Cu 4 tetrahedral, Mg/Ca/Mn/Ni/Co 6 octahedral, Na/K 6).
+ *
+ * HONEST LIMIT — dG, and why no metal-specific desolvation number was added
+ * -----------------------------------------------------------------------
+ * The CG "desolvation" pass (ff-binding.js pass 2) is EEF1-lite:
+ * `U = Σ_a ΔG_a·B_a` with `B_a = 1 − exp(−n_a/3)` and `n_a` counting PROTEIN Cα
+ * BEADS only — the ligand's own donor atoms never enter it. It also has the
+ * opposite sign convention to a real desolvation penalty: every ΔG in
+ * ELEMENT_LJ is NEGATIVE, so burying a ligand atom LOWERS the energy, i.e. the
+ * term rewards burial rather than charging for it.
+ *
+ * Both facts make a physically-motivated ion ΔG unrepresentable here, and the
+ * alternative was measured rather than argued about
+ * (tools/exp_cg_metal_stability.mjs, 4 000 steps, 4W52 + a Zn site):
+ * the Born/Marcus low-dielectric cavity penalty
+ * `ΔG = (q²/2)(1/ε_low − 1/ε_high)·332.06371` with ε_high = 78.5 (water) and
+ * ε_low = 4 (protein interior) is −39.4 kcal/mol for Na⁺ and −157.6 kcal/mol
+ * for Zn²⁺. Entering THIS term with its negative sign it is a 39–158 kcal/mol
+ * attraction per BURIED ion, and the measurement says what that does: the Zn's
+ * mean distance to the nearest Cα drops from 6.14 Å to 2.46 Å and it spends
+ * 73.7 % of the run INSIDE a Cα bead. It does not go to its coordination site;
+ * it is dragged into the protein core and jammed there. Restoring the correct
+ * (positive-penalty) sign convention would mean flipping the sign of all nine
+ * organic ΔG rows, which moves tests/golden/4w52_benzene_ligand.json — a
+ * different change, for a different reason, and not one this fix smuggles in.
+ *
+ * So the metal dG is the model's declared neutral placeholder, the same −0.30
+ * every unparameterised atom gets. docs/LIMITATIONS.md records this as absent,
+ * not pending: CG mode has no ion hydration/desolvation term, and no amount of
+ * tuning this one number would produce one.
  */
 export const METAL_ELEMENT = {
-  ZN: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.30, coordN: 4 },
-  FE: { sigma: 1.50, eps: 0.05, q: 2.0, coordR: 2.20, coordN: 6 },
-  MG: { sigma: 1.30, eps: 0.05, q: 2.0, coordR: 2.15, coordN: 6 },
-  CA: { sigma: 1.70, eps: 0.05, q: 2.0, coordR: 2.45, coordN: 6 },
-  CU: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.20, coordN: 4 },
-  MN: { sigma: 1.45, eps: 0.05, q: 2.0, coordR: 2.25, coordN: 6 },
-  NI: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.15, coordN: 6 },
-  CO: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.15, coordN: 6 },
-  NA: { sigma: 1.70, eps: 0.05, q: 1.0, coordR: 2.50, coordN: 6 },
-  K:  { sigma: 2.00, eps: 0.05, q: 1.0, coordR: 2.80, coordN: 6 },
+  ZN: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.30, coordN: 4, hb: false, dG: -0.30 },
+  FE: { sigma: 1.50, eps: 0.05, q: 2.0, coordR: 2.20, coordN: 6, hb: false, dG: -0.30 },
+  MG: { sigma: 1.30, eps: 0.05, q: 2.0, coordR: 2.15, coordN: 6, hb: false, dG: -0.30 },
+  CA: { sigma: 1.70, eps: 0.05, q: 2.0, coordR: 2.45, coordN: 6, hb: false, dG: -0.30 },
+  CU: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.20, coordN: 4, hb: false, dG: -0.30 },
+  MN: { sigma: 1.45, eps: 0.05, q: 2.0, coordR: 2.25, coordN: 6, hb: false, dG: -0.30 },
+  NI: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.15, coordN: 6, hb: false, dG: -0.30 },
+  CO: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.15, coordN: 6, hb: false, dG: -0.30 },
+  NA: { sigma: 1.70, eps: 0.05, q: 1.0, coordR: 2.50, coordN: 6, hb: false, dG: -0.30 },
+  K:  { sigma: 2.00, eps: 0.05, q: 1.0, coordR: 2.80, coordN: 6, hb: false, dG: -0.30 },
 };
-export const METAL_ELEMENT_DEFAULT = { sigma: 1.50, eps: 0.05, q: 2.0, coordR: 2.30, coordN: 6 };
+export const METAL_ELEMENT_DEFAULT = {
+  sigma: 1.50, eps: 0.05, q: 2.0, coordR: 2.30, coordN: 6, hb: false, dG: -0.30,
+};
 
 /**
- * THE heavy-engine element rule: metals first, then the shared coarse table.
- *
- * This is the ONE asymmetry between the engines, and it is now a named function
- * in the parameter contract instead of a bare ternary that lived 640 lines away
- * from the table it consults. It is exactly the expression heavy.js used before
- * (METAL_ELEMENT wins, otherwise resolveElementParams), so every number is
- * unchanged; what changed is that the rule is now visible, reviewable and
- * asserted in one place.
- *
- * The asymmetry itself is NOT removed here. Making CG metals match heavy metals
- * is a physics change (see the ELEMENT_LJ_DEFAULT note above): it needs a
- * decision about the CG model's ion model first.
+ * THE heavy-engine element rule. It used to be the ONE asymmetry between the
+ * engines (`METAL_ELEMENT[el] ?? resolveElementParams(el)`, which existed only
+ * because CG had no metal rows). CG now reads METAL_ELEMENT too, so the two
+ * resolvers agree on EVERY element by construction and this function is the
+ * heavy engine's named entry point to that one rule — kept, with its import
+ * sites untouched, so no call site moves and the rule stays visible where the
+ * heavy engine's own docstring points at it.
  *
  * @param {string} el uppercase element symbol
  * @returns {object} metal row (with coordR/coordN) or the ELEMENT_LJ row

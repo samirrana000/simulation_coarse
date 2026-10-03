@@ -50,6 +50,46 @@ sigma/eps/q; ligand elements `ELEMENT_LJ` (C,N,O,S,F,CL,BR,I,P) with ΔG burial.
 Both tables are re-exported from `src/ff-params.js` for backward compatibility;
 `src/physics/params.js` is the single home (goal M7, `tests/test_element_params.js`).
 
+**Metals in CG:** a metal that reaches CG (via `parseLigands`, which keeps any
+HETATM group with ≥ 2 heavy atoms, so a Zn coordinated inside a multi-atom
+hetero group arrives) resolves through `resolveElementParams` to `METAL_ELEMENT`
+— σ 1.30–2.00 Å, ε 0.05 kcal/mol, formal charge +1/+2 — the **same row heavy mode
+uses**. That is a sound lookup at this resolution, not a coarse-grained
+approximation of one: CG ligand atoms are explicit united-atom particles
+(`src/cg/system.js:57` appends one particle per ligand heavy atom); only the
+protein is coarsened to Cα. `hb = false` (an ion coordinates, it is not a
+donor/acceptor) and `ΔG = −0.30` (the EEF1-lite placeholder, pinned as such by
+`tests/test_element_params.js` §5).
+
+What CG does **not** do with a metal — stated here because the CG/heavy ion rows
+agreeing can read as "CG handles metals":
+
+- **No coordination restraint, and that is not representable at Cα resolution.**
+  Heavy mode builds metal–donor springs (`src/heavy/topology.js:213`
+  `buildMetalCoordination`, `METAL_K = 40` kcal/mol/Å², `METAL_ELEMENT`
+  coordR/coordN) plus a CN→polyhedron cross-angle enforcer
+  (`src/chem/metals.js`). A Cα bead is 3.8 Å wide with no lone pair, so a
+  metal–bead "coordination spring" at 2.3 Å would restrain the ion to a
+  fictitious partner. CG mode therefore builds **no** metal coordination term —
+  absent, not pending — and a `ForceField` containing a metal warns once
+  (`src/cg/params.js`, `[cg] metal ion(s) …`). Measured, 4 000 steps on 4W52
+  with a Zn site (`tools/exp_cg_metal_stability.mjs`, reproducible):
+  the ion is **not** ejected and does **not** blow up — a free ion placed 30 Å
+  out in solvent stays at 23.3 ± 8.4 Å from the protein (the CG Coulomb term is
+  screened by ε(r) = 4 + 76·tanh(r/8), so a +2 charge has no divergent monopole
+  here) — but a Zn spends 5.8 % of the run (no pose pins) / 13.2 % (with pose
+  pins) outside the physical 1.5–3.5 Å Zn–O band, versus 12.7 % / 22.1 % with
+  the pre-fix neutral generic row. **Use heavy mode for metal sites.**
+- **The ion's charge sees a whole-residue bead, not a donor atom.** A Zn²⁺ is
+  correctly attracted to the Cα bead of ASP/GLU, but can then sit ~2 Å from
+  that bead (measured: 41.8 % of the run within 2.5 Å with pose pins) instead
+  of 2 Å from the carboxylate oxygen.
+- **No ion hydration/desolvation term.** The CG EEF1-lite pass counts protein Cα
+  beads only and its ΔG sign convention rewards burial rather than charging for
+  it, so a Born cavity penalty for the ion cannot be expressed: measured, it
+  drags the Zn from 6.14 Å to 2.46 Å mean distance from the nearest Cα and
+  spends 73.7 % of the run inside a bead. See `docs/LIMITATIONS.md`.
+
 ---
 
 ## 2. Heavy (All-Atom) — `src/heavy.js`
@@ -83,6 +123,8 @@ SEP phosphoserine). CG mode intentionally coalesces them to Cα; see
 | Mass | 110 Da/Cα, ligand united-atom (12–127 Da) | `heavyMass` IUPAC/AMBER per element |
 | Reference | `ff.ref` Float64Array(3n) native Cα | `ff.ref` Float64Array(3n) heavy coords |
 | Units | `src/units.js:22` KCONV=418.4, KB_KCAL=0.001987 | identical (shared leaf) |
+| Ion σ/ε/charge | `METAL_ELEMENT` row, identical to heavy | `METAL_ELEMENT` row (same object) |
+| Metal coordination | **none** — absent at Cα resolution (warns once per FF) | `buildMetalCoordination` + `chem/metals.js` polyhedron |
 | Viewer | `viewer.setSystem(sel, ff)` → `viewer.center` protein-only | same API, same protein-only center |
 
 Conversion is *one-shot* at `main.js:Build System` — no live inter-conversion.
@@ -118,8 +160,11 @@ native r0 ──► [already in _excluded? (bonds/angles/springs)] ──► kee
 uses the grid + springs without re-scanning. Forces are still `O(N)` average
 (cell lists). Diagram is also inline at `src/cg/topology.js:233`.
 
-*Verification:* `grep -n "nativeContacts" src/forcefield.js` shows construction
-and energy application (`src/cg/compute.js:62` `_harmonicPairs` with k=1.0).
+*Verification:* `grep -rn "nativeContacts" src/cg/` shows construction
+(`src/cg/topology.js`) and energy application (the `cg.nativeContacts`
+descriptor, `_harmonicPairs` with k=1.0, in `src/cg/terms.js`; see
+[PHYSICS_TERMS.md](PHYSICS_TERMS.md) for the term registry and why the
+summation order there is a physics contract).
 
 ---
 

@@ -227,10 +227,19 @@ function main() {
   // [4] structural pin: every substitutable catch in src/heavy/ is guarded
   // -----------------------------------------------------------------
   console.log("\n[4] structural pin over src/heavy/ catch blocks...");
-  const energySrc = fs.readFileSync(path.resolve(ROOT, "src", "heavy", "energy.js"), "utf-8");
+  // 2026-10 term registry: the three substitutable stages moved from
+  // src/heavy/energy.js into the descriptors in src/heavy/terms.js, so the pin
+  // reads BOTH files. The assertion is unchanged — still exactly 3 catches, each
+  // preceded by _forceSnapshot() and each restoring forces + announcing the
+  // substitution — it is only repointed at the module that now owns them, the
+  // same thing the heavy.js -> src/heavy/ split did to this pin.
+  const energySrc = [
+    fs.readFileSync(path.resolve(ROOT, "src", "heavy", "energy.js"), "utf-8"),
+    fs.readFileSync(path.resolve(ROOT, "src", "heavy", "terms.js"), "utf-8"),
+  ].join("\n");
   const catchIdx = [];
   for (let i = 0; i < energySrc.length; i++) if (energySrc.startsWith("catch (", i)) catchIdx.push(i);
-  assert(catchIdx.length === 3, `src/heavy/energy.js has 3 substitutable catches (found ${catchIdx.length})`);
+  assert(catchIdx.length === 3, `src/heavy/{energy,terms}.js have 3 substitutable catches (found ${catchIdx.length})`);
   const nonBondedSrc = energySrc;
   const STAGE_MARKERS = [/this\.gbModel === "obc2"/, /this\.sasaModel === "lcpo"/, /this\.membraneOpts\?\.on/];
   for (const i of catchIdx) {

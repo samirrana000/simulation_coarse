@@ -43,7 +43,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 # Directories to scan. Must all exist (checked below).
-ROOTS=(src scripts tests bench evolve)
+ROOTS=(src scripts tests bench evolve tools)
 # File extensions to syntax-check. The vacuity guard is per entry.
 EXTS=(.js .mjs)
 # The repo root itself, non-recursively, for root-level entry points.

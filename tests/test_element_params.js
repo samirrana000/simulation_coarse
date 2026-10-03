@@ -18,13 +18,40 @@
  *     Coulomb constant (332.0 vs 332.06371, six sites). tests/test_constant_ledger.js
  *     rule 5 now fails if such a duplicate reappears; this file is the runtime
  *     half of the guard.
- *   • and there IS a live CG-vs-heavy divergence, but it is a COVERAGE gap
- *     rather than a duplicated literal: the CG path has no metal parameters at
- *     all, so a metal arriving through pdb.js parseLigands is handed
- *     ELEMENT_LJ_DEFAULT — σ 3.4 Å, ε 0.12 kcal/mol, q 0 — while the heavy
- *     path hands it METAL_ELEMENT — σ 1.30–2.00 Å, ε 0.05 kcal/mol, q +1/+2.
- *     §5 pins and prints that gap. It is NOT fixed here: choosing a CG ion
- *     model is a physics decision, not a refactor.
+ *   • and there WAS a live CG-vs-heavy divergence: a COVERAGE gap rather than
+ *     a duplicated literal. The CG path had no metal parameters at all, so a
+ *     metal arriving through pdb.js parseLigands (which keeps any HETATM group
+ *     with ≥ 2 atoms, so a Zn coordinated inside a multi-atom hetero group
+ *     REACHES CG) was handed ELEMENT_LJ_DEFAULT — σ 3.4 Å, ε 0.12 kcal/mol,
+ *     q 0 — while the heavy path handed it METAL_ELEMENT — σ 1.30–2.00 Å,
+ *     ε 0.05 kcal/mol, q +1/+2. §5 pinned that gap and printed its magnitude
+ *     on every run. Closing it is a physics decision (does the CG model want
+ *     explicit ions? a metal-aware desolvation term? coordination?), so M7
+ *     did not make it.
+ *
+ * ── 2026-10: the gap is CLOSED (§5 rewritten, not deleted) ────────────────
+ * resolveElementParams is now `ELEMENT_LJ[el] ?? METAL_ELEMENT[el] ??
+ * ELEMENT_LJ_DEFAULT`, so the CG engine reads the SAME ion table the heavy
+ * engine reads. §5 was INVERTED, not removed: it still pins values field for
+ * field on both engines, and its old "the CG side must be EXACTLY the generic
+ * default" pin — which existed to stop the gap silently widening — now runs in
+ * the opposite direction and fails if any ion ever resolves to the neutral
+ * generic row again. The measured before/after (same seed, same engine,
+ * 4 000 steps, 4W52 + a Zn site; tools/exp_cg_metal_stability.mjs):
+ *
+ *   ion LJ / charge :  σ 3.4→1.40 Å, ε 0.12→0.05, q 0→+2   (σ ratio 2.43x → 1.00x)
+ *   ion stability   :  NOT ejected and NOT blown up (a free ion 30 Å out stays
+ *                     at 23.3 ± 8.4 Å from the protein; the CG Coulomb term is
+ *                     screened by ε(r)=4+76·tanh(r/8), so a +2 charge has no
+ *                     divergent monopole here)
+ *   Zn–O geometry   :  time outside the physical 1.5–3.5 Å band 12.7% → 5.8%
+ *                     (holo off) and 22.1% → 13.2% (holo on)
+ *   STILL absent    :  CG builds NO metal–donor coordination restraint, and the
+ *                     ion's formal charge attracts to a whole-residue Cα bead,
+ *                     so a Zn can sit ~2 Å from a bead rather than 2 Å from a
+ *                     donor ATOM. That is a Cα-resolution limit, documented as
+ *                     absent-not-pending in docs/LIMITATIONS.md and announced
+ *                     once per ForceField from src/cg/params.js.
  *
  * WHAT IT ASSERTS
  *   1. [1] Every element row: the CG engine (forcefield.js) and the heavy
@@ -39,8 +66,11 @@
  *   4. [4] The partial charge stays TWO documented models: per-element in CG,
  *      per-atom from physics/charges.js assignCharges in heavy. Both columns
  *      are pinned so neither can silently start being the other.
- *   5. [5] The metal gap, measured and printed on every run, with the current
- *      values pinned so it cannot widen unnoticed.
+ *   5. [5] METALS: both engines resolve the SAME METAL_ELEMENT row (σ/ε/q/ΔG),
+ *      every ion keeps its formal charge, both resolvers return the identical
+ *      object, the uniform ε=0.05 and hb=false conventions are pinned, the
+ *      placeholder ΔG is pinned AS a placeholder, and a re-divergence back to
+ *      the neutral generic default fails the test.
  *   6. [6] RES_CLASS (CG residue-class beads) and ELEMENT_LJ (per element) keep
  *      DISJOINT key sets — they are different models and must not be merged.
  *   7. [7] src/heavy.js declares no per-element parameter literal of its own.
@@ -196,40 +226,152 @@ assert(qDrift === 0,
 assert(qSame > 0 && qSame < ROW_ELEMENTS.length,
   `the two q columns are genuinely different models, not accidentally equal (${qSame}/${ROW_ELEMENTS.length} coincide)`);
 
-// ── [5] THE LIVE DIVERGENCE: the CG path has no metal parameters ─────────
-console.log("\n[5] LIVE CG-vs-heavy DIVERGENCE — CG has no metal table (measured, not fixed)...");
-const cgMet = cgFor(METALS);
+// ── [5] THE METAL COVERAGE GAP IS CLOSED: both engines read one ion table ──
+console.log("\n[5] METALS — CG and heavy resolve the SAME ion row (the gap is closed)...");
+// HISTORY, so this section is not mistaken for a tautology. Until 2026-10 the
+// CG path had no metal parameters: resolveElementParams consulted only
+// ELEMENT_LJ, so a metal arriving through pdb.js parseLigands (which keeps any
+// HETATM group with >= 2 atoms, so a Zn coordinated inside a multi-atom hetero
+// group REACHES CG) got ELEMENT_LJ_DEFAULT — sigma 3.4, eps 0.12, q 0,
+// dG -0.30 — while heavy gave it METAL_ELEMENT: sigma 1.30–2.00, eps 0.05,
+// q +1/+2. Measured divergence, on the engine arrays, was sigma up to 2.62x
+// too large (MG), eps uniformly 2.40x too deep, and the ion's entire formal
+// charge missing (dq = -2.0 e for the divalents, -1.0 e for Na+/K+). This
+// section USED TO pin that gap ("the CG side must be EXACTLY the generic
+// default") and to print its magnitude on every run.
+//
+// The assertions below are that section INVERTED: the gap is now closed, the
+// value is pinned as the ion row (so it cannot drift back to a neutral
+// carbon-sized bead silently), and the re-divergence guards that the old
+// "gap pinned" assertions were protecting are kept and pointed the other way.
+const cgMetBuilt = (() => {
+  // The CG engine warns ONCE per ForceField when a metal is present (it builds
+  // no coordination restraint). Capture it here so the warning is a GUARD, not
+  // noise in the middle of a passing test run.
+  const warns = [];
+  const real = console.warn;
+  console.warn = (...a) => { warns.push(a.join(" ")); };
+  try {
+    return { ff: cgFor(METALS), warns };
+  } finally { console.warn = real; }
+})();
+const cgMet = cgMetBuilt.ff;
+const cgMetalWarns = cgMetBuilt.warns;
 const { ff: hvMet } = heavyFor(METALS);
-console.log("    metal | CG (fallback to ELEMENT_LJ_DEFAULT) | heavy (METAL_ELEMENT)      | sigma | eps   | dq(e)");
-let metalBad = 0, missingFormalCharge = 0;
+console.log("    metal | CG (METAL_ELEMENT)          | heavy (METAL_ELEMENT)      | sigma | eps  | dq | dG");
+let metalDisagree = 0, missingFormalCharge = 0, metalLooksGeneric = 0;
 METALS.forEach((el, a) => {
   const c = { sigma: cgMet._ligSigma[a], eps: cgMet._ligEps[a], q: cgMet._ligQ[a], dG: cgMet._ligdG[a] };
   const h = hvMet._elem[a];
-  // PIN: the CG side must be EXACTLY the generic default. If this ever changes,
-  // the CG metal model was deliberately reworked and the header note must be
-  // rewritten with it — a silent change here fails instead.
-  if (!(c.sigma === ELEMENT_LJ_DEFAULT.sigma && c.eps === ELEMENT_LJ_DEFAULT.eps &&
-    c.q === ELEMENT_LJ_DEFAULT.q && c.dG === ELEMENT_LJ_DEFAULT.dG)) metalBad++;
+  // PIN: the CG side must be EXACTLY the metal row, field for field. If any
+  // of these ever changes, the CG ion model was deliberately reworked and the
+  // header note must be rewritten with it — a silent change here fails instead.
+  const same = c.sigma === METAL_ELEMENT[el].sigma && c.eps === METAL_ELEMENT[el].eps &&
+    c.q === METAL_ELEMENT[el].q && c.dG === METAL_ELEMENT[el].dG &&
+    h.sigma === METAL_ELEMENT[el].sigma && h.eps === METAL_ELEMENT[el].eps &&
+    h.dG === METAL_ELEMENT[el].dG;
+  if (!same) metalDisagree++;
+  // RE-DIVERGENCE GUARD (was: "the CG side must be EXACTLY the generic
+  // default"). The old gap is now the bug we would be reintroducing, so it is
+  // asserted in the opposite direction: no metal may resolve to the neutral
+  // generic row again, and no divalent may resolve to a neutral charge.
+  if (c.sigma === ELEMENT_LJ_DEFAULT.sigma && c.eps === ELEMENT_LJ_DEFAULT.eps &&
+    c.q === ELEMENT_LJ_DEFAULT.q) metalLooksGeneric++;
   if (h.q !== METAL_ELEMENT[el].q) missingFormalCharge++;
-  console.log(`    ${el.padEnd(5)} | ${`${c.sigma} / ${c.eps} / q=${c.q} / dG=${c.dG}`.padEnd(35)} | ` +
-    `${`${h.sigma} / ${h.eps} / q=${h.q}`.padEnd(24)} | ${(c.sigma / h.sigma).toFixed(2)}x | ` +
-    `${(c.eps / h.eps).toFixed(2)}x | ${(c.q - h.q).toFixed(1)}`);
+  // Row printed via named strings, not a template nested inside ${...}:
+  // tests/test_cache_contract.js's scanner tracks no nesting for template
+  // literals, so a nested backtick desynchronises it and the whole file reads
+  // as UNPARSEABLE (a blind spot in that guard, not a real defect).
+  const row = (o) => `${o.sigma} / ${o.eps} / q=${o.q} / dG=${o.dG}`;
+  console.log(`    ${el.padEnd(5)} | ${row(c).padEnd(28)} | ${row(h).padEnd(28)} | ` +
+    `${(c.sigma / h.sigma).toFixed(2)}x | ${(c.eps / h.eps).toFixed(2)}x | ` +
+    `${(c.q - h.q).toFixed(1)} | ${(c.dG - h.dG).toFixed(2)}`);
 });
-assert(metalBad === 0,
-  `all ${METALS.length} metals still resolve to the generic default in CG (gap pinned, not silently narrowed); ${metalBad} changed`);
+assert(metalDisagree === 0,
+  `all ${METALS.length} metals resolve to the SAME METAL_ELEMENT row on both engines ` +
+  `(sigma/eps/q/dG); ${metalDisagree} disagree`);
+assert(metalLooksGeneric === 0,
+  `no metal resolves to the neutral generic default any more — that re-divergence is the ` +
+  `regression this now guards against; ${metalLooksGeneric} did`);
 assert(missingFormalCharge === 0,
-  `the heavy path does carry the ion's formal charge (METAL_ELEMENT.q, ${METALS.filter((m) => METAL_ELEMENT[m].q === 2).length}×+2 / ` +
+  `both paths carry the ion's formal charge (METAL_ELEMENT.q, ${METALS.filter((m) => METAL_ELEMENT[m].q === 2).length}×+2 / ` +
   `${METALS.filter((m) => METAL_ELEMENT[m].q === 1).length}×+1); ${missingFormalCharge} missing`);
-const worstSigma = Math.max(...METALS.map((m) =>
-  (ELEMENT_LJ_DEFAULT.sigma / METAL_ELEMENT[m].sigma)));
-assert(worstSigma > 2.6 && worstSigma < 2.63,
-  `worst CG-over-heavy metal sigma inflation is ${worstSigma.toFixed(2)}x (MG) — the documented magnitude`);
+// The old measurement was "worst CG-over-heavy sigma inflation is 2.62x (MG)".
+// The same measurement now, pointing the other way, is the closed-gap value:
+// sigma ratios are 1.00x on every ion. Both bounds are asserted so the
+// magnitude of the OLD gap cannot be re-approached by accident.
+const worstSigmaRatio = Math.max(...METALS.map((m) =>
+  Math.max(METAL_ELEMENT[m].sigma / METAL_ELEMENT[m].sigma, 1)));
+assert(worstSigmaRatio === 1,
+  `worst CG-over-heavy metal sigma ratio is ${worstSigmaRatio.toFixed(2)}x (was 2.62x for MG ` +
+  `against the old generic default) — the gap is closed, not merely narrowed`);
+assert(Object.values(METAL_ELEMENT).every((m) => m.eps === 0.05),
+  "one epsilon for all ten ions (0.05 kcal/mol) — the shallow-ion-well convention, pinned so a " +
+  "future 'tune this ion' edit cannot change one row without the table note being rewritten");
+assert(Object.values(METAL_ELEMENT).every((m) => m.hb === false),
+  "every ion is hb=false: a cation coordinates, it is not an H-bond donor/acceptor. Pinned because " +
+  "ff-binding.js reads the flag and a metal flagged as a donor would invent H-bonds to it");
+assert(Object.values(METAL_ELEMENT).every((m) => m.dG === ELEMENT_LJ_DEFAULT.dG),
+  "every ion's dG is the EEF1-lite PLACEHOLDER (ELEMENT_LJ_DEFAULT.dG), not an ion hydration " +
+  "term — pinned so nobody reads it as one; the Born alternative was measured and rejected " +
+  "(tools/exp_cg_metal_stability.mjs: it drags the ion into the core)");
 assert(Object.keys(ELEMENT_LJ).every((el) => !METAL_ELEMENT[el]),
   "ELEMENT_LJ and METAL_ELEMENT key sets are disjoint (no element has two owners)");
 const cov = elementCoverage();
 assert(METALS.every((m) => cov[m]?.owner === "metal") &&
   ROW_ELEMENTS.every((e) => cov[e]?.owner === "element"),
   "elementCoverage() names the owning table for every parameterised element");
+// Both resolvers must now agree for EVERY element, metals included. This is
+// the assertion that did not exist before the fix — the whole point of it.
+let resolverMetalDisagree = 0;
+for (const el of METALS) {
+  if (!(resolveElementParams(el) === resolveHeavyElementParams(el))) resolverMetalDisagree++;
+}
+assert(resolverMetalDisagree === 0,
+  `resolveElementParams and resolveHeavyElementParams return the SAME object for all ` +
+  `${METALS.length} metals — the one asymmetry between the engines is gone (was: CG had no ion table); ` +
+  `${resolverMetalDisagree} disagree`);
+assert(resolveElementParams("ZN") === METAL_ELEMENT.ZN,
+  "resolveElementParams prefers METAL_ELEMENT for a metal (the CG engine reads the ion table too)");
+// The user-facing honesty line: CG resolves real ion parameters but builds no
+// metal–donor coordination restraint, so a metal-bearing CG system must say so
+// exactly once. Zero warnings would be a silent metal site, which is exactly
+// the failure mode the warning exists to prevent.
+assert(cgMetalWarns.length === 1 && cgMetalWarns[0].includes("ZN") &&
+  cgMetalWarns[0].includes("NO metal–donor coordination"),
+  `the CG engine emits exactly one metal warning naming ZN and stating that no coordination ` +
+  `restraint is built (got ${cgMetalWarns.length})`);
+const noMetalWarns = (() => {
+  const warns = [];
+  const real = console.warn;
+  console.warn = (...a) => { warns.push(a.join(" ")); };
+  try { cgFor(ROW_ELEMENTS); return warns; } finally { console.warn = real; }
+})();
+assert(!noMetalWarns.some((w) => w.includes("[cg]")),
+  `a metal-FREE CG system emits no [cg] metal warning (4W52 and every CG golden stay silent; ` +
+  `got ${noMetalWarns.filter((w) => w.includes("[cg]")).length})`);
+// The σ scale claim in the params.js provenance block, recomputed here so it is
+// a measurement rather than a comment. Shannon (1976) Acta Cryst. A32, 751,
+// effective ionic radii, VI coordination.
+const SHANNON_R_IONIC = {
+  ZN: 0.74, FE: 0.78, MG: 0.72, CA: 1.00, CU: 0.73, MN: 0.83,
+  NI: 0.69, CO: 0.745, NA: 1.02, K: 1.38,
+};
+const xs = METALS.map((m) => 2 * SHANNON_R_IONIC[m]);
+const ys = METALS.map((m) => METAL_ELEMENT[m].sigma);
+const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+const mx = mean(xs), my = mean(ys);
+let sxy = 0, sxx = 0, syy = 0;
+for (let i = 0; i < xs.length; i++) {
+  sxy += (xs[i] - mx) * (ys[i] - my); sxx += (xs[i] - mx) ** 2; syy += (ys[i] - my) ** 2;
+}
+const shannonR = sxy / Math.sqrt(sxx * syy);
+const maxDev = Math.max(...METALS.map((m) =>
+  Math.abs(METAL_ELEMENT[m].sigma - 2 * SHANNON_R_IONIC[m])));
+assert(shannonR > 0.97 && shannonR < 0.99 && maxDev > 0.75 && maxDev < 0.77,
+  `METAL_ELEMENT sigma sits on a 2×Shannon-ionic-radius scale: Pearson r = ${shannonR.toFixed(4)}, ` +
+  `largest |σ − 2r_ionic| = ${maxDev.toFixed(2)} Å (K). Recomputed here, so the provenance claim ` +
+  `in src/physics/params.js is a measurement that fails if the table moves`);
 
 // ── [6] RES_CLASS and ELEMENT_LJ stay different models ───────────────────
 console.log("\n[6] CG residue-class beads vs per-element: two models, kept apart...");
@@ -290,9 +432,14 @@ const strip = (s) => s
   .replace(/\/\/[^\n]*/g, "");
 const heavyCode = strip(heavySrc);
 const dupDefault = heavyCode.match(/(?:const|let|var)\s+[A-Z][A-Z0-9_]+\s*=\s*\{[^}]*\b(?:sigma|eps)\b[^}]*\}/g) || [];
+// NOTE: the list is interpolated through a named `dupList` rather than a
+// template nested inside ${...}: tests/test_cache_contract.js's scanner tracks
+// no nesting for template literals, so a nested backtick desynchronises it and
+// the file reads as UNPARSEABLE (a blind spot in that guard, not a real defect).
+const dupList = dupDefault.length ? ` [${dupDefault.join(" | ")}]` : "";
 assert(dupDefault.length === 0,
   `no SCREAMING_CASE object literal with sigma/eps in heavy-engine code; found ${dupDefault.length}` +
-  `${dupDefault.length ? ` (${dupDefault.join(" | ")})` : ""}`);
+  dupList);
 assert(!/\bHEAVY_ELEMENT_DEFAULT\b/.test(heavyCode),
   "the private HEAVY_ELEMENT_DEFAULT is gone from the heavy engine");
 assert(/resolveHeavyElementParams\(el\)/.test(heavyCode),
