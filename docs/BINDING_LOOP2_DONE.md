@@ -251,7 +251,7 @@ Two known UI debts closed (additive only, zero deps, defaults unchanged:
 default L0 + default thermo numbers; no sidebar/toolbar/top-level-panel
 changes; no new DOM ids — all 98 ui ids ⊆ index.html, `src/ui.js` untouched):
 
-(a) Async/chunked thermo (`src/analysis-panel.js:129-236`, `src/main.js:451-453`):
+(a) Async/chunked thermo (`src/analysis-panel.js:129-236`, `src/controllers/system-build.js:165`):
 pain was the ΔH/ΔS click handler running the full ~2000-step apo relaxation
 synchronously → blocked the UI. The apo leg now runs in `setTimeout(0)`
 slices of `THERMO_CHUNK_STEPS = 150` steps (exported,
@@ -830,7 +830,7 @@ sampling, run ≥ 50 hills for PMF convergence; timeline/energy live
 regardless`. Canvas draws the two-line form (`:259-262`, follows the
 `pmf-panel.js` empty pattern); `drawBindviz` reuses the existing
 `bindvizCaption` for the single-line form when `hasData && nHills === 0`
-(`src/main.js:150-167`, hill count null-safe, no new panels/ids). The
+(`src/controllers/binding-insights.js:76-93`, hill count null-safe, no new panels/ids). The
 ≥50 bar matches the PMF panel convergence gate (`src/pmf-panel.js:81`,
 `nHills<50` collecting) — a display threshold, not a measured convergence
 claim. Null bindlog still takes the guarded D1 empty state.
@@ -1013,7 +1013,7 @@ Settings → panel summaries → inputs → viewer → canvas); the Digit1-7
   `role="img"` + viewer `aria-label`; 6 data canvases
   (`:239,303,345,361-363`) + 2 dock strips (`:410,412`) gain `role="img"` +
   `aria-label` (display-only, no new tab stops).
-- Tiny JS guards (`src/main.js:1125-1135` + same-shape fallback
+- Tiny JS guards (`src/controllers/transport.js:84-126` + same-shape fallback
   `index.html:517`): Space no longer hijacks focused BUTTON/A/SUMMARY
   (native activation wins; Space on a focused Run button still toggles via
   its native click); Digit index derives from `e.code` (layout-independent;
@@ -1142,7 +1142,7 @@ top-level panels — 8 unchanged, Digit1-7 intact; +1 DOM id, in `src/ui.js`):
   cancelled`). `HeavyForceField` takes an optional 4th `opts.topo` (prebuilt
   topo skips the sync O(n²); absent → legacy path bit-identical, all 3-arg
   callers untouched).
-- Build wiring (`src/main.js:540-600,680-778`): CG path stays fully
+- Build wiring (`src/controllers/system-build.js:159-273,320-380`): CG path stays fully
   synchronous (fast, no flicker). Heavy prep (ligands/protonation) stays
   sync, then `runHeavyBuildAsync` chunks topology (11 slices on 4W52) with
   `Building heavy… topology d/n rows` captions to the reused `#selSummary`,
@@ -1245,7 +1245,7 @@ display-only version-string bump; defaults, physics, panels untouched).
 352 PASSED / 0 FAILED ≥ 352 baseline, 112 ui ids, Digit1-7 vs 8 panels);
 FAST `node tests/test_all.js` → 352/352 in ~13.6 s. No `package.json` in
 this repo (confirmed by glob) — the version flow IS `src/version.js`
-(HUD prefix `src/main.js:1491`, `REMARK` provenance
+(HUD prefix `src/controllers/tick.js:244`, `REMARK` provenance
 `src/recorder.js:117`, console badge); README had usage but no
 version/license/citation section; `LICENSE` (MIT, © 2026 Samir Rana) and
 `CITATION.cff` (`v1.0-jpcb`, Zenodo placeholder) present.
@@ -1308,7 +1308,7 @@ caller, kernel, UI, or gate changes):
   (`src/viewer.js:505`); RMSD split (`rmsd` protein-only `src/heavy.js:1395`,
   `rmsdLig` `[ligandStart, n)` `src/heavy.js:1413`, legacy `rmsdAll`);
   live per-term mirror without BindLog (`liveTermsWanted` et al.,
-  `src/main.js:571`) with the wiring descriptor `bindingTermsActive`
+  `src/controllers/live-terms.js:46`) with the wiring descriptor `bindingTermsActive`
   (`src/ff-binding.js:51`).
 - NEW `tests/test_rev2_issue5_placement_escape.js` (14 asserts, <1 s,
   deterministic; NOT wired into `tests/test_all.js`, gate untouched):

@@ -16,7 +16,7 @@ modules read-only), raw output `/tmp/opencode/r2_proto_output.txt`.
 | Fact | Code | Implication for R2 |
 |---|---|---|
 | CG H-bond isotropic Gaussian −0.8 kcal/mol @3.2 Å, flags only, no angle | `src/ff-binding.js:57,127-133` | Replace with directional term (a) |
-| Protein bead charges all q=0 | `src/ff-params.js:61-67` | Coulomb path (`ff-binding.js:114-124`) is coded but dead — revive with charge table (term b) **[DONE Loop-2 S1: CG_FORMAL_CHARGES, opt-in `binding.charges`]** |
+| Protein bead charges all q=0 | `src/physics/params.js:264-270` | Coulomb path (`ff-binding.js:114-124`) is coded but dead — revive with charge table (term b) **[DONE Loop-2 S1: CG_FORMAL_CHARGES, opt-in `binding.charges`]** |
 | H-bond flag = residue class P/Cp/Cn only | `src/forcefield.js:185` | **52% of backbone donors/acceptors score ZERO today (prototype §C)** — every residue gets backbone virtual sites |
 | Holo springs k=0.5 hold native pose | `src/forcefield.js:116,276-303` | Keep; binding terms must not double-count (exclusion set already handles) |
 | EEF1-lite ΔG_a −0.25…−0.55, B_a=1−exp(−n/3) | `src/ff-binding.js:89-154` | Term (c) multiplies this — no new loop |
@@ -193,13 +193,13 @@ q: Lys/Arg +1, Asp/Glu −1, His ±per protonation heuristic on bead
 ```
 
 **Zero new math** — the term is live in `ff-binding.js:114-124`, dead only
-because `RES_CLASS` has q:0 for all five classes (`ff-params.js:61-67`).
+because `RES_CLASS` has q:0 for all five classes (`physics/params.js:264-270`).
 Revival = set q in that table + flow through `forcefield.js:184`. Prototype §D:
 −2.2 kcal/mol at 2.66 Å (ε=28), −1.06 at 6 Å, −0.56 at the 9 Å edge — a sane
 screened profile. Desolvation counterweight already exists (ΔG_a burial),
 which is the Hendsch & Tidor lesson (bare Coulomb over-praises salt bridges;
 burial penalty rescues it). Ligand side already carries q (N −0.30, O −0.50,
-P +0.40 — `ff-params.js:76-87`), so ionic ligands light up immediately.
+P +0.40 — `physics/params.js:102-112`), so ionic ligands light up immediately.
 
 > **Loop-2 S1 status: DONE (2026-09-12, default-off opt-in).** Implemented
 > as `CG_FORMAL_CHARGES` in `src/ff-params.js` (ASP/GLU −1, LYS/ARG +1;

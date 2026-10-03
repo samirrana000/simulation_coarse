@@ -1,11 +1,19 @@
 /**
- * ff-params.js — model constants and per-element/per-residue-class parameter
- * tables for the coarse-grained force field in forcefield.js.
+ * ff-params.js — the STABLE FACADE for model constants and per-element /
+ * per-residue-class parameter tables, plus the backbone + ENM constants that
+ * only the coarse-grained engine uses.
  *
  * Split out of forcefield.js (item 5, "move never rewrite": every value below
  * is byte-identical to the original tables). forcefield.js re-exports
  * KB_KCAL and KCONV so downstream modules (integrator.js, funnel.js) keep
  * importing them from "./forcefield.js" unchanged.
+ *
+ * Since goal M7 this file OWNS almost no parameter literals: the per-element
+ * LJ/charge tables, the metal-ion table, the covalent radii and the CG
+ * residue-class table live once in src/physics/params.js and are re-exported
+ * here under their historical names, so no downstream import moves. What is
+ * still declared below is the CG-only model: the backbone Boltzmann-inversion
+ * constants, the Bahar sequence weights, and the holo-pair compression floor.
  *
  * ── Backbone bond/angle constants (Boltzmann inversion) ──────────────────
  *   k_b = 100 kcal/mol/Å²  — Cα–Cα peptide bond stiffness
@@ -53,137 +61,41 @@
 // divergence structurally impossible rather than merely fixed once.
 export { KB_KCAL, KCONV } from "./units.js";
 
-
-// Residue class → protein-bead LJ parameters (σ Å, ε kcal/mol, charge e)
-export const RES_CLASS = {
-  H:  { sigma: 4.0, eps: 0.15, q: 0 },  // hydrophobic
-  A:  { sigma: 4.1, eps: 0.18, q: 0 },  // aromatic
-  P:  { sigma: 3.8, eps: 0.12, q: 0 },  // polar (H-bond capable)
-  Cp: { sigma: 3.6, eps: 0.10, q: 0 },  // positively charged (H-bond capable)
-  Cn: { sigma: 3.6, eps: 0.10, q: 0 },  // negatively charged (H-bond capable)
-};
-export const RES_CLASS_OF = {
-  ALA: "H", VAL: "H", LEU: "H", ILE: "H", PRO: "H", MET: "H", GLY: "H", CYS: "H",
-  PHE: "A", TRP: "A", TYR: "A", HIS: "A",
-  SER: "P", THR: "P", ASN: "P", GLN: "P",
-  LYS: "Cp", ARG: "Cp",
-  ASP: "Cn", GLU: "Cn",
-};
-
-/**
- * Formal bead charges (e) by residue identity — CG salt-bridge term
- * (R2 term b, docs/BINDING_PHYSICS_R2.md §2b; Loop-2 S1).
- *
- * Revives the dead screened-Coulomb path in ff-binding.js
- * (`E_coul = COULOMB_CONST·q_i·q_a/(ε(r)·r)·sw(r)`, ε(r) = 4+76·tanh(r/8)) by
- * giving the Cα bead of each charged residue its formal charge:
- *   ASP/GLU −1 (deprotonated carboxylate), LYS/ARG +1 (ammonium/guanidinium).
- *
- * Design decisions (R2 §2b + Loop-1 review S1):
- *   • HIS is deliberately absent ⇒ q = 0 (neutral default). A HIP +1 charge
- *     is assigned only when a protonation heuristic says so; the hookup to
- *     chem/protonation.js is explicitly deferred (documented, not guessed).
- *   • No mean-neutralization of net charge: the distance-dependent dielectric
- *     ε(r) together with the EEF1-lite burial/desolvation counterweight
- *     (Hendsch & Tidor 1994 lesson — bare Coulomb over-praises salt bridges,
- *     burial penalty rescues it) already temper net-charge effects; the
- *     formal ±1 values are kept as-is.
- *   • DEFAULT OFF: ForceField fills `_protQ` from this map only when
- *     `par.binding.charges === true` (opt-in flag). RES_CLASS.q stays 0, so
- *     the default path is bit-identical to the pre-S1 force field and the
- *     rollback is a single flag flip.
- */
-export const CG_FORMAL_CHARGES = {
-  ASP: -1, GLU: -1,
-  LYS: 1, ARG: 1,
-};
-// Ligand element → LJ params (σ Å, ε kcal/mol), partial charge (e), H-bond flag, ΔG desolvation (kcal/mol)
-export const LIG_ELEMENT = {
-  C:  { sigma: 3.4, eps: 0.12, q: 0.0,  hb: false, dG: -0.55 },
-  N:  { sigma: 3.2, eps: 0.15, q: -0.30, hb: true,  dG: -0.35 },
-  O:  { sigma: 3.0, eps: 0.16, q: -0.50, hb: true,  dG: -0.30 },
-  S:  { sigma: 3.6, eps: 0.18, q: 0.0,  hb: false, dG: -0.45 },
-  F:  { sigma: 2.9, eps: 0.10, q: -0.20, hb: true,  dG: -0.25 },
-  CL: { sigma: 3.5, eps: 0.18, q: 0.0,  hb: false, dG: -0.40 },
-  BR: { sigma: 3.6, eps: 0.20, q: 0.0,  hb: false, dG: -0.45 },
-  I:  { sigma: 3.8, eps: 0.22, q: 0.0,  hb: false, dG: -0.50 },
-  P:  { sigma: 3.5, eps: 0.14, q: 0.40, hb: false, dG: -0.35 },
-};
-export const LIG_ELEMENT_DEFAULT = { sigma: 3.4, eps: 0.12, q: 0.0, hb: false, dG: -0.30 };
-
-/**
- * Metal-ion parameters for the all-atom heavy mode (heavy.js).
- *   sigma/eps — LJ size & well (Å, kcal/mol) for non-bonded repulsion,
- *   q         — formal charge (e), used for screened electrostatics,
- *   coordR    — metal–donor coordination distance (Å) used to build the
- *               coordination springs (heavy.js detects donors within coordR of
- *               the ion), and
- *   coordN    — target coordination number (how many donor springs to build;
- *               capped by however many donors are actually within coordR).
- * Metals are treated as explicit +2/+1 ions that coordinate N/O/S donors
- * (histidine N, carboxylate O, thiolate S, backbone carbonyl O) rather than
- * forming covalent bonds.
- */
-export const METAL_ELEMENT = {
-  ZN: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.30, coordN: 4 },
-  FE: { sigma: 1.50, eps: 0.05, q: 2.0, coordR: 2.20, coordN: 6 },
-  MG: { sigma: 1.30, eps: 0.05, q: 2.0, coordR: 2.15, coordN: 6 },
-  CA: { sigma: 1.70, eps: 0.05, q: 2.0, coordR: 2.45, coordN: 6 },
-  CU: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.20, coordN: 4 },
-  MN: { sigma: 1.45, eps: 0.05, q: 2.0, coordR: 2.25, coordN: 6 },
-  NI: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.15, coordN: 6 },
-  CO: { sigma: 1.40, eps: 0.05, q: 2.0, coordR: 2.15, coordN: 6 },
-  NA: { sigma: 1.70, eps: 0.05, q: 1.0, coordR: 2.50, coordN: 6 },
-  K:  { sigma: 2.00, eps: 0.05, q: 1.0, coordR: 2.80, coordN: 6 },
-};
-export const METAL_ELEMENT_DEFAULT = { sigma: 1.50, eps: 0.05, q: 2.0, coordR: 2.30, coordN: 6 };
-
-/**
- * All-atom (heavy) covalent radii (Å) for the heavy mode bond-building
- * (heavy.js). A pair of heavy atoms within the SUM of their covalent radii
- * (× a 1.15 slack factor) is treated as covalently bonded. Solvent/water O
- * and H are handled by the parser (dropped), so these cover protein heavy
- * atoms + ligand heavy atoms.
- *
- * Source — Covalent radii from Cambridge Structural Database (CSD) surveys
- * (Allen et al., J. Chem. Soc. Perkin Trans. 2, 1987; Cordero et al., Dalton
- * Trans. 2008, 2832; Bondi, J. Phys. Chem. 1964, 68, 441 for van-der-Waals
- * reference). Values below are single-bond covalent radii matched to CSD
- * organic/metal-organic statistics:
- *
- * | Element | r_cov (Å) | CSD/Bondi source | Example bond | r_sum | r_sum×1.15 | Cap 2.2 |
- * |---------|-----------|------------------|--------------|-------|------------|---------|
- * | C       | 0.77      | CSD C(sp3) 0.76  | C–C 1.54     | 1.54  | 1.77       | pass |
- * | N       | 0.75      | CSD N 0.71–0.75  | C–N 1.47     | 1.52  | 1.75       | pass |
- * | O       | 0.73      | CSD O 0.66–0.73  | C–O 1.43     | 1.50  | 1.73       | pass |
- * | S       | 1.02      | CSD S 1.05       | S–S 2.04     | 2.04  | 2.35→2.20  | **pass (2.04 < 2.20 < 2.35)** |
- * | P       | 1.06      | CSD P 1.07       | P–O 1.60     | 1.79  | 2.06       | pass |
- * | CA      | 1.76      | CSD Ca 1.76      | Ca–N 2.51    | 2.51  | 2.89→2.20  | fail at 2.9 Å (spurious Ca–N rejected) |
- *
- * Rationale for thresholds — heavy.js:251 `r < BOND_SLACK*(rA+rB) && r < 2.2`:
- *   BOND_SLACK = 1.15 gives 15% tolerance for thermal elongation / PDB
- *   coordinate uncertainty while keeping C–C/C–N/C–O true bonds well inside.
- *   Hard cap 2.2 Å prevents spurious long-range contacts (e.g. Ca–N 2.9 Å,
- *   H-bond O⋯N 2.9 Å, van-der-Waals contacts) from being mis-typed as
- *   covalent despite large radii sums (Ca 1.76 + N 0.75 = 2.51 → 2.89 with
- *   slack). Critically, the biologically important disulfide S–S 2.04 Å
- *   (CSD mean 2.03–2.05 Å, crambin 1CRN SSBOND records 2.00/2.04/2.05 Å)
- *   has r_sum = 2.04 so r_sum×1.15 = 2.35; min(2.35, 2.20) = 2.20 still
- *   captures 2.04 Å with 0.16 Å margin, so all three crambin disulfides are
- *   recovered while Ca–N 2.9 Å is correctly excluded — see tests/test_topology.js.
- */
-export const COVALENT_RADIUS = {
-  C: 0.77, N: 0.75, O: 0.73, S: 1.02, P: 1.06, F: 0.71,
-  CL: 0.99, BR: 1.14, I: 1.33, B: 0.84, SE: 1.20,
-  ZN: 1.22, FE: 1.32, MG: 1.41, CA: 1.76, CU: 1.32, MN: 1.39,
-  NI: 1.24, CO: 1.26, NA: 1.66, K: 2.03,
-};
-/**
- * Slack factor on the covalent-radius sum for bond detection.
- * 1.15 = CSD/Bondi covalent sum × 1.15, then hard cap 2.2 Å (see table above).
- * Validated: S–S 2.04 Å pass, Ca–N 2.9 Å fail — tests/test_topology.js.
- */
-export const BOND_SLACK = 1.15;
+// ── The PARAMETER contract is RE-EXPORTED from src/physics/params.js ─────
+// This file used to OWN the per-element LJ / partial-charge tables, the metal
+// table, the covalent radii and the CG residue-class table. Two of its
+// consumers then grew private copies: src/heavy.js declared its own
+// `HEAVY_ELEMENT_DEFAULT = { sigma: 3.4, eps: 0.12, q: 0.0 }` (dead, but one
+// edit away from being a live sigma/eps/q split between the CG and heavy
+// paths). Moving the literals into src/physics/params.js and re-exporting them
+// here makes a second declaration a structural impossibility rather than a
+// thing to remember — the same remedy, and the same facade shape, as the
+// units.js re-exports above.
+//
+// The PUBLIC NAMES ARE UNCHANGED. Every downstream import keeps working:
+//     LIG_ELEMENT        ← ELEMENT_LJ          (the old name was misleading:
+//                           heavy.js uses this table for protein backbone and
+//                           side-chain atoms too, not only for ligands)
+//     LIG_ELEMENT_DEFAULT← ELEMENT_LJ_DEFAULT
+//     METAL_ELEMENT, METAL_ELEMENT_DEFAULT, COVALENT_RADIUS, BOND_SLACK,
+//     RES_CLASS, RES_CLASS_OF, CG_FORMAL_CHARGES  ← same name
+//     resolveElementParams / resolveHeavyElementParams  (new: the ONE
+//                           element-resolution rule, called by both engines)
+//     elementCoverage    (new: which table owns which element)
+export {
+  ELEMENT_LJ as LIG_ELEMENT,
+  ELEMENT_LJ_DEFAULT as LIG_ELEMENT_DEFAULT,
+  METAL_ELEMENT,
+  METAL_ELEMENT_DEFAULT,
+  COVALENT_RADIUS,
+  BOND_SLACK,
+  RES_CLASS,
+  RES_CLASS_OF,
+  CG_FORMAL_CHARGES,
+  resolveElementParams,
+  resolveHeavyElementParams,
+  elementCoverage,
+} from "./physics/params.js";
 
 // ── Sequence-dependent ENM (Bahar-style) ───────────────────────────────
 // Per-residue-class stiffness multiplier w_i (dimensionless). Used by

@@ -44,9 +44,9 @@
     ]
   },
   "benchVector": {
-    "heavyMs": 13.658,
-    "cgMs": 0.171,
-    "treeKey": "8c3f1e5d9fcdfb17e07bc18b4a4d45724ba854cb:312",
-    "measuredAt": "2026-09-29T21:58:41.625Z"
+    "heavyMs": 13.625,
+    "cgMs": 0.163,
+    "treeKey": "9f456af05b563edfc2c1ac6a46b1a9c3896a676c:329",
+    "measuredAt": "2026-10-03T04:37:17.873Z"
   }
 }

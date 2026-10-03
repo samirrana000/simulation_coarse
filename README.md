@@ -343,7 +343,26 @@ css/style.css       styling
 4w52.pdb            demo structure (also the t22 fixture)
 benzene.mol2        demo ligand (Tripos MOL2) — separate-file MOL2 input
 src/
-  main.js           orchestration: wiring, main loop, HUD, ML tier
+  main.js           COMPOSITION ROOT (160 LOC): imports the modules below, calls
+                    their init functions in the original startup order, starts
+                    the RAF loop, and owns the 3 cross-cutting build-path seams
+                    (physicsLevelSpec + the two force-field `par` literals).
+                    No physics, no canvas. Guarded by
+                    tests/test_main_module_size.js.
+  controllers/      one module per UI responsibility (the app's wiring, split
+                    out of main.js; its header table is the index)
+    physics-tier.js       physics fidelity tier table + BindLog capture flag
+    param-binding.js      parameter hot reload + slider/numeric readouts
+    live-terms.js         live per-term energy mirror (Rev1/Issue4)
+    dock.js               dock sparklines + trajectory scrub
+    binding-insights.js   BindViz canvases (timeline/energy/PMF, <= 1 Hz)
+    accelerate.js         r-RESPA stepper + worker-pool force backends
+    structure-input.js    PDB id / sample / file / MOL2 acquisition
+    system-build.js       selection -> force field -> integrator (CG + heavy)
+    transport.js          run/reset/display toggles + global hotkeys
+    recording.js          recorder transport, exports, session save/restore
+    guide.js              FP1 first-run checklist (Load/Build/Run/Analyze)
+    tick.js               the requestAnimationFrame loop (10 Hz HUD, 1 Hz panels)
   pdb.js            PDB parsing (Cα beads, ligands/HETATM, B-factors) + MOL2 ligands
   forcefield.js     the CG energy function (ENM, binding, desolvation, springs)
   heavy.js          all-atom heavy mode (parseHeavy + HeavyForceField + metals)

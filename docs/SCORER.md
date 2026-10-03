@@ -105,5 +105,5 @@ grep -n "bond order.*topology" src/mol2.js docs/*  # hits src/mol2.js header
 
 - `src/scorer.js:101` `PoseScorer.docked()` built-in linear prior
 - `src/ml-tier.js:27` JSON weights loader wired to the "NN pose score" tickbox
-- `src/main.js:1571` the live `state.scorer.predict(feat)` call site
+- `src/controllers/tick.js:208` the live `state.scorer.predict(feat)` call site
 

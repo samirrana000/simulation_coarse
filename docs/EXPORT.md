@@ -10,7 +10,7 @@ This document describes trajectory export formats implemented in `src/recorder.j
 
 ## XYZ Export
 
-- **Invocation:** `recorder.buildFile("xyz", beads, opts)` (`src/recorder.js:106` `buildFile`) → `recorder._toXyz(beads, opts)` (`src/recorder.js:120` `_toXyz`). UI: `src/main.js:545` `recorder.buildFile(fmt, state.sel.beads, prov)` with `fmt` from `ui.exportFmt.value` (`index.html` `#exportFmt`).
+- **Invocation:** `recorder.buildFile("xyz", beads, opts)` (`src/recorder.js:106` `buildFile`) → `recorder._toXyz(beads, opts)` (`src/recorder.js:120` `_toXyz`). UI: `src/controllers/recording.js:202` `recorder.buildFile(fmt, state.sel.beads, prov)` with `fmt` from `ui.exportFmt.value` (`index.html` `#exportFmt`).
 - **File structure (multi-frame XYZ):**
   ```
   REMARK simulation_coarse v1.0.0-transform T=300K gamma=2 seed=0 date=2026-08-29
@@ -30,7 +30,7 @@ This document describes trajectory export formats implemented in `src/recorder.j
 
 ## PDB Export
 
-- **Invocation:** `recorder.buildFile("pdb", beads, opts)` → `recorder._toPdb(beads, opts)` (`src/recorder.js:135` `_toPdb`). UI produces `cg_traj_${count}frames.pdb` (`src/main.js:546`).
+- **Invocation:** `recorder.buildFile("pdb", beads, opts)` → `recorder._toPdb(beads, opts)` (`src/recorder.js:135` `_toPdb`). UI produces `cg_traj_${count}frames.pdb` (`src/controllers/recording.js:203`).
 - **File structure (multi-MODEL PDB):**
   ```
   REMARK simulation_coarse v1.0.0-transform T=300K gamma=2 seed=0 date=2026-08-29
@@ -80,8 +80,8 @@ This document describes trajectory export formats implemented in `src/recorder.j
 ## UI Flow
 
 1. Set `stridePs` and `maxFrames` (`index.html` `#stridePs`, `#maxFrames` in `Recording` panel).
-2. Press **● Rec** (`src/main.js:522` `recBtn` → `recorder.start`) — HUD `recStatus` shows `count`/`spanNs` (`src/main.js:582` `updateRecStatus`).
-3. Run simulation (`▶ Run`), **Stop** (`src/main.js:529` `recStopBtn`), choose format `XYZ`/`PDB` (`index.html` `#exportFmt`), click **Download** (`src/main.js:534` `dlBtn` → `downloadText` via `src/recorder.js:168` `downloadText` creating `Blob` + `URL.createObjectURL`).
+2. Press **● Rec** (`src/controllers/recording.js:155` `recBtn` → `recorder.start`) — HUD `recStatus` shows `count`/`spanNs` (`src/ui.js:173` `updateRecStatus`).
+3. Run simulation (`▶ Run`), **Stop** (`src/controllers/recording.js:162` `recStopBtn`), choose format `XYZ`/`PDB` (`index.html` `#exportFmt`), click **Download** (`src/controllers/recording.js:185` `dlBtn` → `downloadText` via `src/recorder.js:168` `downloadText` creating `Blob` + `URL.createObjectURL`).
 
 ## Grep & Files
 

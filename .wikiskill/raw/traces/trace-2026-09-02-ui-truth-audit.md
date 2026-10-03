@@ -27,7 +27,7 @@ Raw execution record. Write-only. All numbers verbatim from session output.
   TRANSFORMATION_PLAN_100.md / dashboard JSON.
 - "what chemical network model doing, no idea about it and visually its not
   showing anything at all" → two causes found:
-  (a) updateNetworkPlot() only called on state CHANGE (src/main.js:652-659)
+  (a) updateNetworkPlot() only called on state CHANGE (src/controllers/tick.js:214-223)
       and once at init when canvas may be display:none (details collapsed at
       load? No — panel 5 has `open`; but initial draw happens before system
       exists, and if ligand never placed, classifyPose never fires → stale).

@@ -16,7 +16,7 @@ chaingroups `selectSystem` at `src/pdb.js:149`, segments split at >4.8 Å).
 **Potential** (`src/forcefield.js:1` header):
 ```
 U = Σ ½ k_b (r−r0)²          k_b=100 kcal/mol/Å², r0≈3.81 Å (AMBER CA)
-  + Σ ½ k_θ (θ−θ0)²          k_θ=20  kcal/mol/rad² (Tirion 1996; see src/ff-params.js:10)
+  + Σ ½ k_θ (θ−θ0)²          k_θ=20  kcal/mol/rad² (Tirion 1996; see src/ff-params.js:18)
   + Σ ½ γ (r−r0)²·H(Rc−r0)   γ=1.0, Rc=10 Å (default), |i−j|>2, protein-only
   + WCA repulsion            ε=0.3, σ=4.0 Å, r_e=2^(1/6)σ≈5.61 Å, smooth at re
   + cross protein–ligand LJ + screened Coulomb (Lorentz–Berthelot) + H-bond + EEF1-lite burial
@@ -25,7 +25,7 @@ U = Σ ½ k_b (r−r0)²          k_b=100 kcal/mol/Å², r0≈3.81 Å (AMBER CA)
 ```
 
 *Backbone constants provenance:* Boltzmann inversion `k = k_B T/σ²` on AMBER
-ff14SB explicit-solvent MD (`src/ff-params.js:10`):
+ff14SB explicit-solvent MD (`src/ff-params.js:18`):
 σ_b≈0.045 Å ⇒ k_b≈120→100 (stability, `src/integrator.js:145` dt=4 fs);
 σ_θ≈0.14 rad ⇒ k_θ≈30→20. Validated `tests/test_bond_dist.js`: 200-step
 Langevin on 1crn keeps ⟨b⟩=3.81±0.05 Å.
@@ -45,8 +45,10 @@ Uniform `springK.fill(gamma)` is default; call `ff.applySeqWeights(beads)` or
 1ubq (ubiquitin, 76 aa): uniform vs seq Pearson both finite and seq not
 worse (`ΔR ≥ −0.05`), with at least one `K_seq ≠ gamma`.
 
-**Residue classes:** `src/ff-params.js:60` `RES_CLASS` (H/A/P/Cp/Cn) + sigma/eps/q;
-ligand elements `LIG_ELEMENT` (C,N,O,S,F,CL,BR,I,P) with ΔG burial.
+**Residue classes:** `src/physics/params.js:264` `RES_CLASS` (H/A/P/Cp/Cn) +
+sigma/eps/q; ligand elements `ELEMENT_LJ` (C,N,O,S,F,CL,BR,I,P) with ΔG burial.
+Both tables are re-exported from `src/ff-params.js` for backward compatibility;
+`src/physics/params.js` is the single home (goal M7, `tests/test_element_params.js`).
 
 ---
 
@@ -56,8 +58,8 @@ ligand elements `LIG_ELEMENT` (C,N,O,S,F,CL,BR,I,P) with ΔG burial.
 solvent `HOH` dropped) via `parseHeavy` at `src/heavy.js:82`; `selectHeavy`
 at `src/heavy.js:165` partitions `nProt / nHetero / nLigAtoms`.
 
-**Potential:** covalent bonds (`buildTopology` CSD radii `src/ff-params.js:114`
-`COVALENT_RADIUS` + `BOND_SLACK=1.15` hard cap 2.2 Å — disulfide S–S 2.04 Å
+**Potential:** covalent bonds (`buildTopology` CSD radii
+`src/physics/params.js:246` `COVALENT_RADIUS` + `BOND_SLACK=1.15` hard cap 2.2 Å — disulfide S–S 2.04 Å
 passes, Ca–N 2.9 Å rejected, validated `tests/test_topology.js` on 1crn),
 angles, proper/improper dihedrals (analytic), metal coordination springs
 (`METAL_K=40`, `METAL_ELEMENT` coordR/N), SASA burial (`SasaModel`), GB

@@ -80,12 +80,33 @@ check("DOM contract (ui.js ids exist in index.html)", () => {
 
 /* 4. panel-hotkey contract: Digit1-N matches #controls > .panel count */
 check("Hotkey contract (Digit1-7 vs panel count)", () => {
-  const mainSrc = fs.readFileSync(path.join(ROOT, "src", "main.js"), "utf-8");
+  // Scan the WHOLE src tree, not src/main.js alone. The hotkey handler moved
+  // into src/controllers/transport.js when main.js was split by
+  // responsibility, and the single-file scan silently evaluated
+  // Math.max(...[]) = -Infinity — a contract check that had stopped checking
+  // anything while still printing a plausible-looking line.
+  const srcFiles = [];
+  (function walk(dir) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith(".js")) srcFiles.push(p);
+    }
+  })(path.join(ROOT, "src"));
+  let hotkeyMax = -Infinity;
+  let hotkeyAt = "";
+  for (const f of srcFiles) {
+    for (const mm of fs.readFileSync(f, "utf-8").matchAll(/Digit\[(\d)-(\d)\]/g)) {
+      if (Number(mm[2]) > hotkeyMax) { hotkeyMax = Number(mm[2]); hotkeyAt = path.relative(ROOT, f); }
+    }
+  }
+  if (!Number.isFinite(hotkeyMax)) {
+    throw new Error(`no /Digit\\[\\d-\\d\\]/ hotkey regex in any of ${srcFiles.length} src/*.js — the contract is being read from a file that no longer owns it`);
+  }
   const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf-8");
-  const hotkeyMax = Math.max(...[...mainSrc.matchAll(/Digit\[(\d)-(\d)\]/g)].map((mm) => Number(mm[2])));
   const panels = (html.match(/class="panel[^"]*"/g) || []).length;
   const topLevel = (html.match(/<details[^>]*class="panel"/g) || []).length;
-  return `Digit1-${hotkeyMax} vs ${topLevel} top-level panels (contract: keep in sync manually)`;
+  return `Digit1-${hotkeyMax} (from ${hotkeyAt}) vs ${topLevel} top-level panels (contract: keep in sync manually)`;
 });
 
 console.log(failures.length === 0

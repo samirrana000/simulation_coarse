@@ -110,8 +110,10 @@ export const SUITES = [
   { file: "tests/test_rev3_issue1_heavy_physics.js", tier: "FAST" },
   { file: "tests/test_observables_parity.js", tier: "FAST", note: "CG/heavy kineticTemp + rmsd parity" },
   { file: "tests/test_unit_contract.js", tier: "FAST", note: "one unit contract, one value (KB_KCAL was defined twice)" },
-  { file: "tests/test_constant_ledger.js", tier: "FAST", note: "every SCREAMING_CASE constant has one home; catches a contract constant re-derived under ANY name, including inside a WGSL template string" },
+  { file: "tests/test_constant_ledger.js", tier: "FAST", note: "every SCREAMING_CASE constant has one home; catches a contract constant re-derived under ANY name, including inside a WGSL template string; rule 5 extends the same idea to object-literal PARAMETER TABLES, which rules 1-4 cannot see" },
+  { file: "tests/test_element_params.js", tier: "FAST", note: "one element, one sigma/eps/q: CG (forcefield.js) and heavy (heavy.js) resolve byte-identically; re-planting the deleted HEAVY_ELEMENT_DEFAULT fails; pins + prints the live CG-vs-heavy metal coverage gap" },
   { file: "tests/test_cache_contract.js", tier: "FAST", note: "no version query literal on any module edge (121 were hand-typed); sw.js exists, is wired up, and re-fetches with cache:no-store — executed in a node:vm sandbox, not grepped" },
+  { file: "tests/test_main_module_size.js", tier: "FAST", note: "main.js stays a composition root: <= 400 LOC (was 1686), <= 20 module specifiers (was 23), no physics/rendering imports, and every controllers/ module its header advertises must exist. A refactor without this guard regrows." },
   // anti-rot self-checks: registry wiring + docs/ index no-orphans
   { file: "tests/test_suite_registry.js", tier: "FAST" },
   { file: "tests/test_docs_index.js", tier: "FAST", note: "every file under docs/ linked from docs/README.md" },

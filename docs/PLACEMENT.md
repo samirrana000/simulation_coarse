@@ -41,7 +41,7 @@ All paths call `placeLigand(mol, target, {protein, seed})` (`src/placement.js:23
 ## Cross-module policies (line refs)
 
 - **RMSD split:** `HeavyForceField.rmsd` is protein-only (`src/heavy.js:1395`), `rmsdLig` covers the external-ligand block `[ligandStart, n)` (`src/heavy.js:1413`; hetero excluded — same slice the HUD `ligRMSD` uses), `rmsdAll` preserves the legacy all-atom value.
-- **Live per-term mirror:** per-term energies stay live without BindLog via `liveTermsWanted` / `applyLiveTrackTerms` / `readLiveTerms` / `formatLiveTermsHUD` (`src/main.js:571`; mirror `updateLiveTermsMirror`, synthetic view `liveTermsBindLogView`); the wiring descriptor is `bindingTermsActive` (`src/ff-binding.js:51`).
+- **Live per-term mirror:** per-term energies stay live without BindLog via `liveTermsWanted` / `applyLiveTrackTerms` / `readLiveTerms` / `formatLiveTermsHUD` (`src/controllers/live-terms.js:46`; mirror `updateLiveTermsMirror`, synthetic view `liveTermsBindLogView`); the wiring descriptor is `bindingTermsActive` (`src/ff-binding.js:51`).
 
 ## Files & Grep
 

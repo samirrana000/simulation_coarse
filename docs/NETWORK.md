@@ -65,7 +65,7 @@ classifyPose(comDist, nContacts, ligRMSD)
  0 else                                           → Bulk
 ```
 
-Validated in `tests/test_classify.js` (200-frame CG Langevin traj via `ForceField`+`Langevin`, histogram, F1 for Native or at least no-crash + histogram). Live-tracking linkage `isLiveTrackingActive` is exercised in `tests/test_live_tracking.js` and in `src/main.js:648` where `networkModel.classifyPose(cv, nc, ligRMSD)` drives `networkModel.currentState` when `isLiveTrackingActive` is true.
+Validated in `tests/test_classify.js` (200-frame CG Langevin traj via `ForceField`+`Langevin`, histogram, F1 for Native or at least no-crash + histogram). Live-tracking linkage `isLiveTrackingActive` is exercised in `tests/test_live_tracking.js` and in `src/controllers/tick.js:216` where `networkModel.classifyPose(cv, nc, ligRMSD)` drives `networkModel.currentState` when `isLiveTrackingActive` is true.
 
 ## 6. Transition Path Theory (src/physics/network.js:278)
 

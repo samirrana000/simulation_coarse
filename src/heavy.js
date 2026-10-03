@@ -21,7 +21,7 @@
 import {
   METAL_ELEMENT, METAL_ELEMENT_DEFAULT,
   COVALENT_RADIUS, BOND_SLACK,
-  LIG_ELEMENT, LIG_ELEMENT_DEFAULT,
+  resolveHeavyElementParams,
 } from "./ff-params.js";
 // D2: heavy's k_B came from ff-params.js, CG's from units.js — a 5e-8 split in
 // a HUD number. The observables now read the units.js constant; dropped import.
@@ -79,7 +79,16 @@ export function switchDeriv(r) {
 }
 
 export const METAL_K = 40.0;
-const HEAVY_ELEMENT_DEFAULT = { sigma: 3.4, eps: 0.12, q: 0.0 };
+// M7: `HEAVY_ELEMENT_DEFAULT = { sigma: 3.4, eps: 0.12, q: 0.0 }` used to be
+// declared HERE, a second table for a quantity that also lived in
+// ff-params.js LIG_ELEMENT_DEFAULT. Measured: sigma/eps/q agreed to the last bit
+// (3.4 / 0.12 / 0.0), so it was never a live divergence — but it was DEAD
+// (nothing read it; the path below resolved through LIG_ELEMENT_DEFAULT) and
+// one edit away from being a silent CG-vs-heavy LJ split, the same defect class
+// as the KB_KCAL 5.03e-8 split and the 332.0-vs-332.06371 Coulomb split. The
+// literal is gone; `resolveHeavyElementParams` (src/physics/params.js) is the
+// one resolution rule both engines now call. Guard:
+// tests/test_element_params.js + tests/test_constant_ledger.js rule 5.
 
 const SOLVENT = new Set([
   "HOH", "WAT", "H2O", "DOD", "HHO", "TIP", "TIP3", "TIP3P", "SPC", "SPCE", "SOL",
@@ -708,12 +717,11 @@ export class HeavyForceField {
 
     for (let i = 0; i < this.n; i++) {
       const el = atoms[i].element;
-      if (METAL_ELEMENT[el]) {
-        this._elem[i] = { ...METAL_ELEMENT[el], q: charges[i] };
-      } else {
-        const base = LIG_ELEMENT[el] ?? LIG_ELEMENT_DEFAULT;
-        this._elem[i] = { ...base, q: charges[i] };
-      }
+      // M7: the element rule is `METAL_ELEMENT[el] ?? resolveElementParams(el)`,
+      // now a named function in the canonical parameter module instead of a
+      // ternary here. Same precedence, same values, byte for byte — only the
+      // number of places a per-element parameter can be typed is reduced to 1.
+      this._elem[i] = { ...resolveHeavyElementParams(el), q: charges[i] };
     }
 
     // Masses (Da)

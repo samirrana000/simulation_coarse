@@ -93,6 +93,19 @@ export const ALLOWLIST = [
   { doc: "AUDIT_REPORT.md", cite: "src/viewer.js:226-234", why: "2026-08-29 line numbers, same snippet, path-prefixed form" },
   { doc: "AUDIT_REPORT.md", cite: "src/viewer.js:226", why: "2026-08-29 line number in the P1 fix checklist" },
   { doc: "AUDIT_REPORT.md", cite: "viewer.js:150-167", why: "2026-08-29 line numbers of the centroid/radius sizing bug" },
+  // The file's own STATUS banner already declares ALL of its `file:line`
+  // citations to be the 2026-08-29 snapshot and "deliberately NOT repointed at
+  // today's code — repointing them would falsify the record". When src/main.js
+  // was split into src/controllers/ (2026-10) its main.js pointers went past
+  // EOF; the banner's stated policy is allowlisting, so these follow it.
+  { doc: "AUDIT_REPORT.md", cite: "main.js:31", why: "2026-08-29 line number of the settings-panel import in the graph diagram" },
+  { doc: "AUDIT_REPORT.md", cite: "main.js:620", why: "2026-08-29 line number of requestAnimationFrame(tick) in the browser-consequence list" },
+  { doc: "AUDIT_REPORT.md", cite: "main.js:538-616", why: "2026-08-29 line range of the viewer-guarded tick body" },
+  { doc: "AUDIT_REPORT.md", cite: "main.js:206-282", why: "2026-08-29 line range of the early-return analysis in §3.2" },
+  { doc: "AUDIT_REPORT.md", cite: "main.js:206-234", why: "2026-08-29 line range of buildSystem in §3.2" },
+  { doc: "AUDIT_REPORT.md", cite: "main.js:230-234", why: "2026-08-29 line range quoted in §3.2" },
+  { doc: "AUDIT_REPORT.md", cite: "main.js:251", why: "2026-08-29 line number of the workerPool.initSystem call in §3.4" },
+  { doc: "AUDIT_REPORT.md", cite: "src/main.js:230", why: "2026-08-29 line number in the §5 fix checklist", },
 
   // --- TRANSFORMATION_PLAN_100.md: a dated 2026-08-29 delivery log ----------
   { doc: "TRANSFORMATION_PLAN_100.md", cite: "settings-panel.js:73", why: "2026-08-29 rationale pointer in the A02 row of a dated delivery log" },
@@ -101,6 +114,13 @@ export const ALLOWLIST = [
   { doc: "TRANSFORMATION_PLAN_100.md", cite: "src/heavy.js:87", why: "2026-08-29 pointer to the warnings/countWarnings helper, before the header block grew" },
   { doc: "TRANSFORMATION_PLAN_100.md", cite: "src/recorder.js:56", why: "2026-08-29 pointer to the getFrame() H78 placeholder" },
   { doc: "TRANSFORMATION_PLAN_100.md", cite: "README.md:29", why: "2026-08-29 pointer to the README no-PME bullet, before the doc-index section landed" },
+  { doc: "TRANSFORMATION_PLAN_100.md", cite: "main.js:591", why: "2026-08-29 line number of the live-tracking classifyPose call in the E49 row" },
+  { doc: "TRANSFORMATION_PLAN_100.md", cite: "main.js:525", why: "2026-08-29 line number of integ.advance(steps,14) in the G68 row" },
+  { doc: "TRANSFORMATION_PLAN_100.md", cite: "main.js:602", why: "2026-08-29 line number of the HUD debounce guard in the H76 row" },
+  { doc: "TRANSFORMATION_PLAN_100.md", cite: "src/main.js:551", why: "2026-08-29 line number of lastHudUpdate in the H76 verification table" },
+  { doc: "TRANSFORMATION_PLAN_100.md", cite: "src/main.js:595", why: "2026-08-29 line number of the funnel nHills HUD row in the D33 verification table" },
+  { doc: "TRANSFORMATION_PLAN_100.md", cite: "src/main.js:665", why: "2026-08-29 line number of the HUD version prefix in the A01 verification table" },
+  { doc: "TRANSFORMATION_PLAN_100.md", cite: "src/main.js:232", why: "2026-08-29 line number of console.error in buildSystem in the A03 verification table" },
 ];
 
 let pass = 0;

@@ -146,6 +146,12 @@ function stripJs(src, keepStrings = false) {
 const ffB = R("../src/ff-binding.js");
 const ff = R("../src/forcefield.js");
 const ffp = R("../src/ff-params.js");
+// M7: the per-element LJ / residue-class tables moved to the canonical
+// parameter module; src/ff-params.js re-exports them under their old names.
+// Every "does the CG parameter TABLE declare X" question below is asked of the
+// canonical home, because that is where the literals now live — asking the
+// facade would be asking a file that no longer contains a single number.
+const paramsMod = R("../src/physics/params.js");
 const heavy = R("../src/heavy.js");
 const hb = R("../src/physics/hbond.js");
 const gb = R("../src/physics/gb.js");
@@ -176,11 +182,17 @@ has(ff, /bindRcut\s*=\s*9\.0/, "bindRcut=9.0");
 has(ff, /holoGamma.*0\.5/, "holoGamma=0.5");
 has(ff, /_protHB\[i\]\s*=\s*\(cls\s*===\s*"P"/, "protHB flags");
 // Protein charges all zero in CG table
-has(ffp, /H:\s*\{\s*sigma:\s*4\.0,\s*eps:\s*0\.15,\s*q:\s*0\s*\}/, "RES_CLASS H q=0");
-has(ffp, /Cp:\s*\{\s*sigma:\s*3\.6,\s*eps:\s*0\.10,\s*q:\s*0\s*\}/, "RES_CLASS Cp q=0");
+has(paramsMod, /H:\s*\{\s*sigma:\s*4\.0,\s*eps:\s*0\.15,\s*q:\s*0\s*\}/, "RES_CLASS H q=0");
+has(paramsMod, /Cp:\s*\{\s*sigma:\s*3\.6,\s*eps:\s*0\.10,\s*q:\s*0\s*\}/, "RES_CLASS Cp q=0");
 // Ligand dG range
 for (const v of ["-0.55", "-0.35", "-0.30", "-0.25", "-0.40", "-0.45", "-0.50"])
-  check(ffp.includes(v), `lig dG ${v} present`);
+  check(paramsMod.includes(v), `lig dG ${v} present`);
+// The facade must still PUBLISH those tables under the historical names, or
+// every downstream import of "./ff-params.js" breaks with no local change.
+for (const n of ["ELEMENT_LJ as LIG_ELEMENT", "ELEMENT_LJ_DEFAULT as LIG_ELEMENT_DEFAULT",
+  "METAL_ELEMENT", "COVALENT_RADIUS", "RES_CLASS", "CG_FORMAL_CHARGES",
+  "resolveElementParams", "resolveHeavyElementParams"])
+  check(ffp.includes(n), `ff-params re-exports ${n}`);
 
 // =====================================================================
 // Heavy kernel inventory — PRESENT terms, asserted as real code paths

@@ -4,7 +4,7 @@ This document tracks HPC-related performance wiring. All targets marked aspirati
 
 ## Worker Pool (G62)
 
-- Flag: `settingsState.backend==="workers" && n>800` routes to `workerPool.computeParallel` (`src/main.js:39`, `src/worker-pool.js:91`).
+- Flag: `settingsState.backend==="workers" && n>800` routes to `workerPool.computeParallel` (`src/controllers/accelerate.js:37`, `src/worker-pool.js:91`).
 - Guard: `_busy` prevents concurrent `computeParallel` calls (`src/worker-pool.js:35`).
 - Aspirational speedup ≥1.5× on 4 cores — not yet benchmarked. Validate via `bench/worker_speedup.js` (prints "estimated 1.5× on 4 cores").
 - See `bench/worker_speedup.js:8` for simulated estimate.
@@ -29,7 +29,7 @@ This document tracks HPC-related performance wiring. All targets marked aspirati
 
 ## Adaptive Steps per Frame (G68)
 
-- `advance(maxMs=14)` caps wall-clock per animation frame to 14 ms (`src/main.js:525` `state.integ.advance(steps,14)`, `src/integrator.js:262` `advance(stepsWanted, maxMs=12)` default, caller passes 14).
+- `advance(maxMs=14)` caps wall-clock per animation frame to 14 ms (`src/controllers/tick.js:91` `state.integ.advance(steps,14)`, `src/integrator.js:262` `advance(stepsWanted, maxMs=12)` default, caller passes 14).
 - Keeps the UI responsive under heavy load. The 14 ms cap is the mechanism; the resulting frame rate is **not measured here** (see the budget section).
 
 ## Memory Leak Guards (G69)
@@ -84,17 +84,17 @@ fails if a new key arrives with neither.
 
   What a headless bench *can* say about interactivity, and does: heavy compute is
   **14.1 ms**, and `advance(steps, 14)` caps physics at 14 ms of wall clock per
-  animation frame (`src/main.js:1454`). **14.1 > 14**, so heavy mode fits at most
+  animation frame (`src/controllers/tick.js:91`). **14.1 > 14**, so heavy mode fits at most
   one force evaluation per frame at the reference position. That is a real,
   measured, falsifiable statement about frame pacing. It is not a frame rate.
 
-  **Known remaining frame-rate strings in `src/main.js`** — the module map, the
+  **Known remaining frame-rate strings in the tick loop (`src/controllers/tick.js`)** — the module map, the
   G68 comment above the `advance` call, the H76 HUD-debounce comment, and the
   phase note on the top bar all still name a nominal refresh rate. They are
   design notes to the next maintainer, not published claims, and `src/` was
   outside the write scope of the change that produced this section, so they were
   left alone rather than silently deleted or silently ignored. They are recorded
-  here so the next person to touch `src/main.js` can settle them.
+  here so the next person to touch `src/controllers/tick.js` can settle them.
   `tests/test_budget_coverage.js` scans the publishing surfaces (docs, bench,
   .github, manuscript, scripts, root markdown) and fails if any of those grows a
   new frame-rate number; widening it to `src/` is a one-line change to

@@ -32,6 +32,16 @@
  *      `ELC = 332.0637`, `K_ELEC = 332.0`).
  *   4. Runtime: the contract constants are importable and node-safe, and the
  *      re-export sites are bit-identical to units.js.
+ *   5. TABLE ledger (added by goal M7): rules 1–4 only see a constant whose
+ *      initializer is a bare NUMBER, so every parameter TABLE — an object
+ *      literal keyed by chemical element — walked straight through. That is
+ *      exactly where the repo's third instance of this defect class lived:
+ *          src/ff-params.js:112  LIG_ELEMENT_DEFAULT = { sigma: 3.4, eps: 0.12, … }
+ *          src/heavy.js:82       HEAVY_ELEMENT_DEFAULT = { sigma: 3.4, eps: 0.12, … }
+ *      Two declarations of one quantity in two modules, one edit from a live
+ *      sigma/eps/q split between the CG and heavy paths. Rule 5 makes that
+ *      shape un-declarable outside the canonical parameter module unless it
+ *      carries a written justification (which then has to still be in use).
  *
  * THE ALLOWLIST IS THE DELIVERABLE, NOT A PERMISSION SLIP
  * Every entry carries a `why` and every entry is asserted to be STILL IN USE,
@@ -188,6 +198,111 @@ const ALLOW_MULTI_SITE = [
       "compute/webgpu_backend.js. Both sites carry this justification.",
   },
 ];
+
+// ─────────────────────────────────────────────────────────────────────
+// RULE 5 — THE TABLE LEDGER (goal M7)
+//
+// Rules 1–4 match `NAME = <number>`. A force-field PARAMETER TABLE is
+// `NAME = { SIGMA: …, EPS: … }`, which none of them can see — and a table is
+// where a chemical element's LJ parameters live, so the whole class of
+// "two modules declare one physical quantity" defects that this file exists
+// for was completely unguarded until M7.
+//
+// THE SHAPE BEING HUNTED: a SCREAMING_CASE declaration whose initializer is an
+// object literal carrying ≥2 of the five canonical element-parameter fields
+// (sigma / eps / q / hb / dG). That catches all three cases that matter:
+//
+//   • the full table          ELEMENT_LJ, METAL_ELEMENT, RES_CLASS
+//   • a per-element sub-table  NONBONDED_TABLE (AMBER parm99 — a DIFFERENT
+//                              physical model, hence allowlisted below)
+//   • a PROJECTION of one     `HEAVY_ELEMENT_DEFAULT = { sigma, eps, q }`
+//                              — a single default object carrying element
+//                              parameter fields, which is precisely what
+//                              src/heavy.js:82 was, and precisely what must
+//                              not come back.
+//
+// `hb`/`dG` are included because they are part of the same row; a table with
+// only them is still a per-element parameter table.
+// ─────────────────────────────────────────────────────────────────────
+
+/** The canonical home. Element parameters are declared HERE or not at all. */
+const PARAM_HOME = path.join("src", "physics", "params.js");
+
+/** The field set that marks an object literal as an element-parameter table. */
+const ELEMENT_PARAM_FIELDS = ["sigma", "eps", "q", "hb", "dG"];
+
+/**
+ * Element-parameter tables that are legitimately a DIFFERENT physical model
+ * and therefore live outside the canonical home. Each needs a substantive
+ * reason and must still be present (see the rot check below), so an exemption
+ * cannot outlive its justification.
+ */
+const ALLOW_ELEMENT_TABLE = [
+  {
+    name: "NONBONDED_TABLE",
+    file: path.join("src", "physics", "forcefield", "amber14sb.js"),
+    why:
+      "AMBER parm99 non-bonded LJ per element, sigma converted from Rmin/2 — a " +
+      "PUBLISHED FORCE FIELD, not the coarse bead-scale table in params.js. " +
+      "The two genuinely differ and are used for different things: params.js " +
+      "ELEMENT_LJ drives both engines' non-bonded LJ grid, this one is the " +
+      "AMBER fallback consulted by getNonbondedParams(). Worst-case epsilon gap " +
+      "between them is 81.8% (I: 0.22 vs 0.400), so silently merging or " +
+      "syncing them would be a physics change. tests/test_element_params.js " +
+      "measures the gap on every run; docs/CHARGES.md scopes the heavy model.",
+  },
+  {
+    name: "NONBONDED_DEFAULT",
+    file: path.join("src", "physics", "forcefield", "amber14sb.js"),
+    why:
+      "The AMBER table's own unknown-element fallback, which must stay with " +
+      "that table: getNonbondedParams() returns it for any element parm99 does " +
+      "not cover. Its sigma/eps happen to equal params.ELEMENT_LJ_DEFAULT " +
+      "(3.4 / 0.12) but they are a different model's fallback, and asserting " +
+      "they stay equal would assert an identity that is not a fact about the " +
+      "two models — it is a coincidence of two independent choices.",
+  },
+];
+
+/**
+ * All SCREAMING_CASE declarations in src/ whose initializer is an object
+ * literal with ≥2 element-parameter fields. Returns [{name, file, line}].
+ */
+function scanElementParamTables() {
+  const rows = [];
+  // `(?:export\s+)?(?:const|let|var)\s+NAME\s*=\s*\{` … to the matching `}`.
+  // The body scan is brace-counted rather than regexed so a nested object does
+  // not truncate the match, and a field is only counted when it is a real key
+  // (`sigma:`) rather than a mention in a nested value.
+  const DECL = /\b(?:export\s+)?(?:const|let|var)\s+([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)\s*=\s*\{/g;
+  for (const f of srcFiles()) {
+    const raw = fs.readFileSync(f, "utf-8");
+    const code = blankCommentsAndStrings(raw);
+    DECL.lastIndex = 0;
+    let m;
+    while ((m = DECL.exec(code)) !== null) {
+      const name = m[1];
+      if (!/[A-Z]{2}/.test(name)) continue;      // drops `let x`, `U`, `M`
+      // Brace-count the literal body from the `{` DECL just matched.
+      let depth = 0, i = m.index + m[0].length - 1;
+      const start = i;
+      for (; i < code.length; i++) {
+        if (code[i] === "{") depth++;
+        else if (code[i] === "}") { depth--; if (depth === 0) break; }
+      }
+      const body = code.slice(start, i + 1);
+      const hits = ELEMENT_PARAM_FIELDS.filter((fld) =>
+        new RegExp(`[{,\\s]${fld}\\s*:`).test(body));
+      if (hits.length < 2) continue;
+      rows.push({
+        name, fields: hits,
+        file: path.relative(ROOT, f),
+        line: code.slice(0, start).split("\n").length,
+      });
+    }
+  }
+  return rows;
+}
 
 /**
  * Declared same-value ALIASES inside the contract file itself, where a second
@@ -362,6 +477,84 @@ assert(unallowed === 0,
   assert(shaderHits === 0,
     `no units.js contract constant is hardcoded in shader source ` +
     `(${scanned} shader-bearing file(s) scanned); found ${shaderHits}`);
+}
+
+// ── 5. TABLE ledger: an element parameter table has one home ──────────────
+// Added by goal M7. Rules 1–4 cannot see an object-literal table, which is
+// precisely where a chemical element's LJ parameters live.
+{
+  const tables = scanElementParamTables();
+  const sites = tables.map((t) => `${t.name}@${t.file}:${t.line}(${t.fields.join("/")})`);
+  const allowed = new Map(ALLOW_ELEMENT_TABLE.map((e) => [`${e.name}@${e.file}`, e]));
+  const outside = [];
+
+  for (const t of tables) {
+    if (t.file === PARAM_HOME) continue;                 // the canonical home
+    const key = `${t.name}@${t.file}`;
+    const ex = allowed.get(key);
+    if (!ex) {
+      outside.push(t);
+      console.error(
+        `      ELEMENT PARAM TABLE ${key}: object literal declares ` +
+        `${t.fields.join("/")} outside ${PARAM_HOME} — a per-element LJ/charge ` +
+        `table (or a projection of one) may only be declared in the canonical ` +
+        `parameter module, or allowlisted as a DIFFERENT physical model`);
+    } else if (!ex.why || ex.why.length < 40) {
+      outside.push(t);
+      console.error(`      ALLOW_ELEMENT_TABLE entry ${key} has no substantive justification`);
+    }
+  }
+  assert(outside.length === 0,
+    `every per-element sigma/eps/q table is declared in ${PARAM_HOME} or carries a ` +
+    `written justification for being a different model; ${tables.length} table site(s) ` +
+    `scanned, ${outside.length} unaccounted for` +
+    (tables.length ? ` — ${sites.join(", ")}` : ""));
+
+  // The allowlist must not rot, same as ALLOW_MULTI_SITE: an exemption whose
+  // table no longer exists is a silent hole and is itself a failure.
+  let stale = 0;
+  for (const e of ALLOW_ELEMENT_TABLE) {
+    const key = `${e.name}@${e.file}`;
+    if (!tables.some((t) => `${t.name}@${t.file}` === key)) {
+      stale++;
+      console.error(`      STALE ALLOW_ELEMENT_TABLE entry "${key}" — no such table; delete it`);
+    }
+  }
+  assert(stale === 0, `no stale ALLOW_ELEMENT_TABLE entries; ${stale} found`);
+
+  // The canonical module must actually BE canonical: if someone empties it, the
+  // single-site rule above becomes vacuous and the duplication guard guards
+  // nothing. This is the vacuity check the repo already insists on elsewhere
+  // (scripts/check.sh per-extension totals, test_suite_registry's census).
+  const params = await import("../src/physics/params.js");
+  // Same leaf discipline as units.js (rule 0): the canonical parameter module
+  // must import nothing, so ff-params.js, forcefield.js, heavy.js,
+  // ligand-panel.js and placement.js can all reach it without a cycle, and so a
+  // second literal cannot arrive "via a dependency".
+  const paramsRaw = fs.readFileSync(path.join(ROOT, "src", "physics", "params.js"), "utf-8");
+  const paramsHasImports = /^\s*(import|export)\s[^;]*\bfrom\b/m.test(blankCommentsAndStrings(paramsRaw));
+  assert(!paramsHasImports,
+    `${PARAM_HOME} is a leaf too (zero static imports) — every consumer can reach ` +
+    `the parameter contract without creating a cycle`);
+  assert(Object.keys(params.ELEMENT_LJ).length === 9 &&
+    Object.keys(params.METAL_ELEMENT).length === 10 &&
+    Object.keys(params.RES_CLASS).length === 5 &&
+    Object.keys(params.COVALENT_RADIUS).length === 21,
+    `the canonical parameter module is populated, not hollow: ` +
+    `ELEMENT_LJ ${Object.keys(params.ELEMENT_LJ).length}, ` +
+    `METAL_ELEMENT ${Object.keys(params.METAL_ELEMENT).length}, ` +
+    `RES_CLASS ${Object.keys(params.RES_CLASS).length}, ` +
+    `COVALENT_RADIUS ${Object.keys(params.COVALENT_RADIUS).length}`);
+
+  // …and the old home must be a re-export, not a second declaration. This is
+  // the assertion that fails if HEAVY_ELEMENT_DEFAULT is ever planted again.
+  const facade = await import("../src/ff-params.js");
+  assert(facade.LIG_ELEMENT === params.ELEMENT_LJ &&
+    facade.LIG_ELEMENT_DEFAULT === params.ELEMENT_LJ_DEFAULT &&
+    facade.METAL_ELEMENT === params.METAL_ELEMENT &&
+    facade.RES_CLASS === params.RES_CLASS &&
+    facade.COVALENT_RADIUS === params.COVALENT_RADIUS,
+    `src/ff-params.js re-exports the canonical tables by IDENTITY (no copies to drift)`);
 }
 
 // ── 4. Runtime: every re-export site is bit-identical to units.js ────

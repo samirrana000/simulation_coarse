@@ -28,25 +28,25 @@ documented in `src/forcefield.js:723-772`):
 - Screened Coulomb `U = 332.0637·q1·q2/(ε(r)·r)·sw` with
   `ε(r) = 4 + 76·tanh(r/8)` (`src/ff-binding.js:115-124`; doc
   `src/forcefield.js:728-730`). Protein bead charges are all `q: 0`
-  (`src/ff-params.js:61-67`), so this term is **identically zero** in CG
+  (`src/physics/params.js:264-270`), so this term is **identically zero** in CG
   today (charges flow through `src/forcefield.js:184` unchanged).
 - ISOTROPIC H-bond Gaussian, `EPSHB = 0.8 kcal/mol`, `HB_R0 = 3.2 Å`,
   `HB_W = 0.6 Å`, gated only on donor/acceptor **flags**
   (`src/ff-binding.js:57-58,127-133`). No angular term. Protein flag is
   residue-class based: P/Cp/Cn = 1 (`src/forcefield.js:185`); ligand flag is
-  element based: N/O/F = true (`src/ff-params.js:76-87`).
+  element based: N/O/F = true (`src/physics/params.js:102-112`).
 - EEF1-lite burial desolvation: `g(r) = exp(−(r−4.5)²/2·1.8²)`,
   `B_a = 1 − exp(−n_a/3)`, `U = Σ ΔG_a·B_a`
   (`src/ff-binding.js:32,89-91,150-155`; doc `src/forcefield.js:748-764`).
   Per-atom transfer energies `ΔG_a ∈ [−0.55, −0.25]` kcal/mol
-  (`src/ff-params.js:76-87`).
+  (`src/physics/params.js:102-112`).
 - Native holo springs `k = holoGamma = 0.5 kcal/mol/Å²`
   (`src/forcefield.js:116`), pairs with `r0 ≤ 6.0 Å`
   (`src/forcefield.js:276-303`), **excluded** from the binding pair pass
   (`src/ff-binding.js:83-84`) so no double counting.
 - CG protein beads carry only 5 residue classes H/A/P/Cp/Cn with
   `σ ∈ [3.6, 4.1] Å, ε ∈ [0.10, 0.18]` kcal/mol
-  (`src/ff-params.js:61-74`).
+  (`src/physics/params.js:264-270`).
 
 Heavy mode (`src/heavy.js`):
 
@@ -69,9 +69,9 @@ Heavy mode (`src/heavy.js`):
   production path `evaluatePair()` hard-codes ideal 180°
   (`src/physics/hbond.js:115-120`). Effective heavy H-bond today ≈ radial.
 - Covalent topology: `r < 1.15·(r_cov(i)+r_cov(j))` and `r < 2.2 Å` cap
-  (`src/heavy.js:278-299`; radii `src/ff-params.js:150-155`); metal
+  (`src/heavy.js:278-299`; radii `src/physics/params.js:246-250`); metal
   coordination = distance springs to N/O/S donors within `coordR`
-  (`src/heavy.js:383-404`; `coordR/coordN` table `src/ff-params.js:102-112`).
+  (`src/heavy.js:383-404`; `coordR/coordN` table `src/physics/params.js:174-185`).
 - Charges: united-atom AMBER-ish protein table + element fallbacks for
   ligand (`src/physics/charges.js:96-132`); GAFF2-lite typer opt-in
   (`src/heavy.js:215-248`); heuristic PROPKA-style protonation

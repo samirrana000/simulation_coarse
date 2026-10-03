@@ -81,7 +81,7 @@ import { repulsion } from "./ff-repulsion.js";
 import { binding } from "./ff-binding.js";
 import { KB_KCAL, KCONV } from "./units.js";
 import {
-  RES_CLASS, RES_CLASS_OF, CG_FORMAL_CHARGES, LIG_ELEMENT, LIG_ELEMENT_DEFAULT,
+  RES_CLASS, RES_CLASS_OF, CG_FORMAL_CHARGES, resolveElementParams,
   SEQ_WEIGHT, KBOND_DEFAULT, KANGLE_DEFAULT, HOLO_FLOOR_RMIN, HOLO_FLOOR_K,
 } from "./ff-params.js";
 import { buildTirionNetwork, applyTirionToForceField } from "./physics/forcefield/tirion_anm.js";
@@ -278,7 +278,11 @@ export class ForceField {
     this._ligHB = new Uint8Array(this.nLigAtoms);
     this._ligdG = new Float64Array(this.nLigAtoms);
     for (let a = 0; a < this.nLigAtoms; a++) {
-      const e = LIG_ELEMENT[this.ligandAtoms[a].element] ?? LIG_ELEMENT_DEFAULT;
+      // M7: `LIG_ELEMENT[el] ?? LIG_ELEMENT_DEFAULT` is now the shared
+      // `resolveElementParams` from src/physics/params.js — the SAME function
+      // heavy.js calls, so an element cannot resolve to a different sigma/eps
+      // in the two engines. Identical values (ELEMENT_LJ is LIG_ELEMENT).
+      const e = resolveElementParams(this.ligandAtoms[a].element);
       this._ligSigma[a] = e.sigma; this._ligEps[a] = e.eps; this._ligQ[a] = e.q;
       this._ligHB[a] = e.hb ? 1 : 0; this._ligdG[a] = e.dG;
     }

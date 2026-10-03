@@ -42,7 +42,7 @@ Loop-2 plan below.
   made explicitly and is literature-defensible (desolvation discount). **Consistent.**
 - All §0 code claims machine-verified by `validate_binding_physics_r1.mjs` (re-run ✓);
   spot-checked by hand: `ff-binding.js:57` EPSHB 0.8/HB_R0 3.2/HB_W 0.6 ✓;
-  `ff-binding.js:115-124` screened Coulomb with dead q=0 path ✓ (`ff-params.js:61-67`
+  `ff-binding.js:115-124` screened Coulomb with dead q=0 path ✓ (`physics/params.js:264-270`
   all `q: 0` confirmed); `ff-binding.js:83-84` holo-spring exclusion ✓;
   `forcefield.js:185` flag = P/Cp/Cn only ✓; `heavy.js:947-1015` kernel = LJ+GB+H-bond
   only ✓; `physics/hbond.js:91,115-120` angular gradient stub + hard-coded 180° ✓.

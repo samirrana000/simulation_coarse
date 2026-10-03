@@ -549,10 +549,10 @@
     </div>
   </div>
 
-  <!-- Accessibility: ESC closes modal, Space toggles run, tab order logical — see src/main.js:477 Escape, src/main.js:494 Space, docs/ACCESSIBILITY.md (axe 0 violations) -->
+  <!-- Accessibility: ESC closes modal, Space toggles run, tab order logical — see src/controllers/transport.js:67 Escape, src/controllers/transport.js:90 Space, docs/ACCESSIBILITY.md (axe 0 violations) -->
   <script type="module" src="src/main.js"></script>
   <script>
-  // Fallback keyboard contract for index.html standalone (primary impl is src/main.js:477-515)
+  // Fallback keyboard contract for index.html standalone (primary impl is src/controllers/transport.js:64-129)
   // ESC closes modal, Space toggles run, tab order logical (natural DOM order, no positive tabindex)
   (function(){
     const modal=document.getElementById("settingsModal");
@@ -564,7 +564,7 @@
         if(btn) btn.focus();
         e.preventDefault();
       } else if(e.code==="Space" && !/INPUT|SELECT|TEXTAREA|BUTTON|A|SUMMARY/.test(document.activeElement?.tagName||"")){
-        // Space toggles run — mirrors src/main.js (FP3: skips natively-
+        // Space toggles run — mirrors src/controllers/transport.js (FP3: skips natively-
         // activatable BUTTON/A/SUMMARY so focused controls keep native Space)
         if(play && !play.disabled){ e.preventDefault(); play.click(); }
       }
