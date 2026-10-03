@@ -7,16 +7,17 @@
   "rBaselineNote": "R rebaselined at cycle 10-improvement: the gate MEASURED more than it used to. syntax now covers all 211 .js/.mjs (was src/ only, 110), dom now reads all 110 src modules not just ui.js (140 ids, was 117), coverage now counts scripts/*.mjs suites and distinguishes default-run from opt-in (5 suites are opt-in-only), science now reads the real trust-boundary sources not a 4000-char README prefix. coverage DROPPED 1.0 -> 0.9333: the old metric reported perfect while 5 suites never ran by default. Scores before this are NOT comparable - the gate was measuring subsets and scoring them as if they were whole.",
   "prevGateVector": {
     "cycle": 16,
-    "score": 0.5197,
+    "score": 0.891,
     "parts": {
       "syntax": 1,
-      "testPass": 0,
+      "testPass": 1,
       "coverage": 0.921053,
       "dom": 1,
       "bloat": 0.868393,
       "science": 1
     },
     "saturated": [
+      "testPass",
       "syntax",
       "dom",
       "science"
@@ -41,9 +42,9 @@
     ]
   },
   "benchVector": {
-    "heavyMs": 13.404,
-    "cgMs": 0.159,
-    "treeKey": "91463ba97bfeeb9cc91130531a1ed8d41bb37fc6:384",
-    "measuredAt": "2026-10-03T11:20:16.276Z"
+    "heavyMs": 13.6,
+    "cgMs": 0.161,
+    "treeKey": "534d606386c5caa81d9d578169b621b059c2524e:384",
+    "measuredAt": "2026-10-03T11:26:20.199Z"
   }
 }

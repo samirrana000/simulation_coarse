@@ -2,19 +2,20 @@
   "_meta": {
     "planner": "evolve/evolve.mjs plan",
     "cycle": 16,
-    "generatedAt": "2026-10-03T11:24:40.023Z",
+    "generatedAt": "2026-10-03T11:30:26.448Z",
     "gateVector": {
       "cycle": 16,
-      "score": 0.5197,
+      "score": 0.891,
       "parts": {
         "syntax": 1,
-        "testPass": 0,
+        "testPass": 1,
         "coverage": 0.921053,
         "dom": 1,
         "bloat": 0.868393,
         "science": 1
       },
       "saturated": [
+        "testPass",
         "syntax",
         "dom",
         "science"
@@ -22,14 +23,14 @@
     },
     "R_best": 0.891,
     "PLAN_SIZE": 15,
-    "candidatesMeasured": 14,
-    "emitted": 14,
+    "candidatesMeasured": 13,
+    "emitted": 13,
     "deficitPoolExhausted": true,
-    "deficitPoolNote": "Only 14 distinct measurable deficits were found; emitted 14 of a nominal 15. NOT padded — an unmeasured filler goal costs a full agent call and returns nothing. Remaining debt is listed under \"considered\" with the reason it produced no goal.",
+    "deficitPoolNote": "Only 13 distinct measurable deficits were found; emitted 13 of a nominal 15. NOT padded — an unmeasured filler goal costs a full agent call and returns nothing. Remaining debt is listed under \"considered\" with the reason it produced no goal.",
     "probeCensus": [
       {
         "source": "gate-vector",
-        "found": 4
+        "found": 3
       },
       {
         "source": "gate-blind-spot",
@@ -186,39 +187,6 @@
     {
       "id": "P03",
       "horizon": "short",
-      "priority": 0,
-      "title": "The gate reports a regression and still exits 0: score 0.5197 < R_best 0.891",
-      "thesis": "Measured: `node evolve/evolve.mjs gate` printed verdict \"CLOSED (roll back)\" at score 0.5197 against R_best 0.891, and `echo $?` was 0. .github/workflows/check.yml runs the gate as a build step, so a step that can only ever pass gates nothing: the loop's own \"reject\" signal is discarded by the shell. A gate that cannot fail is not a gate.",
-      "acceptance": "node evolve/evolve.mjs gate exits non-zero when score < R_best and 0 when score >= R_best; a planted regression makes the CI step red. Proven by a test that sets R_best above the current score and asserts a non-zero exit.",
-      "read_only": [
-        "evolve/evolve.mjs",
-        ".github/workflows/check.yml",
-        "package.json"
-      ],
-      "touch": [
-        "evolve/evolve.mjs",
-        "tests/",
-        ".github/workflows/check.yml"
-      ],
-      "do_not_touch": [
-        "data/coreset/**",
-        "node_modules/**",
-        "evolve/queue/goals.json",
-        "evolve/traces/**"
-      ],
-      "patterns": [
-        "P3-unsurfaced-value",
-        "P6-node-gates-blind-to-dom"
-      ],
-      "status": "open",
-      "origin": "deficit-analysis:gate-vector",
-      "deficit": 0.9,
-      "measurement": "gate-exit-code",
-      "read_onlyDropped": []
-    },
-    {
-      "id": "P04",
-      "horizon": "short",
       "priority": 1,
       "title": "science=1.0000 is saturated, but the overclaim check reads only 4000 of README.md's 25569 chars and passes on a keyword regex",
       "thesis": "scienceScore() computes have/must for 7 files, then multiplies by (overclaim ? 1 : 0.5) where overclaim = /NOT a replacement|qualitative|not FEP|trust boundary/i.test(README.md.slice(0,4000)). Measured: README.md is 25569 chars, so 21569 chars (84.4%) of the project's honest-scope surface is never examined, and the check that IS run is satisfied by a single matching phrase rather than by the absence of an overclaim. Deleting the phrase halves the component; writing a false claim anywhere past char 4000 changes nothing.",
@@ -251,7 +219,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P05",
+      "id": "P04",
       "horizon": "short",
       "priority": 2,
       "title": "2 docs/ files exceed 400 LOC (largest docs/BINDING_LOOP2_DONE.md at 1326 LOC, 1746 LOC combined)",
@@ -286,7 +254,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P06",
+      "id": "P05",
       "horizon": "mid",
       "priority": 1,
       "title": "6 declared constants (SCREAMING_CASE = number) are defined in more than one src/ file",
@@ -320,7 +288,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P07",
+      "id": "P06",
       "horizon": "short",
       "priority": 1,
       "title": "1 private fields are ASSIGNED in src/ and never read anywhere: src/viewer.js this._requestClear",
@@ -354,7 +322,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P08",
+      "id": "P07",
       "horizon": "mid",
       "priority": 0,
       "title": "The DOM gate checks 117 ids from src/ui.js and misses 24 of the 141 ids the app actually references",
@@ -390,7 +358,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P09",
+      "id": "P08",
       "horizon": "mid",
       "priority": 1,
       "title": "Cut src LOC below the bloat knee: 29501 LOC vs the 20000 penalty start",
@@ -423,7 +391,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P10",
+      "id": "P09",
       "horizon": "short",
       "priority": 0,
       "title": "The syntax gate checks 110 files under src/ and ZERO of the 16 .mjs files that run the loop itself",
@@ -458,7 +426,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P11",
+      "id": "P10",
       "horizon": "mid",
       "priority": 1,
       "title": "coverage=0.9211 is saturated by counting only tests/test_*.js — 9 scripts/ validators are outside the denominator",
@@ -492,7 +460,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P12",
+      "id": "P11",
       "horizon": "mid",
       "priority": 1,
       "title": "4 empty catch blocks in src/ swallow every error they see",
@@ -527,7 +495,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P13",
+      "id": "P12",
       "horizon": "mid",
       "priority": 1,
       "title": "1 of 25 TODO/stub/placeholder hits in src/ are on lines that EXECUTE, not in comments",
@@ -562,7 +530,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P14",
+      "id": "P13",
       "horizon": "short",
       "priority": 1,
       "title": "Eliminate the tracked files >1MB that hold the bloat file penalty open: 1 file(s)",
