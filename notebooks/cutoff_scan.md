@@ -13,8 +13,8 @@ across single-domain proteins; we scan 7–13 Å on 4W52 (holo benzene pocket)
 because it is the primary ligand-binding benchmark in `tests/test_b_factors.js`
 and `data/4W52_contacts.json`.
 
-Code anchor: `src/forcefield.js:102` `this.rc = par.rc ?? 10.0` and
-`src/forcefield.js:213` spring construction `r0 <= rc && !isBound13`.
+Code anchor: `src/cg/params.js:46` `ff.rc = par.rc ?? 10.0` and
+`src/cg/topology.js:105` spring construction `r0 <= ff.rc && !isBound13`.
 
 ## Scan Protocol
 
@@ -66,4 +66,4 @@ node --experimental-modules notebooks/cutoff_scan.mjs  # if present, else use
 - Placeholder table above — replace with live `ff.springs.length` counts after
   your run (values are order-of-magnitude correct for 4w52/164 aa).
 
-*See `src/forcefield.js:102`, `src/ff-params.js:1`, `docs/CG_HEAVY.md`.*
+*See `src/cg/params.js:46`, `src/ff-params.js:1`, `docs/CG_HEAVY.md`.*

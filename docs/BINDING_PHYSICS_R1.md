@@ -21,28 +21,28 @@ scale, in which resolution. No `src/` physics was modified for this report.
 ## 0. Grounding: what the code actually does today (verified by reading)
 
 CG binding kernel (`src/ff-binding.js`, wrapped by `ForceField._binding`
-documented in `src/forcefield.js:723-772`):
+documented in `src/cg/forcefield.js:181-227`):
 
 - Cross 12-6 LJ, Lorentz–Berthelot combining, smoothstep-switched at
-  `bindRcut = 9.0 Å` (`src/forcefield.js:115`, `src/ff-binding.js:104-111`).
+  `bindRcut = 9.0 Å` (`src/cg/params.js:79`, `src/ff-binding.js:104-111`).
 - Screened Coulomb `U = 332.0637·q1·q2/(ε(r)·r)·sw` with
   `ε(r) = 4 + 76·tanh(r/8)` (`src/ff-binding.js:115-124`; doc
-  `src/forcefield.js:728-730`). Protein bead charges are all `q: 0`
+  `src/cg/forcefield.js:191-198`). Protein bead charges are all `q: 0`
   (`src/physics/params.js:264-270`), so this term is **identically zero** in CG
-  today (charges flow through `src/forcefield.js:184` unchanged).
+  today (charges flow through `src/cg/params.js:78` unchanged).
 - ISOTROPIC H-bond Gaussian, `EPSHB = 0.8 kcal/mol`, `HB_R0 = 3.2 Å`,
   `HB_W = 0.6 Å`, gated only on donor/acceptor **flags**
   (`src/ff-binding.js:57-58,127-133`). No angular term. Protein flag is
-  residue-class based: P/Cp/Cn = 1 (`src/forcefield.js:185`); ligand flag is
+  residue-class based: P/Cp/Cn = 1 (`src/cg/params.js:111`); ligand flag is
   element based: N/O/F = true (`src/physics/params.js:102-112`).
 - EEF1-lite burial desolvation: `g(r) = exp(−(r−4.5)²/2·1.8²)`,
   `B_a = 1 − exp(−n_a/3)`, `U = Σ ΔG_a·B_a`
-  (`src/ff-binding.js:32,89-91,150-155`; doc `src/forcefield.js:748-764`).
+  (`src/ff-binding.js:32,89-91,150-155`; doc `src/cg/forcefield.js:206-227`).
   Per-atom transfer energies `ΔG_a ∈ [−0.55, −0.25]` kcal/mol
   (`src/physics/params.js:102-112`).
 - Native holo springs `k = holoGamma = 0.5 kcal/mol/Å²`
-  (`src/forcefield.js:116`), pairs with `r0 ≤ 6.0 Å`
-  (`src/forcefield.js:276-303`), **excluded** from the binding pair pass
+  (`src/cg/params.js:80`), pairs with `r0 ≤ 6.0 Å`
+  (`src/cg/springs.js:42-72`), **excluded** from the binding pair pass
   (`src/ff-binding.js:83-84`) so no double counting.
 - CG protein beads carry only 5 residue classes H/A/P/Cp/Cn with
   `σ ∈ [3.6, 4.1] Å, ε ∈ [0.10, 0.18]` kcal/mol

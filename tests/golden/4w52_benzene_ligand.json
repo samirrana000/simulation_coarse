@@ -1,0 +1,26 @@
+{
+  "provenance": "Recorded from the PRE-SPLIT tree at git 61374b2 (src/forcefield.js, 947 LOC), before the src/cg/ extraction. Consumed by tests/test_cg_ligand_golden.js. tests/golden/4w52_10steps.json is protein-only and cannot see the ligand kernels; this one can. Regenerate with: node tests/generate_cg_ligand_golden.js --write",
+  "system": "4W52 — T4 lysozyme L99A + benzene (BNZ), Cα CG + united-atom ligand",
+  "seed": 7,
+  "steps": 10,
+  "dtPs": 0.004,
+  "n": 185,
+  "nProt": 164,
+  "nLigAtoms": 21,
+  "nHolo": 63,
+  "nNativeContacts": 2,
+  "energy": 11.783446959717985,
+  "energyHash": "176683ee",
+  "posHash": "f28258c5",
+  "velHash": "8f7f3cc9",
+  "forceHash": "479bec99",
+  "bindingU": -7.057349120967964,
+  "desolvU": -5.5221575948612625,
+  "terms": {
+    "harmonic": "5818f348",
+    "angle": "059b44bf",
+    "ligandInternal": "5c0c41a1",
+    "repulsion": "bb02e6f1",
+    "binding": "03df74f0"
+  }
+}

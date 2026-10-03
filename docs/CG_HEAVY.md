@@ -94,7 +94,7 @@ are the handshake invariants inspected by `src/analysis.js` and `src/viewer.js`.
 
 ## 4. `nativeContacts` Double-Coverage Guard (C24)
 
-*Location:* `src/forcefield.js:340` (`this.nativeContacts`).
+*Location:* `src/cg/topology.js:262` (`ff.nativeContacts`).
 
 **Problem:** folded ligands/sugars place non-bonded 1-5+ pairs at 2.9–4.0 Å,
 inside their own LJ `r_e = 2^(1/6)σ` (≈3.8–5.0 Å). The grid's WCA repulsion
@@ -116,10 +116,10 @@ native r0 ──► [already in _excluded? (bonds/angles/springs)] ──► kee
 
 *Why O(N²) only at build:* the scan is construction-time; `compute()` then
 uses the grid + springs without re-scanning. Forces are still `O(N)` average
-(cell lists). Diagram is also inline at `src/forcefield.js:340`.
+(cell lists). Diagram is also inline at `src/cg/topology.js:233`.
 
 *Verification:* `grep -n "nativeContacts" src/forcefield.js` shows construction
-and energy application (`src/forcefield.js:425` `_harmonicPairs` with k=1.0).
+and energy application (`src/cg/compute.js:62` `_harmonicPairs` with k=1.0).
 
 ---
 
@@ -162,4 +162,4 @@ node tests/test_topology.js                                     # C28 disulfides
 ```
 
 *See `notebooks/cutoff_scan.md`, `tests/test_enm_seq.js:1`, `tests/test_bond_dist.js:1`,
-`src/forcefield.js:340` for line-cited provenance.*
+`src/cg/topology.js:262` for line-cited provenance.*

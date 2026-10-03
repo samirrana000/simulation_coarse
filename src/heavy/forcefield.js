@@ -102,7 +102,14 @@ export class HeavyForceField {
     }
 
     // Fast Spatial Grid for O(N) neighbor searches
-    // G66 — Verlet skin 2Å, rebuild every 10 steps, 20% cut — aspirational target; currently rebuilds every step via SpatialGrid.build() with R_CUT=8.5Å (skin not yet implemented)
+    // G66 — see src/spatial-grid.js:6 for the full measurement. Short
+    // version: the Verlet skin was implemented, proven correct (1.4e-14 force
+    // agreement vs a full rebuild), worth a measured 7.5 % — and rejected,
+    // because a retained pair list cannot be bit-exact against a per-step
+    // rebuild (traversal order is cell-dependent, ~1e-14), which would mean
+    // regenerating the heavy golden. The premise it was meant to fix was
+    // also false: grid.build() is 0.06 % of a compute, not the bottleneck.
+    // The bottleneck is the stencil walk, not the rebuild.
     this.grid = new SpatialGrid(R_CUT, this.n);
 
     // Biophysics modules

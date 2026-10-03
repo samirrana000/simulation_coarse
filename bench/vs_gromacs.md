@@ -17,7 +17,7 @@ Heavy: n=1308  14 – 16 ms/compute       (mean 15.99 ± 1.52 ms over 30, min 14
 
 Rounded for the table below to **0.16 ms** (CG 164) and **14 ms** (Heavy 1308) — representative of many runs (spec cites 0.16 ms vs 14 ms; your machine may show 0.18 ms vs 16 ms depending on CPU).
 
-Source: `bench/perf.js:53` `benchCompute()` and `src/forcefield.js:403` `compute()` / `src/heavy/energy.js:40` `compute()`.
+Source: `bench/perf.js:53` `benchCompute()` and `src/cg/compute.js:53` `computeForces()` / `src/heavy/energy.js:40` `compute()`.
 
 ## Comparison table (same system size, single core, implicit notes)
 

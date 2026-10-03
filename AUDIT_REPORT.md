@@ -337,7 +337,7 @@ if (!element) element = elementFromName(atomName, rec);
 
 ### 3.5 P2 — Physics → `pos` NaN/Infinity → viewer collapses to center dot
 
-- `integrator.js:229-244 _kick` zeros NaN force but leaves `pos` NaN. `forcefield.js:458-471` and `heavy.js:633-639` zero bad forces but leave `pos` NaN.
+- `integrator.js:229-244 _kick` zeros NaN force but leaves `pos` NaN. `src/cg/compute.js:102-118` and `heavy.js:633-639` zero bad forces but leave `pos` NaN.
 - `viewer.js:301 let rx = pos[3*i] || 0` masks `NaN→0` but `Infinity||0 → Infinity` → `px=Infinity` off-screen. All NaN beads collapse to `[0,0,0]` → single pixel at center, looks blank.
 - Triggers: overlap `r<1e-4` skipped in repulsion but harmonic `r||1e-12` not, MOL2 at far origin inflates energy, `placement.js:262-279 findPocketCenter` with NaN protein COM produces NaN ligand target, `spatial-grid.js` NaN hashing collapses to cell 0.
 

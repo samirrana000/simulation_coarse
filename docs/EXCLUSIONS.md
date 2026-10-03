@@ -1,6 +1,6 @@
 # Exclusions — 1-2 / 1-3 / 1-4 non-bonded policy
 
-> Audit: `src/heavy/forcefield.js:184-200` (`pairKey i*1e6+j`) and `src/forcefield.js:250-309`
+> Audit: `src/heavy/forcefield.js:184-200` (`pairKey i*1e6+j`) and `src/cg/topology.js:157-246`
 > ⇒ documented here for B13.
 
 ## Summary
@@ -31,12 +31,12 @@ if (excluded.has(pairKey(i,j))) return;
 const s14 = _scale14.get(pairKey(i,j)) ?? 1.0; // 0.5 for 1-4, else 1
 ```
 
-## Coarse-grained (`src/forcefield.js:250-309`)
+## Coarse-grained (`src/cg/topology.js:157-246`)
 
 Same `_pairKey(i,j)=i<j ? i*1e6+j : j*1e6+i`, but also excludes ENM springs, holo springs, nativeContacts, and ligand internal FF pairs (bonds/angles/impropers) plus a transitive 1-4 walk for ligands (any `x–a–b–c` chain adds `pairKey(x,c)`). All 1-4 proper exclusions via that walk are excluded; protein 1-4 via ENM/bonds are excluded, not scaled — coarse model uses repulsive-only LJ (no 1-4 partial electrostatics).
 
 ## pairKey capacity and collision audit — `i*1e6 + j`
 
-Choice `pairKey(i,j)= min*1e6 + max` encodes ordered pair in one integer key for `Set`/`Map`. With factor 1e6, supports `n < 1_000_000` atoms without collision (2 distinct pairs never map to same integer because `j < 1e6`). Real workloads: crambin 46 aa ≈ 327 heavy atoms, T4 lysozyme 164 aa ≈ 1308 heavy, 4HHB ~ 4300 heavy, largest PDBBind coreset < 20k heavy — three orders of magnitude below limit. If `n ≥ 1e6` collisions would occur (e.g. 0*1e6+1_000_001 collides with 1*1e6+1); such systems are out-of-scope (would need BigInt or string key or 1e9 factor). `forcefield.js:_pairKey` and `heavy.js:pairKey` both use 1e6; see `_pairKey` definition at `src/heavy/forcefield.js:269` and `forcefield.js:383`.
+Choice `pairKey(i,j)= min*1e6 + max` encodes ordered pair in one integer key for `Set`/`Map`. With factor 1e6, supports `n < 1_000_000` atoms without collision (2 distinct pairs never map to same integer because `j < 1e6`). Real workloads: crambin 46 aa ≈ 327 heavy atoms, T4 lysozyme 164 aa ≈ 1308 heavy, 4HHB ~ 4300 heavy, largest PDBBind coreset < 20k heavy — three orders of magnitude below limit. If `n ≥ 1e6` collisions would occur (e.g. 0*1e6+1_000_001 collides with 1*1e6+1); such systems are out-of-scope (would need BigInt or string key or 1e9 factor). `forcefield.js:_pairKey` and `heavy.js:pairKey` both use 1e6; see `_pairKey` definition at `src/heavy/forcefield.js:269` and `src/cg/forcefield.js:74`.
 
 Validation: `tests/test_exclusions.js` asserts 1-4 scale 0.5 on a 4-atom chain and that `intra-ligand` excluded count = `nLig*(nLig-1)/2`.

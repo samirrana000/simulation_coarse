@@ -84,6 +84,8 @@ export const SUITES = [
   { file: "tests/test_enm_seq.js", tier: "FAST", note: "sequence-weighted ENM springs" },
   { file: "tests/test_nve.js", tier: "FAST", note: "NVE energy conservation" },
   { file: "tests/test_golden.js", tier: "FAST", note: "10-step golden trajectory regression (CG)" },
+  { file: "tests/test_cg_ligand_golden.js", tier: "FAST", note: "10-step golden over the CG LIGAND path (4W52 + benzene): holo springs, cross LJ, EEF1-lite desolvation, ligand internal FF, per-term hashes. test_golden.js is protein-only and cannot see any of those kernels" },
+  { file: "tests/test_cg_class_shape.js", tier: "FAST", note: "ForceField class shape after the src/cg/ split: every method stays a non-enumerable prototype property and for..in over an instance yields the same 70 own fields in the same order (catches an Object.assign prototype-composition regression)" },
   { file: "tests/test_heavy_golden.js", tier: "FAST", note: "bit-exact heavy-mode regression: tests/golden/4w52_10steps.json is CG-only and never imports heavy.js, so before this the heavy engine had FD tests at a 1e-3 RELATIVE tolerance and no bit-level net at all. 6 constructor configs x 12 poses x 24 accumulators + a 10-step heavy Langevin run, compared as 4-lane FNV-1a over raw IEEE-754 bytes. COMPARE-only; tests/generate_heavy_golden.js regenerates and is not a test." },
   { file: "tests/test_mol2_fidelity.js", tier: "FAST", note: "MOL2 united-atom handling" },
   { file: "tests/test_b_factors.js", tier: "FAST", note: "B-factor <-> contact Pearson R" },

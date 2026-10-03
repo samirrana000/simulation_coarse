@@ -77,7 +77,19 @@ from `TRANSFORMATION_PLAN_100.md:1`.
 ## 4. What might come after v1 (not promised)
 
 - WebGL instanced spheres with depth buffer (`docs/VIEWER.md:16`) — would need a real-browser frame-rate measurement to justify, which this repo does not have (see `docs/PERFORMANCE.md`).
-- Neighbor-list skin 2 Å, rebuild every 10 steps, 20% cut (`docs/PERFORMANCE.md:18`).
+- ~~Neighbor-list skin 2 Å, rebuild every 10 steps~~ — **measured and
+  rejected 2026-10-03.** Implemented, proven correct (1.4e-14 force agreement
+  vs a full rebuild over a 120-step trajectory), worth a real 7.5 %
+  (13.41 → 12.41 ms; measured optimum skin 1–2 Å). Not landed because a
+  retained pair list cannot be bit-exact against a per-step rebuild —
+  traversal order is cell-dependent, so reuse sums the same pairs in a
+  different order (~1e-14) — and landing it would mean regenerating the
+  bit-exact heavy golden, which exists to catch unintended changes. The
+  premise was also false: `grid.build()` is **0.06 %** of a compute, not the
+  bottleneck. The bottleneck is the stencil walk (1.93 ms, 14 %) over
+  300,399 candidates to keep 103,280 pairs; a retained pair array recovers
+  ~1.05 ms with no skin at all. That is the real G66. See
+  `src/spatial-grid.js:6`.
 - PLUMED CV compatibility note (`docs/BRIDGE.md:??`) — 2-D CVs remain out of scope.
 - None of the above overrides **No QM/MM, no explicit membrane, no PME in browser v1**.
 

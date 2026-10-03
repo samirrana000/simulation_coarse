@@ -144,7 +144,21 @@ function stripJs(src, keepStrings = false) {
 }
 
 const ffB = R("../src/ff-binding.js");
-const ff = R("../src/forcefield.js");
+// M9 (2026-10 CG split): src/forcefield.js was 947 LOC and became a facade over
+// eight modules under src/cg/ — the same move M8 made for src/heavy.js. Every
+// "does the CG ENGINE declare X" question below is asked of that whole family,
+// so the premise ("the CG force field") is unchanged while its file layout is
+// not. Reading the family is a STRICTER subject than reading one file for the
+// positive assertions (the constant now has to be imported, wired and assigned
+// across module edges) and an equally strict one for any absence assertion (no
+// cg/ module may smuggle in the forbidden term). The directory is read from
+// disk, so a new cg/ module cannot opt out of these checks by existing.
+const ff = [
+  R("../src/forcefield.js"),
+  ...readdirSync(new URL("../src/cg/", import.meta.url))
+    .filter((n) => n.endsWith(".js")).sort()
+    .map((n) => R(`../src/cg/${n}`)),
+].join("\n");
 const ffp = R("../src/ff-params.js");
 // M7: the per-element LJ / residue-class tables moved to the canonical
 // parameter module; src/ff-params.js re-exports them under their old names.

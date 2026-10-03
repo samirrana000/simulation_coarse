@@ -365,6 +365,16 @@ src/
     tick.js               the requestAnimationFrame loop (10 Hz HUD, 1 Hz panels)
   pdb.js            PDB parsing (Cα beads, ligands/HETATM, B-factors) + MOL2 ligands
   forcefield.js     the CG energy function (ENM, binding, desolvation, springs)
+                    — facade over cg/ (see below)
+  cg/               the Cα coarse-grained engine, one module per responsibility
+    level.js        L0/L1/L2 physics-tier resolution + describePhysics
+    params.js       constructor scalars; per-residue / per-element type tables
+    system.js       particle set: ref coords, appended ligand atoms, masses
+    topology.js     connectivity, ENM contacts, exclusion ledger, native contacts
+    springs.js      spring-network mutators (holo, ML prior, seq weights, Tirion)
+    grid.js         spatial-hash codec + every preallocated compute buffer
+    compute.js      the compute() term assembly (the summation order lives here)
+    forcefield.js   the ForceField class: build order + thin wrappers
   heavy.js          all-atom heavy mode (parseHeavy + HeavyForceField + metals)
   ligand.js         ligand internal geometry (bonds/angles/ring planarity)
   ligandLib.js      built-in ligand library (10 molecules as inline MOL2)

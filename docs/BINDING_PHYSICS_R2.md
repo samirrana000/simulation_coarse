@@ -17,10 +17,10 @@ modules read-only), raw output `/tmp/opencode/r2_proto_output.txt`.
 |---|---|---|
 | CG H-bond isotropic Gaussian −0.8 kcal/mol @3.2 Å, flags only, no angle | `src/ff-binding.js:57,127-133` | Replace with directional term (a) |
 | Protein bead charges all q=0 | `src/physics/params.js:264-270` | Coulomb path (`ff-binding.js:114-124`) is coded but dead — revive with charge table (term b) **[DONE Loop-2 S1: CG_FORMAL_CHARGES, opt-in `binding.charges`]** |
-| H-bond flag = residue class P/Cp/Cn only | `src/forcefield.js:185` | **52% of backbone donors/acceptors score ZERO today (prototype §C)** — every residue gets backbone virtual sites |
-| Holo springs k=0.5 hold native pose | `src/forcefield.js:116,276-303` | Keep; binding terms must not double-count (exclusion set already handles) |
+| H-bond flag = residue class P/Cp/Cn only | `src/cg/params.js:111` | **52% of backbone donors/acceptors score ZERO today (prototype §C)** — every residue gets backbone virtual sites |
+| Holo springs k=0.5 hold native pose | `src/cg/params.js:80`, `src/cg/springs.js:42-72` | Keep; binding terms must not double-count (exclusion set already handles) |
 | EEF1-lite ΔG_a −0.25…−0.55, B_a=1−exp(−n/3) | `src/ff-binding.js:89-154` | Term (c) multiplies this — no new loop |
-| Cross cutoff 9.0 Å, switch at 7.65 Å | `src/forcefield.js:115`, `ff-binding.js:25` | All new terms live inside existing pair loop |
+| Cross cutoff 9.0 Å, switch at 7.65 Å | `src/cg/params.js:79`, `ff-binding.js:25` | All new terms live inside existing pair loop |
 
 The three native 4w52 HEPES contacts used throughout as the test case (X-ray,
 all < 3.0 Å, textbook geometries):
@@ -194,7 +194,7 @@ q: Lys/Arg +1, Asp/Glu −1, His ±per protonation heuristic on bead
 
 **Zero new math** — the term is live in `ff-binding.js:114-124`, dead only
 because `RES_CLASS` has q:0 for all five classes (`physics/params.js:264-270`).
-Revival = set q in that table + flow through `forcefield.js:184`. Prototype §D:
+Revival = set q in that table + flow through `src/cg/params.js:78`. Prototype §D:
 −2.2 kcal/mol at 2.66 Å (ε=28), −1.06 at 6 Å, −0.56 at the 9 Å edge — a sane
 screened profile. Desolvation counterweight already exists (ΔG_a burial),
 which is the Hendsch & Tidor lesson (bare Coulomb over-praises salt bridges;
@@ -333,7 +333,7 @@ solvent-exposed control enc=0.
 ## 4. Loop-2 implementation order (Pareto-ranked, per term table)
 
 1. **Charge table** (term b): set q=±1 in `RES_CLASS` (or a parallel
-   `_protQ` fill in `forcefield.js:184`) + His protonation hookup
+   `_protQ` fill in `src/cg/params.js:78`) + His protonation hookup
    (reuse `chem/protonation.js` heuristic). ~10 lines. Biggest Δ-per-line;
    unblocks docking-screen validation of charged ligands immediately.
    **✅ DONE (Loop-2 S1, 2026-09-12)** — as the parallel `_protQ` fill:

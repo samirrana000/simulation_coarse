@@ -92,13 +92,16 @@ const BUDGET = {
   "src/analysis-panel.js": 617,
   "src/chem/gaff2_mapper.js": 741,
   "src/compute/webgpu_backend.js": 660,
-  "src/forcefield.js": 948,
   "src/funnel.js": 652,
   "src/physics/weakint.js": 809,
   "src/viewer.js": 624,
 };
-/** Composition roots are tables of contents and get a tighter limit. */
-const FACADE_LOC_LIMIT = { "src/main.js": 400, "src/heavy.js": 200 };
+/**
+ * Composition roots are tables of contents and get a tighter limit.
+ * src/heavy.js: facade over src/heavy/ (M8, heavy split).
+ * src/forcefield.js: facade over src/cg/ (M9, CG split).
+ */
+const FACADE_LOC_LIMIT = { "src/main.js": 400, "src/heavy.js": 200, "src/forcefield.js": 200 };
 /** Largest module may not exceed this multiple of the median module. */
 const OUTLIER_RATIO = 6.0;
 

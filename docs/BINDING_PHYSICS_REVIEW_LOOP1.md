@@ -44,7 +44,7 @@ Loop-2 plan below.
   spot-checked by hand: `ff-binding.js:57` EPSHB 0.8/HB_R0 3.2/HB_W 0.6 ✓;
   `ff-binding.js:115-124` screened Coulomb with dead q=0 path ✓ (`physics/params.js:264-270`
   all `q: 0` confirmed); `ff-binding.js:83-84` holo-spring exclusion ✓;
-  `forcefield.js:185` flag = P/Cp/Cn only ✓; `heavy.js:947-1015` kernel = LJ+GB+H-bond
+  `src/cg/params.js:111` flag = P/Cp/Cn only ✓; `heavy.js:947-1015` kernel = LJ+GB+H-bond
   only ✓; `physics/hbond.js:91,115-120` angular gradient stub + hard-coded 180° ✓.
 - Vinardo minimal-term-set discipline correctly propagated into R2 priorities.
 - **Scores: completeness 5/5, evidence 5/5. Integration risk: LOW** (docs + validation
@@ -56,7 +56,7 @@ Loop-2 plan below.
   4W52 helix n=102 site 0.93 Å / axis **6.1°**; strand 0.47 Å / 14.8°; coil 1.39 Å /
   **40.8°** (p90 99.9°). Cross-protein pattern reproduces (1crn/1ubq regular-SS
   13.7–23.8°, coil 35–59°). N-site 2–4× tighter than O-site as claimed.
-- **52% flag bug verifiable in code:** `forcefield.js:185` sets `_protHB` only for
+- **52% flag bug verifiable in code:** `src/cg/params.js:111` sets `_protHB` only for
   P/Cp/Cn; H/A residues (incl. Phe104 — the strongest native HEPES contact) score zero
   today. Prototype audit: 86/164 = 52% of backbone O acceptors and N donors invisible.
   Claim confirmed.
@@ -194,7 +194,7 @@ the docs' own Loop-2 sections (R2 §4, R3 §6, R4 §5, R7 §4).
 
 | # | Step | Files touched | Concrete changes | Validation gate | Rollback |
 |---|---|---|---|---|---|
-| **S1** | CG salt-bridge charges (R2 term b) | `src/ff-params.js` (RES_CLASS q), `src/forcefield.js:184` (or parallel `_protQ` fill), optional His hookup via `chem/protonation.js` heuristic | Set Lys/Arg +1, Asp/Glu −1 on beads (~10 lines); dead Coulomb path (`ff-binding.js:114-124`) lights up with zero new math | `tests/test_all.js` 32/32; new unit test: charged ligand (e.g. HEPES sulfonate) binding energy changes by the R2-§D screened profile (−2.2 @2.66 Å, −0.56 @9 Å); CG ms/step unchanged (±2%) | Revert q table to 0 (single-line) |
+| **S1** | CG salt-bridge charges (R2 term b) | `src/ff-params.js` (RES_CLASS q), `src/cg/params.js:78` (or parallel `_protQ` fill), optional His hookup via `chem/protonation.js` heuristic | Set Lys/Arg +1, Asp/Glu −1 on beads (~10 lines); dead Coulomb path (`ff-binding.js:114-124`) lights up with zero new math | `tests/test_all.js` 32/32; new unit test: charged ligand (e.g. HEPES sulfonate) binding energy changes by the R2-§D screened profile (−2.2 @2.66 Å, −0.56 @9 Å); CG ms/step unchanged (±2%) | Revert q table to 0 (single-line) |
 | **S2** | CG virtual sites + directional H-bond + 52%-flag fix (R2 terms a; §1d β tables) | `src/ff-binding.js` (replace isotropic block `:126-133`; frame/site rebuild in binding preamble; valence counters; coil-widened gates), `src/forcefield.js` (site arrays `~15 f64/residue`), β tables from R2 prototype (H: βO [0.56,−1.10,−1.84], βCO [−0.24,−0.77,−0.59], βN [0.87,0.38,1.10]) | Sites exist for every residue ⇒ flag = site-existence (fixes 52% bug by construction); ε_hb 2.0, r₀ 3.0, σ 0.5; A_A Baker–Hubbard hemisphere; sidechains charge-only (NO sharp gates — R2 §1c rule) | Golden test from R2 §3: natives ≥ −1.6, carbon-side/θ_D=90°/anti-H decoys = 0.000 at native distance; `test_all` 32/32; `pareto_bench --quick` CG < 0.5 ms/step (budget the 1.5× flagged-subset cost, D2) | Feature flag `binding.directional` (default on → flip off = isotropic + stopgap always-1 backbone flag per R2 §4 item 4) |
 | **S3** | Heavy π-stack + cation-π + halogen σ-hole (R3 a–c) + metal `enforceCoordination` swap (R3 e) | NEW `src/physics/weakint.js` (ring/cation/halogen lists + anisotropic kernels, gradients from prototype), `src/heavy.js` (hook in `_nonBondedGrid` preamble + swap `:383-404` springs → `chem/metals.js:218`), aromatic-pair LJ ε ×0.70 (R3 §2 double-count guard) | ε_stack 2.4 / ε_cπ 3.5 (charge-gated ×(1−\|q\|/2)) / ε_X Cl 1.2, Br 2.0, I 2.5; F excluded; ring+normal cache per topology | Unit tests = R3 §5 prototype numbers (π −1.70 @3.8; cπ −3.50 on-axis; XB −2.00/−1.77/−0.50; FD < 1e-6); `test_all` 32/32; heavy ms/step < 120 | `weakint` opt-in flag default off; metal swap behind `heavy.coordAngles` (drop springs only when on — no double radial) |
 | **S4** | Per-term energy accumulators → BindLog wiring (R4 §5 item 1, R6 §5) — **DONE** (see R4 §5/R6 §5): `src/ff-binding.js` + `src/heavy.js` (+S3 terms): accumulate {LJ, Coul, HB, desolv, π-X, cat-π, halogen} per call; `src/main.js` tick: `captureFrame` on recorder stride + `pushEnergyComponents`; contact form/break → `pushContact` | 7-term vector exposed on FF instance; zero cost when no BindLog attached | `scripts/test_bindlog_integration.mjs` 14/14 (mini-run 30 frames / 210 energy events + contact pairs; blob round-trip 0-drift); `test_bindlog` 18/18; `test_bindviz` 21/21; `test_all` 32/32; wikiskill DOM gate OPEN (91 ids); CG ms/step OFF ratio 1.03× (<1.1×) | Accumulators additive — remove push calls only; physics untouched |

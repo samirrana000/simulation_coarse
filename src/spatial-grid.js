@@ -3,7 +3,38 @@
  *
  * Replaces O(N^2) pairwise non-bonded scans with O(N) neighbor searches.
  * Uses typed arrays with head/next linked lists to avoid any memory allocation during simulation loops.
- * G66 — Verlet skin 2Å, rebuild every 10 steps, 20% cut — aspirational target (currently rebuilds every compute() call, skin not yet implemented)
+ * G66 (RESOLVED AS A NON-ISSUE, 2026-10-03). This note used to read:
+ * "Verlet skin 2Å, rebuild every 10 steps, 20% cut — aspirational target
+ * (currently rebuilds every compute() call, skin not yet implemented)".
+ *
+ * That target was implemented, benchmarked, and then REJECTED — because the
+ * premise is measurably false. On the 1293-atom 4W52 system, at a fixed
+ * position, `grid.build()` costs 0.009 ms of a 13.6 ms compute: 0.06 %.
+ * "Rebuild every 10 steps" would have bought 0.06 %. The real cost is the
+ * per-candidate stencil WALK (1.93 ms, 14 %): 300,399 candidates through a
+ * hash lookup + linked-list step + 3-load collision check each, to keep
+ * 103,280 real pairs. A flat scan of a retained pair array recovers ~1.05 ms
+ * (-7.5 %) and does not need a skin at all.
+ *
+ * A Verlet skin was also built and measured. It is CORRECT (forces and
+ * energies agree with a full rebuild to 1.4e-14 / 1.9e-15 relative over a
+ * 120-step trajectory, 3,565,227 pairs inside the C2 switch zone compared,
+ * rebuilds observed, and the deliberate cutoff-crossing case caught), and it
+ * is worth a real 7.5 % on a trajectory (13.41 -> 12.41 ms, 2 rebuilds per
+ * 200 steps; measured optimum skin 1-2 Å, so the documented 2 Å was right for
+ * the wrong reason).
+ *
+ * It was NOT landed, for one reason: a retained pair list cannot be
+ * BIT-EXACT against a per-step rebuild. Pair traversal order depends on which
+ * cell an atom occupies at that moment, so reuse sums the same pairs in a
+ * different order — 18 of 57 heavy-golden assertions moved, by ~1e-14.
+ * Landing it would mean regenerating tests/golden/heavy_4w52_fp.json, and
+ * that net exists precisely to catch changes nobody intended. A 7 % win does
+ * not justify moving it. If the project ever accepts a documented
+ * floating-point-reordering budget for the heavy path, the implementation is
+ * ~60 lines on top of this file and the measurements above are the spec.
+ *
+ * See docs/PERFORMANCE.md and the G66 entry in ROADMAP.md section 4.
  */
 
 export class SpatialGrid {

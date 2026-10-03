@@ -297,10 +297,20 @@ assert(!/\bHEAVY_ELEMENT_DEFAULT\b/.test(heavyCode),
   "the private HEAVY_ELEMENT_DEFAULT is gone from the heavy engine");
 assert(/resolveHeavyElementParams\(el\)/.test(heavyCode),
   "the heavy engine resolves element parameters through the canonical resolver");
-const ffCode = strip(fs.readFileSync(path.join(ROOT, "src", "forcefield.js"), "utf-8"));
-assert(/resolveElementParams\(/.test(ffCode) &&
-  !/LIG_ELEMENT\[/.test(ffCode),
-  "forcefield.js resolves element parameters through the canonical resolver, not a private lookup");
+// The CG engine (src/forcefield.js + src/cg/*) resolves element parameters
+// through the canonical resolver. Since the CG split the call site is
+// src/cg/params.js, so the family is read from disk: a NEW cg/ module cannot
+// re-introduce a private LIG_ELEMENT lookup without failing here, and a cg/
+// module that stops calling the resolver fails too.
+const cgCode = [
+  fs.readFileSync(path.join(ROOT, "src", "forcefield.js"), "utf-8"),
+  ...fs.readdirSync(path.join(ROOT, "src", "cg"))
+    .filter((n) => n.endsWith(".js")).sort()
+    .map((n) => fs.readFileSync(path.join(ROOT, "src", "cg", n), "utf-8")),
+].map(strip).join("\n");
+assert(/resolveElementParams\(/.test(cgCode) &&
+  !/LIG_ELEMENT\[/.test(cgCode),
+  "the CG engine resolves element parameters through the canonical resolver, not a private lookup");
 const paramsCode = strip(fs.readFileSync(path.join(ROOT, "src", "physics", "params.js"), "utf-8"));
 const rowFields = ["sigma", "eps", "q", "hb", "dG"];
 for (const f of rowFields) {
