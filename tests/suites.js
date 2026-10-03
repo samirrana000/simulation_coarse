@@ -141,7 +141,8 @@ export const SUITES = [
   { file: "tests/test_error_surfacing.js", tier: "FAST", note: "no bare catch in src/ (was 56), the recorder counts and surfaces, and a deliberately-failing operation reaches the top status bar" },
   { file: "tests/test_budget_coverage.js", tier: "FAST", note: "every bench/budget.json key is measured by a named producer or explicitly unmeasured with a reason; no published surface claims an fps number" },
   { file: "tests/test_evolve_planner.js", tier: "FAST", note: "plan emits 15 schema-valid goals whose read_only paths all exist" },
-  { file: "tests/test_evolve_gate.js", tier: "FAST", note: "the gate can fail: structure not volume, sees uncommitted work, exits non-zero" },
+  { file: "tests/test_evolve_gate.js", tier: "MEDIUM", note: "the gate can fail: structure not volume, sees uncommitted work, exits non-zero" },
+  { file: "tests/test_gate_measure.js", tier: "FAST", note: "every gate component measures a POPULATION: whole-repo syntax, all-module dom, opt-in-aware coverage, real trust sources" },
 
   // -------------------------------------------------------------- MEDIUM
   { file: "scripts/test_pocket_entropy.mjs", tier: "MEDIUM", timeout: 300000, note: "~19 s seeded pocket-entropy pilot" },

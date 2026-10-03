@@ -1,36 +1,34 @@
 {
   "cycle": 16,
-  "R_best": 0.8684,
+  "R_best": 0.891,
   "closed": [],
   "rejected": [],
-  "testHighWater": 1488,
-  "rBaselineNote": "R rebaselined at cycle 7: bloat now scores STRUCTURE (max/median module ratio) not volume, so adding a test or a shared kernel no longer lowers R. Previous scores are NOT comparable. The old metric punished good work and made R_best unreachable, which blocked the entire loop.",
+  "testHighWater": 1491,
+  "rBaselineNote": "R rebaselined at cycle 10-improvement: the gate MEASURED more than it used to. syntax now covers all 211 .js/.mjs (was src/ only, 110), dom now reads all 110 src modules not just ui.js (140 ids, was 117), coverage now counts scripts/*.mjs suites and distinguishes default-run from opt-in (5 suites are opt-in-only), science now reads the real trust-boundary sources not a 4000-char README prefix. coverage DROPPED 1.0 -> 0.9333: the old metric reported perfect while 5 suites never ran by default. Scores before this are NOT comparable - the gate was measuring subsets and scoring them as if they were whole.",
   "prevGateVector": {
     "cycle": 16,
-    "score": 0.8653,
+    "score": 0.5228,
     "parts": {
       "syntax": 1,
-      "testPass": 1,
-      "coverage": 1,
+      "testPass": 0,
+      "coverage": 0.933333,
       "dom": 1,
-      "bloat": 0.865326,
+      "bloat": 0.868393,
       "science": 1
     },
     "saturated": [
-      "testPass",
       "syntax",
       "dom",
-      "science",
-      "coverage"
+      "science"
     ]
   },
   "gateVector": {
     "cycle": 16,
-    "score": 0.8684,
+    "score": 0.891,
     "parts": {
       "syntax": 1,
       "testPass": 1,
-      "coverage": 1,
+      "coverage": 0.921053,
       "dom": 1,
       "bloat": 0.868393,
       "science": 1
@@ -39,14 +37,13 @@
       "testPass",
       "syntax",
       "dom",
-      "science",
-      "coverage"
+      "science"
     ]
   },
   "benchVector": {
-    "heavyMs": 13.375,
-    "cgMs": 0.148,
-    "treeKey": "ada62ef779c17ef60677b6041ec233d29695fe93:378",
-    "measuredAt": "2026-10-03T09:19:58.332Z"
+    "heavyMs": 13.738,
+    "cgMs": 0.159,
+    "treeKey": "ef40e199b69451f43346d430623988b985ffe1d6:382",
+    "measuredAt": "2026-10-03T10:51:21.916Z"
   }
 }

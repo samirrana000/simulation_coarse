@@ -32,6 +32,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+// The gate's MEASUREMENTS live in their own module (evolve/gate-measure.mjs)
+// because they are the part that has to be correct and the part most likely
+// to be subtly wrong. Each returns its own coverage alongside its score: a
+// number with no denominator is not a measurement.
+import {
+  checkSyntaxWithNode as checkSyntaxAll,
+  domContract,
+  coverageScore as measureCoverage,
+  scienceSurface,
+} from "./gate-measure.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..");
@@ -95,24 +105,16 @@ const SAT = 0.999;
 function runGate(opts = {}) {
   const r = { score: 0, parts: {}, notes: [] };
 
-  // 1. syntax
-  const srcFiles = [];
-  (function walk(d) {
-    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-      const p = path.join(d, e.name);
-      if (e.isDirectory()) walk(p);
-      else if (e.name.endsWith(".js")) srcFiles.push(p);
-    }
-  })(path.join(ROOT, "src"));
-  let syntaxOk = 0;
-  const syntaxBad = [];
-  for (const f of srcFiles) {
-    try { execFileSync(process.execPath, ["--check", f], { stdio: "pipe" }); syntaxOk++; }
-    catch (e) { syntaxBad.push(path.relative(ROOT, f)); }
+  // 1. syntax — widened from src/*.js to EVERY .js/.mjs in the declared roots.
+  //    The old walk examined 110 files and left the other ~100 modules
+  //    (including evolve/evolve.mjs itself) to a different script.
+  const syn = checkSyntaxAll(ROOT);
+  r.parts.syntax = syn.total ? (syn.total - syn.failed.length) / syn.total : 0;
+  r.syntaxNumbers = syn;
+  if (syn.failed.length) r.notes.push(`syntax FAIL: ${syn.failed.join(", ")}`);
+  if (syn.missingRoots && syn.missingRoots.length) {
+    r.notes.push(`syntax roots missing (coverage silently reduced): ${syn.missingRoots.join(", ")}`);
   }
-  r.parts.syntax = srcFiles.length ? syntaxOk / srcFiles.length : 0;
-  r.syntaxNumbers = { ok: syntaxOk, total: srcFiles.length };
-  if (syntaxBad.length) r.notes.push(`syntax FAIL: ${syntaxBad.join(", ")}`);
 
   // 2. tests — ratio against the recorded high-water mark, so adding real
   //    coverage keeps moving the needle instead of pinning at a legacy floor.
@@ -155,25 +157,33 @@ function runGate(opts = {}) {
     r.notes.push(`tests CRASHED (hard failure, cannot be a reference state): ${String(e.message).slice(0, 160)}`);
   }
 
-  // 2b. coverage / anti-rot: every tests/test_*.js must be wired or in tests/manual/.
-  r.parts.coverage = coverageScore();
-  r.coverageNumbers = countTests();
+  // 2b. coverage / anti-rot: every test suite in the declared POPULATION must
+  //     be wired into a tier that actually runs, or be explicitly retired.
+  //     This was widened (see evolve/gate-measure.mjs): the old version
+  //     counted only tests/test_*.js and counted a suite "wired" even when
+  //     only --slow ever ran it.
+  const cov = measureCoverage(ROOT);
+  r.parts.coverage = cov.score;
+  r.coverageNumbers = cov.numbers;
 
-
-  // 3. DOM contract
+  // 3. DOM contract — widened from src/ui.js alone to EVERY src/ module, so an
+  //    id a controller binds via getElementById is checked too. Previously
+  //    112 of 136 ids were examined and 24 were invisible.
   try {
-    const uiSrc = fs.readFileSync(path.join(ROOT, "src", "ui.js"), "utf-8");
-    const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf-8");
-    const ids = [...uiSrc.matchAll(/\$\("([^"]+)"\)/g)].map((m) => m[1]);
-    const missing = ids.filter((id) => !new RegExp(`id="${id}"`).test(html));
-    r.parts.dom = ids.length ? (ids.length - missing.length) / ids.length : 1;
-    r.domNumbers = { ids: ids.length, missing: missing.length };
-  } catch { r.parts.dom = 0; }
+    const dc = domContract(ROOT);
+    r.parts.dom = dc.score;
+    r.domNumbers = dc.numbers;
+  } catch (e) { r.parts.dom = 0; r.notes.push(`dom contract failed: ${String(e.message).slice(0, 100)}`); }
 
   // 4. bloat — measured, not vibes. git objects + tracked bytes + src LOC.
   const tracked = readTrackedStats();
   r.parts.bloat = bloatScore(tracked);
-  r.parts.science = scienceScore();
+  // Widened: this used to read README.md.slice(0, 4000) — 15.6% of a 25.6 KB
+  // document — and score a keyword hit as proof of honest scope. It now
+  // reads the real trust-boundary sources (ROADMAP.md §1, LIMITATIONS,
+  // APPLICABILITY, VALIDATION) and reports its own coverage.
+  r.scienceNumbers = scienceSurface(ROOT);
+  r.parts.science = r.scienceNumbers.score;
   r.tracked = tracked;
 
   // Renormalise over non-saturated components only.
@@ -411,8 +421,10 @@ function cmdGate() {
     weights: WEIGHTS,
     saturated: r.saturated,
     testNumbers: r.testNumbers,
+    syntaxNumbers: r.syntaxNumbers,
     coverageNumbers: r.coverageNumbers,
     domNumbers: r.domNumbers,
+    scienceNumbers: r.scienceNumbers,
     tracked: r.tracked && {
       files: r.tracked.files, MB: +(r.tracked.bytes / 1048576).toFixed(1),
       srcLoc: r.tracked.srcLoc, medianLoc: r.tracked.medianLoc,
