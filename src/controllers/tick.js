@@ -24,8 +24,8 @@
  *   ≥ 1 Hz        networkPanelTick, dccmTick, bindvizTick, guideTick
  *   10 Hz (100ms) the #hud line, #canvasCaption, #metricsHud mirror, the top
  *                 bar (#sysState/#topPdb/#topEngine/#topStep) and
- *                 updateDockTimeline — ALL inside one `now - lastHudUpdate >=
- *                 100` guard, so they cannot drift apart
+ *                 updateDockTimeline — ALL inside ONE 100 ms guard
+ *                 (now - lastHudUpdate >= 100), so they cannot drift apart
  *
  * The idle branch (no integrator) still runs dccmTick/bindvizTick/guideTick so
  * the empty states never read as dead.
@@ -43,6 +43,7 @@ import { drawDockStrips, updateDockTimeline } from "./dock.js";
 import { guideTick } from "./guide.js";
 import { bindLogWanted } from "./physics-tier.js";
 import { respaWanted, ensureRespa, warnRespaFallbackOnce } from "./accelerate.js";
+import { errorHudPrefix, recordError, ignore } from "../errors.js";
 
 let lastT = 0;
 // H76 — HUD debounce: throttle DOM updates to 10 Hz (100 ms) to reduce reflow thrash
@@ -230,7 +231,7 @@ function tick(now) {
         lastHudUpdate = now;
         // Rev1/Issue4: refresh the live per-term mirror at the same 10 Hz HUD
         // cadence (reads last ff fields — no extra compute, no checkbox).
-        try { updateLiveTermsMirror(ff, integ.time); } catch (_) { /* headless */ }
+        try { updateLiveTermsMirror(ff, integ.time); } catch (e) { ignore(e, "updateLiveTermsMirror", "reads ff fields that only exist on a built force field; the mirror is cosmetic"); }
         // Phase 5 — Metrics merged into the single #hud line (one T, one E;
         // #metricsHud stays in DOM for contract but hidden via CSS).
         let pmfStr = "—";
@@ -244,6 +245,10 @@ function tick(now) {
         ui.hud.textContent =
           `v${VERSION} · ` +
           (state.nanWarning ? `⚠ NON-FINITE ENERGY — simulation auto-paused. Reset (⟲) to recover.  ·  ` : "") +
+          // Same shape, same place: recorded failures go in beside the NaN
+          // warning, not on a surface of their own. src/errors.js returns ""
+          // while nothing has failed, so this concatenates to nothing.
+          errorHudPrefix() +
           `t = ${integ.time.toFixed(1)} ps (${(integ.time / 1000).toFixed(3)} ns)  ·  ` +
           `U = ${Number.isFinite(ff.energy) ? ff.energy.toFixed(1) : "NaN"} kcal/mol  ·  ` +
           formatLiveTermsHUD(ff) +
@@ -265,7 +270,7 @@ function tick(now) {
             : be === "workers" ? `CPU×${settingsState.numThreads}` : be === "cpu" ? "CPU" : (settingsState.webgpuReady ? "WebGPU/CPU" : "CPU");
           if (ui.topEngine) ui.topEngine.textContent = `Engine: ${eng} ${Math.round(state.fpsEMA)}fps`;
           if (ui.topStep) ui.topStep.textContent = `step ${state.integ.steps ?? 0}`;
-        } catch (_) { /* headless */ }
+        } catch (e) { ignore(e, "top bar (sysState/topPdb/topEngine/topStep)", "top bar absent headless; #hud carries the same readout"); }
 
         // Phase 5 — Metrics HUD mirror (hidden via CSS; #hud above is the
         // single visible readout — keep one T, one E there).
@@ -273,7 +278,7 @@ function tick(now) {
           const tInst = ff.kineticTemp(integ.vel, integ.mass);
           const eTot = Number.isFinite(ff.energy) ? ff.energy.toFixed(1) : "NaN";
           if (ui.metricsHud) ui.metricsHud.textContent = `T ${Number.isFinite(tInst) ? tInst.toFixed(0) : "—"}K · Etot ${eTot} · PMF ${pmfStr} · DCCM ${dccmStr}`;
-        } catch (_) { /* headless */ }
+        } catch (e) { ignore(e, "metricsHud mirror", "#metricsHud is contract-only and hidden by CSS; #hud above carries the same numbers"); }
 
         // Phase 5 — canvas caption: compact status pill (P2). Full hints
         // stay in the empty-state text only; running/steady are short.
@@ -283,7 +288,7 @@ function tick(now) {
             else if (state.running) ui.canvasCaption.textContent = ff.nLigAtoms > 0 ? `● Running · halo ${ff.nLigAtoms}` : "● Running";
             else ui.canvasCaption.textContent = ff.nLigAtoms > 0 ? `○ Steady · halo ${ff.nLigAtoms}` : "○ Steady";
           }
-        } catch (_) { /* headless */ }
+        } catch (e) { ignore(e, "canvasCaption", "caption is cosmetic; the render above already happened"); }
 
         updateDockTimeline();
       }
@@ -301,9 +306,16 @@ function tick(now) {
     guideTick(now); // FP1: ≤1 Hz checklist poll (catches steps/frames/Analyze)
   } else if (viewer) {
     viewer.render(null);
-    try { dccmTick(now); } catch (_) {}
-    try { bindvizTick(now); } catch (_) {}
-    try { guideTick(now); } catch (_) {} // FP1: empty-state emphasis while idle
+    // Idle branch: the three overlay/plot polls that keep the empty states from
+    // reading as dead. RECORDED, not ignored (they were bare `catch (_) {}`): a
+    // dead DCCM/BindViz/checklist looks exactly like a working one, and this
+    // branch runs every frame with no system. recordError dedupes on
+    // context|message and src/errors.js repaints the top bar at most every 250 ms
+    // (same throttle rationale as the 10 Hz #hud debounce), so a per-frame
+    // caller costs one counter increment, not one DOM write per frame.
+    try { dccmTick(now); } catch (e) { recordError(e, "dccmTick@idle"); }
+    try { bindvizTick(now); } catch (e) { recordError(e, "bindvizTick@idle"); }
+    try { guideTick(now); } catch (e) { recordError(e, "guideTick@idle"); } // FP1: empty-state emphasis while idle
   } else {
     console.warn("[viewer] not ready");
   }

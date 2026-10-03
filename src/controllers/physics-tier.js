@@ -30,6 +30,7 @@
 
 import { ui } from "../ui.js";
 import { settingsState } from "../settings-panel.js";
+import { ignore } from "../errors.js";
 
 /* ------------------------------------------------------------------ */
 /*  Loop-2 S7: physics fidelity level (opt-in Dynamics-panel selector)  */
@@ -63,7 +64,7 @@ export function currentLevel() {
     const v = ui.physicsLevel?.value ?? settingsState.physicsLevel ?? "L0";
     if (PHYSICS_LEVELS[v]) lvl = v;
   } catch (_) { lvl = "L0"; }
-  try { settingsState.physicsLevel = lvl; } catch (_) { /* headless */ }
+  try { settingsState.physicsLevel = lvl; } catch (e) { ignore(e, "settingsState.physicsLevel=@currentLevel", "settingsState is a plain object; only reachable via a frozen import under a bundler"); }
   return lvl;
 }
 

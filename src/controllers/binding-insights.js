@@ -24,6 +24,7 @@
 import { ui, state } from "../ui.js";
 import { renderInteractionTimeline, renderEnergyDecomposition, renderPmfFormation, PMF_NOHILL_HINT } from "../capture/bindviz.js";
 import { liveTermsBindLogView } from "./live-terms.js";
+import { ignore } from "../errors.js";
 
 let _lastBindvizDraw = 0;
 
@@ -97,10 +98,10 @@ export function drawBindviz() {
 export function bindvizTick(now) {
   if (now - _lastBindvizDraw < 1000) return;
   _lastBindvizDraw = now;
-  try { drawBindviz(); } catch (_) { /* headless */ }
+  try { drawBindviz(); } catch (e) { ignore(e, "drawBindviz@initBindviz", "canvas is absent headless; updateSettingsUI-style UI wiring must still complete"); }
 }
 
 /** Paint the three empty states once at startup (no system yet). */
 export function initBindviz() {
-  try { drawBindviz(); } catch (_) { /* headless */ }
+  try { drawBindviz(); } catch (e) { ignore(e, "drawBindviz@emptyStates", "canvas is absent headless; the caption text is set separately"); }
 }

@@ -9,6 +9,7 @@
  */
 
 import { ui, state } from "./ui.js";
+import { ignore } from "./errors.js";
 import { downloadText } from "./recorder.js";
 import { settingsJson } from "./session.js";
 import { GpuAccelerator } from "./gpu.js";
@@ -68,7 +69,7 @@ export function persistPhysicsLevel(lvl) {
     if (!_PHYSICS_LEVELS.includes(lvl)) return;
     settingsState.physicsLevel = lvl;
     if (typeof localStorage !== "undefined") localStorage.setItem(PHYSICS_LEVEL_KEY, lvl);
-  } catch (_) { /* storage unavailable (private mode/headless) */ }
+} catch (e) { ignore(e, "persistPhysicsLevel", "localStorage throws in private mode / headless; the in-memory tier is already set"); }
 }
 
 /** Restore the select element from stored state (guarded, default L0). */
@@ -79,11 +80,11 @@ export function restorePhysicsLevelSelect() {
     const sel = (ui && ui.physicsLevel) ||
       (typeof document !== "undefined" ? document.getElementById("physicsLevel") : null);
     if (sel && _PHYSICS_LEVELS.includes(settingsState.physicsLevel)) sel.value = settingsState.physicsLevel;
-  } catch (_) {}
+  } catch (e) { ignore(e, "restorePhysicsLevelSelect", "localStorage throws in private mode / headless; the tier then stays L0, the documented default"); }
 }
 
 // Stage-5: restore persisted tier at startup (default L0 when absent/invalid).
-try { restorePhysicsLevelSelect(); } catch (_) {}
+try { restorePhysicsLevelSelect(); } catch (e) { ignore(e, "restorePhysicsLevelSelect@load", "module-load side effect; initSettingsModal retries it"); }
 
 // Phase 3 auto-detect: probe the WGSL backend once at startup. Never throws;
 // failure simply leaves the CPU/worker default in place.
@@ -95,7 +96,7 @@ try {
   }).catch((e) => {
     settingsState.webgpuReady = false;
     settingsState.webgpuNote = `probe failed: ${e?.message ?? e}`;
-    try { updateSettingsUI(); } catch (_) {}
+    try { updateSettingsUI(); } catch (e) { ignore(e, "updateSettingsUI@webgpuProbeFail", "the modal may not be wired yet; settingsState.webgpuNote still carries the reason"); }
   });
 } catch (e) {
   settingsState.webgpuReady = false;
@@ -134,7 +135,7 @@ export function updateSettingsUI() {
 
 export function initSettingsModal() {
   if (typeof document === "undefined") return; // headless/Node: no DOM to wire
-  try { restorePhysicsLevelSelect(); } catch (_) {}
+  try { restorePhysicsLevelSelect(); } catch (e) { ignore(e, "restorePhysicsLevelSelect@initSettingsModal", "localStorage unavailable; selector keeps its L0 default"); }
   const settingsBtn = document.getElementById("settingsBtn");
   const settingsModal = document.getElementById("settingsModal");
   const closeSettingsBtn = document.getElementById("closeSettingsBtn");
@@ -205,7 +206,7 @@ export function initSettingsModal() {
         if (respaT) settingsState.respaOn = !!respaT.checked;
         const respaO = document.getElementById("respaOuter");
         if (respaO) settingsState.respaOuterFs = Number(respaO.value) || 4;
-      } catch (_) { /* respa stays default OFF */ }
+} catch (e) { ignore(e, "respa read@save", "the Dynamics checkboxes are optional markup; the settings default (OFF) stands"); }
 
       // Update active forcefield if present
       if (state.ff) {
@@ -241,5 +242,5 @@ export function initSettingsModal() {
         }
       });
     }
-  } catch (_) { /* headless */ }
+} catch (e) { ignore(e, "updateSettingsUI@save", "the modal may be closed/detached"); }
 }

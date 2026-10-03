@@ -46,6 +46,7 @@ import { Funnel } from "../funnel.js";
 import { LangevinIntegrator } from "../integrator.js";
 import { selectSystem, parseLigands } from "../pdb.js";
 import { classifyInputError, formatInputError, checkSystemSize } from "../input_errors.js";
+import { ignore, recordError } from "../errors.js";
 import { invalidateThermo, drawDccmEmpty, refreshThermoLigPicker } from "../analysis-panel.js";
 import { HEAVY_TOPO_CHUNK_ROWS, setHeavyButtons, setHeavyCaption, heavyTopoCaption } from "../heavy_progress.js";
 import { assignProtonationStates, applyProtonationStates } from "../chem/protonation.js";
@@ -123,14 +124,14 @@ let _heavyGen = 0;
  */
 export function invalidateHeavyBuild() {
   _heavyGen++;
-  try { if (ui.buildBtn) ui.buildBtn.disabled = false; } catch (_) {}
-  try { if (ui.playBtn) ui.playBtn.disabled = false; } catch (_) {}
-  try { if (ui.resetBtn) ui.resetBtn.disabled = false; } catch (_) {}
+  try { if (ui.buildBtn) ui.buildBtn.disabled = false; } catch (e) { ignore(e, "buildBtn@invalidateHeavyBuild", "ui.js captured refs at import; null/detached in a headless import"); }
+  try { if (ui.playBtn) ui.playBtn.disabled = false; } catch (e) { ignore(e, "playBtn@invalidateHeavyBuild", "ui.js captured refs at import; null/detached in a headless import"); }
+  try { if (ui.resetBtn) ui.resetBtn.disabled = false; } catch (e) { ignore(e, "resetBtn@invalidateHeavyBuild", "ui.js captured refs at import; null/detached in a headless import"); }
   try {
     const cb = ui.heavyCancelBtn
       ?? (typeof document !== "undefined" ? document.getElementById("heavyCancelBtn") : null);
     if (cb) cb.disabled = true;
-  } catch (_) {}
+  } catch (e) { ignore(e, "heavyCancelBtn@invalidateHeavyBuild", "button is optional markup; absent in older index.html"); }
 }
 
 /** Live control refs with a headless-safe fallback for the cancel button. */
@@ -148,7 +149,7 @@ function heavyControls() {
  * @param {boolean} building true while chunked slices are running
  */
 function setHeavyBuilding(building) {
-  try { setHeavyButtons(heavyControls(), building); } catch (_) {}
+  try { setHeavyButtons(heavyControls(), building); } catch (e) { ignore(e, "setHeavyButtons@setHeavyBuilding", "pure DOM writes on possibly-absent controls; a failure leaves buttons enabled, not broken"); }
 }
 
 /** Progress line to the reused build-summary surface (#selSummary, no new ids). */
@@ -157,13 +158,13 @@ function setHeavyCaptionText(txt) {
     const el = ui.selSummary
       ?? (typeof document !== "undefined" ? document.getElementById("selSummary") : null);
     setHeavyCaption(el, txt);
-  } catch (_) {}
+  } catch (e) { ignore(e, "selSummary@setHeavyCaptionText", "caption is cosmetic; losing it must not fail the build it describes"); }
 }
 
 /** Build the system the UI currently describes (CG sync / heavy chunked). */
 export function buildSystem() {
-  try { invalidateThermo(); } catch (_) {} // Stage-5: cancel in-flight thermo apo run
-  try { invalidateHeavyBuild(); } catch (_) {} // FP5: cancel in-flight heavy build (stale continuations abort)
+  try { invalidateThermo(); } catch (e) { ignore(e, "invalidateThermo@buildSystem", "generation counter bump + button writes; a miss leaves a stale thermo run to self-cancel on generation"); } // Stage-5: cancel in-flight thermo apo run
+  try { invalidateHeavyBuild(); } catch (e) { ignore(e, "invalidateHeavyBuild@buildSystem", "generation counter bump + button writes; a miss lets stale heavy slices abort on their own check"); } // FP5: cancel in-flight heavy build (stale continuations abort)
   if (!state.parsed && !state.parsedHeavy) return;  if (!state.parsed && state.parsedHeavy && ui.modelMode) ui.modelMode.value = "heavy";
   state.heavyMode = ui.modelMode?.value === "heavy";
   const chains = parseParamChainIds();
@@ -206,7 +207,7 @@ export function buildSystem() {
       if (ui.hud) ui.hud.textContent = formatInputError(sizeErr);
       return;
     }
-  } catch (_) { /* validator never throws; build proceeds */ }
+} catch (e) { ignore(e, "checkSystemSize@buildSystem", "the validator is total by construction; the catch is belt-and-braces so a validator bug cannot block a build"); }
 
   // Loop-2 S7: physics-level selector feeds the FF flags (default L0 =
   // pre-Loop-2 baseline, bit-identical). CG consumes charges/hbMode,
@@ -221,7 +222,12 @@ export function buildSystem() {
       // Phase 2 opt-in: GAFF2-lite ligand typing + charges (default OFF).
       state.sel = appendHeavyLigands(state.sel, external, { gaff: ui.gaffLig?.checked ?? false });
     } else if (ui.includeLig?.checked && state.pdbText) {
-      try { state.ligands = parseLigands(state.pdbText); } catch (_) {}
+      // RECORDED, not swallowed (was a bare `catch (_) {}`). A ligand-parse
+      // failure here left state.ligands === [] and built a perfectly plausible
+      // ligand-free system: the user watches a simulation that is not the one
+      // they asked for, with nothing on screen saying so. The CG twin of this
+      // block carries the identical catch ~35 lines down.
+      try { state.ligands = parseLigands(state.pdbText); } catch (e) { recordError(e, "parseLigands@buildSystem(heavy)"); }
     }
     // Phase 2 opt-in: heuristic protonation-state assignment at pH 7
     // (default OFF — native PDB residue names are kept when unchecked).
@@ -257,7 +263,7 @@ export function buildSystem() {
     } else if (state.mol2Ligands && state.mol2Ligands.length) {
       state.ligands = state.mol2Ligands;
     } else if (ui.includeLig?.checked && state.pdbText) {
-      try { state.ligands = parseLigands(state.pdbText); } catch (_) {}
+      try { state.ligands = parseLigands(state.pdbText); } catch (e) { recordError(e, "parseLigands@buildSystem(CG)"); }
     }
     state.ff = new ForceField(state.sel, par, state.ligands);
   }
@@ -361,7 +367,7 @@ function finishBuildCommon() {
   updateSelSummary();
   // Stage-2: repopulate the thermo ligand picker from the fresh ligand list
   // (additive; in-memory default auto; preserves explicit choice when valid).
-  try { refreshThermoLigPicker(); } catch (_) {}
+  try { refreshThermoLigPicker(); } catch (e) { ignore(e, "refreshThermoLigPicker@finishBuildCommon", "picker repopulate is additive; thermoLigValue() falls back to auto when it fails"); }
   // Loop-2 S4 (R6 §5): fresh BindLog per Build (clears frames + events).
   state.bindLog = new BindLog();
   state._lastContacts = null;
@@ -381,7 +387,7 @@ function finishBuildCommon() {
     }
     if (ui.sysState) ui.sysState.textContent = "STATE: READY";
     if (ui.canvasCaption) ui.canvasCaption.textContent = state.ff.nLigAtoms > 0 ? `○ Steady · halo ${state.ff.nLigAtoms}` : "○ Steady";
-  } catch (_) { /* headless */ }
+} catch (e) { ignore(e, "button writes@finishBuildCommon", "ui refs are captured at import and are null in a headless import"); }
 
   state.running = false;
   if (ui.playBtn) {
@@ -391,7 +397,7 @@ function finishBuildCommon() {
   if (ui.resetBtn) ui.resetBtn.disabled = false;
   state._prevPos = null;
   state.nanWarning = false;
-  try { updateGuide(); } catch (_) { /* headless */ } // FP1: Build ✓
+  try { updateGuide(); } catch (e) { ignore(e, "updateGuide@Build", "checklist DOM absent headless"); } // FP1: Build ✓
 }
 
 /** Wire the build surface once (see module header for the seam). */

@@ -63,6 +63,7 @@ import { initSystemBuild, buildSystem } from "./controllers/system-build.js";
 import { initTransport } from "./controllers/transport.js";
 import { initRecording } from "./controllers/recording.js";
 import { startTick } from "./controllers/tick.js";
+import { ignore } from "./errors.js";
 
 /* ------------------------------------------------------------------ */
 /*  Cross-cutting seams (see "THE ONE INJECTION SEAM" above)            */
@@ -122,7 +123,7 @@ export function ffParamsHot(physLvlHot) {
 initSettingsModal();
 initNetworkPanel();
 // Stage-5: restore persisted physics tier onto the selector (default L0).
-try { restorePhysicsLevelSelect(); } catch (_) {}
+try { restorePhysicsLevelSelect(); } catch (e) { ignore(e, "restorePhysicsLevelSelect@startup", "localStorage may be unavailable; the selector just keeps its L0 default"); }
 
 // A01 — Deterministic build version in HUD and console
 if (typeof console !== "undefined") console.log(`[simulation_coarse] version ${VERSION} build ${BUILD_DATE}`);

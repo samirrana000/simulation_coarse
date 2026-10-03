@@ -28,6 +28,7 @@ import { BUILD_DATE } from "../version.js";
 import { downloadText } from "../recorder.js";
 import { buildSession, serializeSession, parseSession, trajectoryJson, downloadBlob } from "../session.js";
 import { formatInputError } from "../input_errors.js";
+import { ignore, recordError } from "../errors.js";
 import { settingsState, persistPhysicsLevel } from "../settings-panel.js";
 import { applyLiveTrackTerms } from "./live-terms.js";
 import { bindLogWanted } from "./physics-tier.js";
@@ -72,26 +73,26 @@ export function applySession(sess) {
     if (typeof sess.includeLig === "boolean" && ui.includeLig) ui.includeLig.checked = sess.includeLig;
     if (sess.physicsLevel && ui.physicsLevel) {
       ui.physicsLevel.value = sess.physicsLevel;
-      try { persistPhysicsLevel(sess.physicsLevel); } catch (_) {}
+      try { persistPhysicsLevel(sess.physicsLevel); } catch (e) { ignore(e, "persistPhysicsLevel@applySession(sel)", "localStorage may be unavailable (private mode); the in-memory tier is already applied"); }
     } else if (sess.physicsLevel) {
-      try { persistPhysicsLevel(sess.physicsLevel); } catch (_) {}
+      try { persistPhysicsLevel(sess.physicsLevel); } catch (e) { ignore(e, "persistPhysicsLevel@applySession(noSel)", "localStorage may be unavailable (private mode); persistence is best-effort"); }
     }
     if (sess.ligand && typeof sess.ligand.selected === "string" && ui.ligSelect) {
       try {
         const opt = [...ui.ligSelect.options].find((o) => o.value === sess.ligand.selected);
         if (opt) ui.ligSelect.value = sess.ligand.selected;
-      } catch (_) {}
+      } catch (e) { ignore(e, "ligSelect@applySession", "<select>.options is unavailable when ui.js captured no element (headless)"); }
     }
     if (typeof sess.thermoLig === "string" && ui.thermoLig) {
       try {
         const opt = [...ui.thermoLig.options].find((o) => o.value === sess.thermoLig);
         ui.thermoLig.value = opt ? sess.thermoLig : "auto";
-      } catch (_) {}
+      } catch (e) { ignore(e, "thermoLig@applySession", "picker is optional markup; thermoLigValue() falls back to auto"); }
     }
     const st = sess.settings && typeof sess.settings === "object" ? sess.settings : {};
     for (const k of ["backend", "solventModel", "saltM", "epsIn", "epsOut", "sasaGamma", "numThreads", "respaOn", "respaOuterFs", "chemicalNetworkOn"]) {
       if (st[k] !== undefined) {
-        try { settingsState[k] = st[k]; } catch (_) {}
+        try { settingsState[k] = st[k]; } catch (e) { ignore(e, `settingsState[${k}]@applySession`, "settingsState is a plain object; only reachable via a frozen import under a bundler"); }
       }
     }
     try {
@@ -107,7 +108,7 @@ export function applySession(sess) {
       setChk("netToggleModal", settingsState.chemicalNetworkOn);
       setChk("respaToggle", settingsState.respaOn);
       setVal("respaOuter", settingsState.respaOuterFs);
-    } catch (_) { /* headless */ }
+} catch (e) { ignore(e, "panel restore@applySession", "individual UI controls are optional markup; each block restores independently"); }
     const dyn = sess.dynamics && typeof sess.dynamics === "object" ? sess.dynamics : {};
     try {
       const setPair = (id, numId, lblId, v) => {
@@ -126,7 +127,7 @@ export function applySession(sess) {
       setPair("motionGain", "motionGainNum", "v_motionGain", dyn.motionGain);
       if (typeof dyn.bindPot === "boolean" && ui.bindPot) ui.bindPot.checked = dyn.bindPot;
       if (typeof dyn.holoSprings === "boolean" && ui.holoSprings) ui.holoSprings.checked = dyn.holoSprings;
-    } catch (_) { /* headless */ }
+} catch (e) { ignore(e, "recorder fields@applySession", "individual UI controls are optional markup; each block restores independently"); }
     const rec = sess.recording && typeof sess.recording === "object" ? sess.recording : {};
     try {
       if (Number.isFinite(Number(rec.stridePs)) && ui.stridePs) ui.stridePs.value = String(rec.stridePs);
@@ -135,16 +136,24 @@ export function applySession(sess) {
         try {
           const opt = [...ui.exportFmt.options].find((o) => o.value === rec.exportFmt);
           if (opt) ui.exportFmt.value = rec.exportFmt;
-        } catch (_) {}
+        } catch (e) { ignore(e, "exportFmt@applySession", "<select>.options is unavailable when ui.js captured no element (headless)"); }
       }
-    } catch (_) { /* headless */ }
-    try { onParamChange(false); } catch (_) { /* no live system yet */ }
+} catch (e) { ignore(e, "recorder fields 2@applySession", "individual UI controls are optional markup; each block restores independently"); }
+    try { onParamChange(false); } catch (e) { ignore(e, "onParamChange@applySession", "a freshly loaded session has no live system to re-parameterise yet"); }
     const n = sess.recorderMeta && Number.isFinite(Number(sess.recorderMeta.count)) ? Number(sess.recorderMeta.count) : 0;
     if (ui.canvasCaption) {
       ui.canvasCaption.textContent = `Session loaded (${sess.pdbId || "custom"} · ${sess.physicsLevel || "L0"} · saved ${n} frame(s) in memory only — re-record after Build).`;
     }
     if (ui.hud) ui.hud.textContent = `Session loaded: ${sess.pdbId || "custom"} · physics ${sess.physicsLevel || "L0"} · picker + settings restored.`;
-  } catch (_) { /* apply never throws to the loader */ }
+  } catch (e) {
+    // RECORDED, and no longer a silent no-op. The old comment ("apply never
+    // throws to the loader") was the assertion this whole exercise exists to
+    // remove: applySession restores ~20 fields, and a failure part-way through
+    // leaves a half-restored session that looks fully restored. The loader
+    // still does not throw — the failure is now a number on the top bar
+    // instead of nothing at all.
+    recordError(e, "applySession@recording");
+  }
 }
 
 /** Wire the whole Recording panel. Call once at startup. */
@@ -154,14 +163,14 @@ export function initRecording() {
       if (!state.integ) return;
       recorder.start(state.integ.time, Number(ui.stridePs.value), Number(ui.maxFrames.value));
       ui.recBtn.classList.add("rec-on");
-      try { updateGuide(); } catch (_) { /* headless */ } // FP1: Analyze progress
+      try { updateGuide(); } catch (e) { ignore(e, "updateGuide@Analyze click", "checklist DOM absent headless"); } // FP1: Analyze progress
     });
   }
   if (ui.recStopBtn) {
     ui.recStopBtn.addEventListener("click", () => {
       recorder.stop();
       ui.recBtn.classList.remove("rec-on");
-      try { updateGuide(); } catch (_) { /* headless */ } // FP1: frames landed → Analyze ✓
+      try { updateGuide(); } catch (e) { ignore(e, "updateGuide@frame landed", "checklist DOM absent headless"); } // FP1: frames landed → Analyze ✓
     });
   }
   // Loop-2 S4 (R6 §5) + Rev1/Issue4: BindLog capture toggle — flips the BindLog
@@ -258,7 +267,7 @@ export function initRecording() {
       } catch (err) {
         if (ui.hud) ui.hud.textContent = formatInputError(err);
       } finally {
-        try { ui.sessFile.value = ""; } catch (_) {} // allow re-loading the same file
+        try { ui.sessFile.value = ""; } catch (e) { ignore(e, "sessFile@fileInput finally", "clearing the file input is cosmetic"); } // allow re-loading the same file
       }
     });
   }

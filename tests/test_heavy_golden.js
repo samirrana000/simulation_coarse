@@ -30,16 +30,33 @@
  * suites.js and is not a test. Editing the fixture by hand defeats the point;
  * regenerate only when a physics change is intended, and say so in the commit.
  *
- * KNOWN PRE-EXISTING DEFECT, PINNED ON PURPOSE
- *   The `full` configuration has par.gbModel === "obc2" AND trackTerms === true.
- *   In that combination _nonBondedGridNoGB reads `ligStart` before its `const`
- *   declaration (temporal dead zone) and throws ReferenceError; compute() catches
- *   it and falls back to _nonBondedGrid, but the OBC2 forces were already merged
- *   into `f` before the throw, so the reported forces are OBC2-GB + HCT-everything
- *   while the reported energy is pure HCT. That is a real physics bug, present
- *   before this module split and deliberately NOT fixed by it (a fix is a
- *   physics change). It is pinned here so that fixing it turns this test RED
- *   and the fix cannot be mistaken for a refactor.
+ * THE `full` ROWS WERE REGENERATED ON 2026-10-03, AFTER A PHYSICS FIX
+ *   Previously this file carried a note here saying the `full` configuration
+ *   (par.gbModel === "obc2" AND trackTerms === true) pinned a bug ON PURPOSE:
+ *   _nonBondedGridNoGB read `ligStart` before its `const` declaration (temporal
+ *   dead zone), compute() caught the ReferenceError and fell back to
+ *   _nonBondedGrid — but the OBC2 forces had already been merged into `f`, so
+ *   the field reported pure-HCT ENERGY with OBC2-GB + HCT-everything FORCES.
+ *   That is fixed now (see the FIXED 2026-10-03 note in src/heavy/nonbonded.js
+ *   and the SUBSTITUTION POLICY note in src/heavy/energy.js), and the `obc2`
+ *   + `full` rows plus the trajectory were REGENERATED from the fixed tree.
+ *   NO TOLERANCE WAS LOOSENED — this fixture is bit-exact (4-lane FNV-1a over
+ *   raw IEEE-754 bytes) and was not, not even in the byte.
+ *   What changed, and why it is not a refactor artefact:
+ *     • `legacy`, `amber14`, `lcpo` and the whole `topo` block are BYTE-IDENTICAL
+ *       — the fix is inert on the paths that were already correct.
+ *     • `obc2` (trackTerms OFF): ENERGY unchanged, FORCES changed at the bit.
+ *       Making the OBC2 kernel transactional moved the `f[i] += gbF[i]` merge
+ *       after the short-range pass, which reorders a floating-point addition.
+ *     • `full` (trackTerms ON): energy, forces and the elecU/gbU accumulators
+ *       changed, because OBC2 electrostatics now actually contribute instead of
+ *       being thrown away by the catch. Only elecU and gbU moved of the 24
+ *       accumulators — exactly the two terms the fallback had been reporting
+ *       from HCT.
+ *   The behavioural proof that the new numbers are the CORRECT OBC2 numbers —
+ *   per-term tracking ON vs OFF must agree bit-for-bit, which it did not before
+ *   — lives in tests/test_heavy_obc2_trackterms.js. That is a property, not a
+ *   blob.
  *
  * FAST tier: 6 constructors + 72 compute() calls + 10 integrator steps, no DOM.
  */

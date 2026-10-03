@@ -54,6 +54,7 @@ export const ui = {
   metricsHud: $("metricsHud"),
   settingsDlBtn: $("settingsDlBtn"),
   sysState: $("sysState"), topPdb: $("topPdb"), topEngine: $("topEngine"), topStep: $("topStep"),
+  topErrors: $("topErrors"),
   scrub: $("scrub"), scrubLabel: $("scrubLabel"), cvStrip: $("cvStrip"), hudSpark: $("hudSpark"),
 };
 

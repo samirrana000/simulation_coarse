@@ -26,6 +26,7 @@
  */
 
 import { SpatialGrid } from "../spatial-grid.js";
+import { ignore } from "../errors.js";
 
 /** Default non-bonded cutoff == GPU cell edge (A). Matches gb_obc2 HCT cutoff. */
 export const RCUT_DEFAULT = 12.0;
@@ -82,7 +83,7 @@ async function _loadWgslText(name) {
       const res = await fetch(url);
       if (res && res.ok) return await res.text();
     }
-  } catch (_) { /* fall through to fs */ }
+} catch (e) { ignore(e, "node:fs import@initWebGPU", "node:fs is absent in the browser; the fs path is a node-side test affordance only"); }
   try {
     const fs = await import("node:fs/promises");
     const u = await import("node:url");
@@ -212,7 +213,7 @@ function _ensureBuffers(n, numCells, exclCount, scaleCount) {
   const S = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST;
   const need = !B || _gpu.bufN < n || _gpu.bufCells < numCells;
   if (need) {
-    if (B) for (const k of Object.keys(B)) { try { B[k].destroy(); } catch (_) {} }
+    if (B) for (const k of Object.keys(B)) { try { B[k].destroy(); } catch (e) { ignore(e, "buffer destroy@_ensureBuffers", "a buffer the device already lost rejects destroy(); the replacement below is created regardless"); } }
     const R = GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST;
     _gpu.bufs = {
       pos: _createBuf(n * 16, S),
@@ -235,7 +236,7 @@ function _ensureBuffers(n, numCells, exclCount, scaleCount) {
     _gpu.lastExclSig = "";
     _gpu.lastScaleSig = "";
   } else if (exclCount > 0 && _gpu.bufs.excl.size < exclCount * 4) {
-    try { _gpu.bufs.excl.destroy(); } catch (_) {}
+    try { _gpu.bufs.excl.destroy(); } catch (e) { ignore(e, "excl buffer destroy@_ensureBuffers", "grow-only path; the old buffer is being replaced either way"); }
     _gpu.bufs.excl = _createBuf(exclCount * 4, S);
     _gpu.lastExclSig = "";
   }
@@ -645,11 +646,9 @@ export async function dispatchNonbonded(positions, params, opts = {}) {
  */
 export function disposeWebGPU() {
   try {
-    if (_gpu.bufs) for (const k of Object.keys(_gpu.bufs)) {
-      try { _gpu.bufs[k].destroy(); } catch (_) {}
-    }
-    if (_gpu.device) { try { _gpu.device.destroy(); } catch (_) {} }
-  } catch (_) { /* never throw from dispose */ }
+    if (_gpu.bufs) for (const k of Object.keys(_gpu.bufs)) { try { _gpu.bufs[k].destroy(); } catch (e) { ignore(e, "buffer destroy@disposeWebGPU", "dispose must never throw; handles are dropped on the next line regardless"); } }
+    if (_gpu.device) { try { _gpu.device.destroy(); } catch (e) { ignore(e, "device destroy@disposeWebGPU", "dispose must never throw; the reference is dropped on the next line regardless"); } }
+  } catch (e) { ignore(e, "disposeWebGPU", "dispose must never throw; the teardown below runs unconditionally either way"); }
   _gpu.bufs = null;
   _gpu.device = null;
   _gpu.adapter = null;

@@ -20,6 +20,7 @@
  */
 
 import { ui, state, viewer, recorder } from "../ui.js";
+import { ignore } from "../errors.js";
 
 // Phase 5 — dock sparklines (compact Canvas strips, no chart libs).
 // Fixed-length ring buffers for CV (Å) + total energy (kcal/mol).
@@ -70,7 +71,7 @@ function _drawStrip(canvas, arr, color, opts = {}) {
     ctx.beginPath();
     ctx.arc(lx, ly, 2.5, 0, 2 * Math.PI);
     ctx.fill();
-  } catch (_) { /* headless */ }
+} catch (e) { ignore(e, "sparkline draw@drawDockStrips", "canvas absent headless; the scrub bounds are computed independently"); }
 }
 
 /** Refresh the scrub bounds + "N / M frames" caption. */
@@ -107,7 +108,7 @@ export function drawDockStrips() {
       _drawStrip(ui.cvStrip, _cvHist, "#E879F9", { empty: "Run to stream CV" });
       _drawStrip(ui.hudSpark, _eHist, "#38BDF8", { empty: "Run to stream E" });
     }
-  } catch (_) { /* headless */ }
+} catch (e) { ignore(e, "sparkline draw@updateDockTimeline", "canvas absent headless; the scrub label is set independently"); }
 }
 
 /** Wire the trajectory scrub slider (H78): seeks recorded frames. */

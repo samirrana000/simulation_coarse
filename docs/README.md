@@ -100,7 +100,7 @@ The trust-boundary table itself is in **Q0** (APPLICABILITY) — start there, no
 | [PLUMED.md](PLUMED.md) | *Can I use my own collective variables?* How the browser CV `cv = |COM_lig − COM_pocket|` maps onto PLUMED `DISTANCE`, the COLVAR export, and a minimal umbrella-input snippet for GROMACS/OpenMM follow-up. | 137 lines · 7 min |
 | [BRIDGE.md](BRIDGE.md) | *How do I load an exported trajectory into a real analysis stack?* The MDAnalysis/MDTraj path to DCD, and how to reproduce the browser's RMSF→B-factor analysis externally. | 135 lines · 7 min |
 | [OPENMM_REF.md](OPENMM_REF.md) | *What is the reference protocol for validating the heavy GB/SA kernel?* The OpenMM 8.x implicit-GBSA (OBC2) comparison — the correct reference is implicit solvent, **not** explicit-solvent PME. | 116 lines · 6 min |
-| [MMCIF.md](MMCIF.md) | *Can I load mmCIF?* (**Not really.**) PDB is primary; `src/mmcif.js` is a detection-only stub kept for forward compatibility. | 67 lines · 3 min |
+| [MMCIF.md](MMCIF.md) | *Can I load mmCIF?* (**No.**) PDB is the ingest format; `src/mmcif.js` detects and refuses. Absent by scope, per ROADMAP.md §1 — not queued. | 61 lines · 3 min |
 
 ---
 

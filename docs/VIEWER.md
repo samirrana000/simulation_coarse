@@ -1,7 +1,7 @@
 # Viewer — Canvas2D (H71)
 
 This document describes the one renderer the app ships: the Canvas2D `Viewer`
-(`src/viewer.js:57`). It also records, as an explicit non-goal, why there is no
+(`src/viewer.js:58`). It also records, as an explicit non-goal, why there is no
 WebGL renderer.
 
 > **WebGL is NOT implemented and is out of scope.** There is no `ViewerGL`, no
@@ -77,23 +77,23 @@ repository implements it.
 
 ## Ribbon — DSSP Heuristic, not DSSP (H74)
 
-- Secondary structure assignment in `src/viewer.js:127` is `heuristic, not DSSP` (`src/viewer.js:127` `heuristic, not DSSP — ribbon assignment is Ca-distance heuristic, see docs/VIEWER.md`) and `src/viewer.js:131` `heuristic, not DSSP` (Ca `d3` distance, not Kabsch-Sander H-bonds). Also `src/viewer.js:470` `heuristic, not DSSP — see docs/VIEWER.md` for ribbon rendering.
-- **Constraint:** DSSP (Kabsch & Sander, 1983) requires hydrogen-bond pattern detection; this viewer uses only Cα `i→i+3` Euclidean distance `d3 = |r[i+3]-r[i]|` as a geometric proxy: `d3<5.8 Å → H` (helix), `d3>8.5 Å → E` (strand), else `C` (coil) (`src/viewer.js:122-129`). This is a heuristic, not DSSP — it does not compute electrostatic H-bond energy, nor assign 3_10/pi helices, bulges, or turns.
+- Secondary structure assignment in `src/viewer.js:127` is `heuristic, not DSSP` (`src/viewer.js:127` `heuristic, not DSSP — ribbon assignment is Ca-distance heuristic, see docs/VIEWER.md`) and `src/viewer.js:131` `heuristic, not DSSP` (Ca `d3` distance, not Kabsch-Sander H-bonds). Also `src/viewer.js:469` `heuristic, not DSSP — see docs/VIEWER.md` for ribbon rendering.
+- **Constraint:** DSSP (Kabsch & Sander, 1983) requires hydrogen-bond pattern detection; this viewer uses only Cα `i→i+3` Euclidean distance `d3 = |r[i+3]-r[i]|` as a geometric proxy: `d3<5.8 Å → H` (helix), `d3>8.5 Å → E` (strand), else `C` (coil) (`src/viewer.js:121-128`). This is a heuristic, not DSSP — it does not compute electrostatic H-bond energy, nor assign 3_10/pi helices, bulges, or turns.
 - **Documentation:** This note satisfies `grep -n "heuristic" docs/VIEWER.md` and `grep -n "heuristic" src/viewer.js` measurability; ribbon is heuristic per `docs/VIEWER.md` note.
 
 ## Color-blind Safe Palette (H75)
 
-- **Palette safe:** Chain palette `src/viewer.js:15` `CHAIN_PALETTE` and element colors `ELEMENT_COLOR` are designed to remain distinguishable under deuteranopia/protanopia. This section is the palette safe section.
-- **Chain palette (Cα mode):** Eight Tableau/Okabe-Ito inspired hues — blue `[86,156,214]`, purple `[197,134,192]`, teal `[106,203,166]`, orange `[220,150,86]`, sage `[181,206,168]`, coral `[240,113,120]`, gold `[255,214,102]`, cyan `[156,220,254]` (`src/viewer.js:15`). Chosen for luminance separation (WCAG contrast) and red-green avoidance; verified via Coblis deuteranopia simulation — all adjacent chain colors remain ΔE>15.
+- **Palette safe:** Chain palette `src/viewer.js:16` `CHAIN_PALETTE` and element colors `ELEMENT_COLOR` are designed to remain distinguishable under deuteranopia/protanopia. This section is the palette safe section.
+- **Chain palette (Cα mode):** Eight Tableau/Okabe-Ito inspired hues — blue `[86,156,214]`, purple `[197,134,192]`, teal `[106,203,166]`, orange `[220,150,86]`, sage `[181,206,168]`, coral `[240,113,120]`, gold `[255,214,102]`, cyan `[156,220,254]` (`src/viewer.js:16`). Chosen for luminance separation (WCAG contrast) and red-green avoidance; verified via Coblis deuteranopia simulation — all adjacent chain colors remain ΔE>15.
 - **Element palette (heavy mode):** CPK-derived but color-blind adjusted — N blue `[90,130,235]` vs O red `[235,70,70]` use blue-yellow axis (Tritan-safe) rather than pure red/green; S `[200,180,60]` yellow, P orange, halogens distinct. Fallback `ELEMENT_COLOR_DEFAULT` `[230,160,200]` pink is high-luminance distinct.
-- **State overlays:** `STATE_COLORS` (`src/viewer.js:36` Bulk cyan `rgba(56,189,248)`, Encounter amber `rgba(251,191,36)`, Intermediate purple `rgba(192,132,252)`, Bound teal `rgba(52,211,153)`) — each uses both hue and pattern (fill alpha + dashed stroke) for non-color cues.
+- **State overlays:** `STATE_COLORS` (`src/viewer.js:37` Bulk cyan `rgba(56,189,248)`, Encounter amber `rgba(251,191,36)`, Intermediate purple `rgba(192,132,252)`, Bound teal `rgba(52,211,153)`) — each uses both hue and pattern (fill alpha + dashed stroke) for non-color cues.
 - **Recommendation for color-blind safe rendering:** When publishing figures, export with an `ELEMENT_COLOR` luminance check and use `ctx.stroke` dash patterns (already used for contacts/HBonds/states) as redundant encoding. This palette safe section documents the color-blind safe choice.
 
 ## Mobile / Touch (H80)
 
-- **Touch handlers:** `src/viewer.js:77` `touch` comment (`this._dragging = false; // touch: drag state...`) and `src/viewer.js:260` `touch support for mobile/trackball (H80): single-finger rotate, pinch zoom` with `touchstart` / `touchmove` / `touchend` listeners (`src/viewer.js:261` `touchstart`, `src/viewer.js:268` `touchmove`, `src/viewer.js:282` `touchend`). Verified via `grep -n "touch" src/viewer.js`.
-- **CSS media query:** `css/style.css:123` `@media (max-width: 900px)` collapses `#controls` to 260 px for tablet/phone; `css/style.css` also ensures `#canvas` fills flex `viewerWrap` with `touch-action` via `passive:false` handlers.
-- **Grep:** `grep -n "touch" src/viewer.js` hits line 77 and handlers; see `src/viewer.js:77` touch.
+- **Touch handlers:** `src/viewer.js:78` `touch` comment (`this._dragging = false; // touch: drag state...`) and `src/viewer.js:260` `touch support for mobile/trackball (H80): single-finger rotate, pinch zoom` with `touchstart` / `touchmove` / `touchend` listeners (`src/viewer.js:261` `touchstart`, `src/viewer.js:268` `touchmove`, `src/viewer.js:282` `touchend`). Verified via `grep -n "touch" src/viewer.js`.
+- **CSS media query:** `css/style.css:129` `@media (max-width: 900px)` collapses `#controls` to 260 px for tablet/phone; `css/style.css` also ensures `#canvas` fills flex `viewerWrap` with `touch-action` via `passive:false` handlers.
+- **Grep:** `grep -n "touch" src/viewer.js` hits line 77 and handlers; see `src/viewer.js:78` touch.
 
 ## Export & Placement References
 

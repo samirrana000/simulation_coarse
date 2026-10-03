@@ -50,6 +50,7 @@
 import {
   lcpoSasa, capAreaDeriv, vdwRadiusFor, PROBE_RADIUS,
 } from "../physics/solvation/lcpo_sasa.js";
+import { ignore } from "../errors.js";
 
 /** Default frame subsample stride for SASA evaluation (every Nth frame). */
 export const THERMO_SASA_STRIDE = 10;
@@ -321,7 +322,7 @@ export function sasaBurialChunked(holoFrames, apoFrames, o = {}) {
           if (nProt) aProtSeries.push(frameProteinSasa(A[f], nProt, { protRadii: protRadiiForLCPO, protElements: o.protElements ?? null }));
         }
       }
-      try { if (onProgress) onProgress(Math.min(cursor, jobs.length), jobs.length); } catch (_) {}
+      try { if (onProgress) onProgress(Math.min(cursor, jobs.length), jobs.length); } catch (e) { ignore(e, "onProgress@runSasaChunked", "progress is a caller-supplied side channel; a throwing callback must not abort the SASA sweep or lose the result"); }
       if (cursor < jobs.length) { setTimeout(step, 0); return; }
       const dLig = meanOf(ligSeries), dLigSE = semOf(ligSeries);
       const dProt = meanOf(aProtSeries) - meanOf(hProtSeries);

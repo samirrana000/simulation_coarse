@@ -19,6 +19,7 @@
  */
 
 import { ui, state, recorder, fp1GuideState } from "../ui.js";
+import { ignore } from "../errors.js";
 
 const GUIDE_LABELS = {
   load: "Load — fetch a PDB, drop a file, or 1-click sample",
@@ -51,7 +52,7 @@ export function updateGuide() {
     paint(ui.guideStepAnalyze, s.analyze, "analyze");
     // Guarded offer: emphasize the 1-click sample only while empty.
     if (ui.sampleBtn) ui.sampleBtn.style.outline = s.load ? "" : "1px solid #38bdf8";
-  } catch (_) { /* headless */ }
+} catch (e) { ignore(e, "guide paint@initGuide", "checklist DOM absent headless; state itself is computed above and stays correct"); }
 }
 
 let _lastGuideTick = 0;
@@ -66,5 +67,5 @@ export function guideTick(now) {
 
 /** Paint the checklist once at startup (headless-safe: paints when DOM exists). */
 export function initGuide() {
-  try { updateGuide(); } catch (_) { /* headless: paints defaults when DOM exists */ }
+  try { updateGuide(); } catch (e) { ignore(e, "updateGuide@guideTick", "checklist DOM absent headless; a ≤1 Hz poll must not kill the loop"); }
 }

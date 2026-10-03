@@ -49,6 +49,12 @@
       <span id="topEngine" class="mono">Engine: CPU</span>
       <span class="top-sep" aria-hidden="true">|</span>
       <span id="topStep" class="mono">step 0</span>
+      <!-- Error surface: ONE span inside the existing #topStatus bar, empty (and
+           therefore display:none via css/style.css) unless src/errors.js has
+           recorded a failure. Reuses the bar that already carries STATE/PDB/
+           Engine/step; adds no panel, so the Digit1-7 hotkey contract is
+           untouched. Painted by src/errors.js#paint, read by ui.js#ui.topErrors. -->
+      <span id="topErrors" class="mono" aria-live="polite"></span>
     </div>
     <div class="header-actions">
       <a href="WHAT_CHANGED.md" class="btn btn-ghost" style="margin-right:6px;">What changed</a>
@@ -570,9 +576,33 @@
       }
     });
   })();
-  window.onerror=(m,s,l,c,e)=>{console.error("[onerror]",e||m);const h=document.getElementById("hud");if(h)h.textContent="⚠ "+(e?.message||m);};
-  window.addEventListener("error",e=>{console.error(e.error||e.message);const h=document.getElementById("hud");if(h)h.textContent="⚠ "+(e.error?.message||e.message);});
-  window.addEventListener("unhandledrejection",e=>{console.error("[unhandledrejection]",e.reason);const h=document.getElementById("hud");if(h)h.textContent="⚠ "+(e.reason?.message||String(e.reason));});
+  // Pre-module error net. A classic script runs BEFORE the deferred module
+  // graph, so this is the only code that can still be alive if src/main.js
+  // fails to PARSE — the exact defect in AUDIT_REPORT.md §2.1, where a module
+  // SyntaxError left the user looking at a half-rendered page with no message.
+  // It does not touch the DOM: it queues, and src/errors.js drains the queue on
+  // install. Replaces three inline handlers that reported every window error
+  // twice and overwrote #hud (which the tick loop rewrites 100 ms later).
+  window.__appErrorQueue = window.__appErrorQueue || [];
+  const __drain = () => { if (window.__appErrorDrain) window.__appErrorDrain(); };
+  window.onerror = (m, s, l, c, e) => {
+    window.__appErrorQueue.push({ message: (e && e.message) || String(m || "error"), context: "pre-module:" + String(s || "inline").split("/").pop() + ":" + (l || 0), at: Date.now() });
+    console.error("[onerror]", e || m);
+    __drain();
+  };
+  window.addEventListener("unhandledrejection", (e) => {
+    window.__appErrorQueue.push({ message: (e.reason && e.reason.message) || String(e.reason), context: "pre-module:unhandledrejection", at: Date.now() });
+    console.error("[unhandledrejection]", e.reason);
+    __drain();
+  });
+  </script>
+  <script type="module">
+  // Install the recorder behind the net above. Kept as its OWN module script,
+  // not inside src/main.js: a module script that fails to parse does not stop
+  // the next one from evaluating, so the error surface still comes up when the
+  // composition root is the thing that is broken.
+  import { installGlobalErrorHandlers } from "./src/errors.js";
+  installGlobalErrorHandlers(window);
   </script>
   <script>
     if (location.protocol === "file:") {

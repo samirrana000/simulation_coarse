@@ -261,7 +261,7 @@ export function renderPmfFormation(canvas, bindlog, opts = {}) {
       ctx.fillStyle = "#334155";
       ctx.fillText("run ≥ 50 hills for PMF convergence; timeline/energy live regardless", W / 2, H / 2 + 10);
       ctx.textAlign = "left";
-    } catch (_) { /* headless: mock ctx still records fillText */ }
+} catch (e) { ignore(e, "fillText@drawBindviz", "headless mock ctx records fillText but throws on the rest; the plot is decorative"); }
     return;
   }
 

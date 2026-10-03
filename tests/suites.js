@@ -108,6 +108,7 @@ export const SUITES = [
   { file: "tests/test_rev1_issue5_rmsd_split.js", tier: "FAST" },
   { file: "tests/test_rev2_issue1_physics_level.js", tier: "FAST" },
   { file: "tests/test_rev2_issue5_placement_escape.js", tier: "FAST" },
+  { file: "tests/test_heavy_obc2_trackterms.js", tier: "FAST", note: "obc2 + trackTerms must NOT silently substitute the HCT force field. Pins the 2026-10-03 TDZ fix in heavy/nonbonded.js: HEADLINE evidence is the ON-vs-OFF property (per-term tracking is an accounting switch, so energy and forces must agree BIT-for-bit with it on or off — they did not, because the catch returned pure-HCT energy over OBC2+HCT forces), plus fault injection proving a throwing kernel's partial force contribution is rolled back and the substitution is loud (ff.physicsFallbacks / ff.lastPhysicsFallback), plus a structural pin that every substitutable catch in src/heavy/ is snapshot/restore-guarded." },
   { file: "tests/test_rev3_issue1_heavy_physics.js", tier: "FAST" },
   { file: "tests/test_observables_parity.js", tier: "FAST", note: "CG/heavy kineticTemp + rmsd parity" },
   { file: "tests/test_unit_contract.js", tier: "FAST", note: "one unit contract, one value (KB_KCAL was defined twice)" },
@@ -121,6 +122,7 @@ export const SUITES = [
   { file: "tests/test_docs_index.js", tier: "FAST", note: "every file under docs/ linked from docs/README.md" },
   // honest-scope gates: the two categories of claim that cannot be falsified
   { file: "tests/test_doc_citations.js", tier: "FAST", note: "every path:line claim in every tracked .md resolves to a real, non-blank line (13 allowlisted, all in dated artifacts)" },
+  { file: "tests/test_error_surfacing.js", tier: "FAST", note: "no bare catch in src/ (was 56), the recorder counts and surfaces, and a deliberately-failing operation reaches the top status bar" },
   { file: "tests/test_budget_coverage.js", tier: "FAST", note: "every bench/budget.json key is measured by a named producer or explicitly unmeasured with a reason; no published surface claims an fps number" },
   { file: "tests/test_evolve_planner.js", tier: "FAST", note: "plan emits 15 schema-valid goals whose read_only paths all exist" },
   { file: "tests/test_evolve_gate.js", tier: "FAST", note: "the gate can fail: structure not volume, sees uncommitted work, exits non-zero" },

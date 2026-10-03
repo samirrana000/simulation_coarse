@@ -684,7 +684,7 @@ export function buildMoleculeParams(atoms, bonds) {
   } else {
     const p = perceiveBondOrders(atoms, bonds);
     orders = p.orders; aromatic = p.aromatic;
-    try { findAromaticRings(atoms, bonds, orders, aromatic); } catch { /* keep flags */ }
+    try { findAromaticRings(atoms, bonds, orders, aromatic); } catch (e) { ignore(e, "findAromaticRings@gaff2", "aromatic flags are a refinement; the orders-derived default is used when this fails"); }
   }
   const adj = adjacency(atoms, bonds);
   const bondParams = [];

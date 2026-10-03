@@ -35,6 +35,7 @@
  */
 
 import { ui, state, viewer, initParamReadouts, updateSelSummary } from "../ui.js";
+import { ignore } from "../errors.js";
 import { workerPool, persistPhysicsLevel } from "../settings-panel.js";
 import { ForceField } from "../forcefield.js";
 import { HeavyForceField } from "../heavy.js";
@@ -141,7 +142,7 @@ export function initParamBinding(seams) {
   // (same path as the binding-potential toggles; default L0 = baseline).
   if (ui.physicsLevel) ui.physicsLevel.addEventListener("change", () => {
     const spec = _seams.physicsLevelSpec(); // persist to settingsState.physicsLevel
-    try { persistPhysicsLevel(ui.physicsLevel.value); } catch (_) {}
+    try { persistPhysicsLevel(ui.physicsLevel.value); } catch (e) { ignore(e, "persistPhysicsLevel@physicsLevel change", "localStorage unavailable (private mode); settingsState already carries the new tier"); }
     void spec;
     onParamChange(true);
   });

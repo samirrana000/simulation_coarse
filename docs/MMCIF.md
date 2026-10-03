@@ -1,6 +1,6 @@
 # PDBx/mmCIF Support Status (I81)
 
-**Status: PDB is primary; mmCIF is future.**
+**Status: PDB is the ingest format; mmCIF is absent (out of scope).**
 
 This browser simulator loads structures as **PDB** via `src/pdb.js:parseCa` and
 `src/pdb.js:fetchPdb`. The PDB pathway is the only fully supported ingest
@@ -9,23 +9,27 @@ today (ATOM/HETATM fixed-column parsing, chain/residue filtering in
 compatibility the exported trajectories are also PDB multi-MODEL or XYZ
 (`src/recorder.js:buildFile`).
 
-## mmCIF stub
+## mmCIF — absent (out of scope)
 
-`src/mmcif.js:parseMMCIF` is a **stub** added for forward compatibility:
+There is **no mmCIF support in this project**, and no queued work to add some. A native
+`_atom_site` loop parser is absent *by scope* — the same convention as ONNX in
+[SCORER.md](SCORER.md) and WebGL in [VIEWER.md](VIEWER.md), per ROADMAP.md §1.
+`src/mmcif.js` exists only to detect a mmCIF block and refuse:
 
 - **Detection:** checks for the mmCIF `data_` block header (`/^\s*data_/im` or
   `text.includes("data_")`) — this is the canonical PDBx/mmCIF entry prefix.
 - **Delegation:** if the file also contains ATOM ` CA ` records, delegates to
   `parseCa(text)` so coarse-grained Cα ingest keeps working during migration.
-- **Guidance error:** otherwise throws `mmCIF not yet supported, use PDB` with
-  conversion advice (`gemmi convert` / RCSB PDB download).
+- **Refusal:** otherwise throws `mmCIF is not supported by this simulator — PDB is
+  the ingest format. Convert with pdb_extract or gemmi: …`. The wording is
+  deliberate: *not supported*, not *not yet supported*.
 
 ```js
 import { parseMMCIF } from "./src/mmcif.js";
 try {
   const parsed = parseMMCIF(await file.text());
 } catch (e) {
-  alert(e.message); // "mmCIF not yet supported, use PDB"
+  alert(e.message); // "mmCIF is not supported by this simulator — PDB is the ingest format. …"
 }
 ```
 
@@ -34,20 +38,10 @@ try {
 - PDB fixed-column ATOM/HETATM parsing is trivial in the browser, zero deps,
   and matches the `1ake.pdb .. 4w52.pdb` presets shipped in the repo root.
 - mmCIF requires a full `_atom_site` loop parser (categories, quoted fields,
-  multi-line values) and handling of `label_atom_id` vs `auth_atom_id` —
-  not yet worth the bundle size for a coarse-grained demo.
+  multi-line values) and handling of `label_atom_id` vs `auth_atom_id` — a
+  format project of its own, and out of scope for a coarse-grained browser tool.
 
-## Migration plan (future)
-
-1. Native `_atom_site` loop parser mapping
-   `_atom_site.group_PDB == "ATOM"` + `_atom_site.label_atom_id == "CA"`
-   → Cα beads (same shape as `parseCa` output).
-2. Wire `fetchPdb` → RCSB `.../download/<id>.cif` fallback when `.pdb`
-   returns 404 (many new entries are CIF-only).
-3. Expand `tests/` to round-trip a CIF via `parseMMCIF` vs `parseCa` on
-   PDB-converted fixtures and assert identical bead counts / chains.
-
-## Workaround today
+## Workaround
 
 Download the **PDB** format from RCSB (`https://files.rcsb.org/download/<ID>.pdb`)
 or convert locally:
@@ -58,10 +52,9 @@ gemmi convert input.cif output.pdb
 pdb_extract -e input.cif -o output.pdb
 ```
 
-Then load via **PDB file** input in the UI (`src/main.js:loadStructure`) —
-PDB remains the guaranteed path until native mmCIF lands.
+Then load via **PDB file** input in the UI. PDB is the ingest format, full stop.
 
 ## Grep hits
 
-- `src/mmcif.js:parseMMCIF` — stub + `data_` detection + delegation/throw
-- `docs/MMCIF.md` — this file (PDB is primary, mmCIF is future)
+- `src/mmcif.js:parseMMCIF` — `data_` detection + delegation/refusal
+- `docs/MMCIF.md` — this file (PDB is primary, mmCIF is absent)

@@ -20,6 +20,7 @@
 
 import { ui, state, viewer, recorder } from "../ui.js";
 import { updateGuide } from "./guide.js";
+import { ignore } from "../errors.js";
 
 /** Wire the transport controls, the viewer display toggles and the hotkeys. */
 export function initTransport() {
@@ -28,7 +29,7 @@ export function initTransport() {
       if (!state.integ) return;
       state.running = !state.running;
       ui.playBtn.textContent = state.running ? "⏸ Pause" : "▶ Run";
-      try { updateGuide(); } catch (_) { /* headless */ } // FP1: Run ✓ (latches via steps/time)
+      try { updateGuide(); } catch (e) { ignore(e, "updateGuide@Run toggle", "checklist DOM absent headless; the run state itself is already latched"); } // FP1: Run ✓ (latches via steps/time)
     });
   }
 

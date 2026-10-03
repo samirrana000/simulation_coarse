@@ -68,6 +68,12 @@ header {
 }
 #topStatus .mono, #topStatus span { font-size: 11px; }
 #sysState { color: var(--accent); font-weight: 700; }
+/* Error surface (src/errors.js). Empty on a clean run → display:none, so the
+   top bar is byte-for-byte what it was before error recording existed. flex:none
+   keeps this span from squeezing STATE/PDB/Engine/step; #topStatus clips the
+   overflow on narrow viewports instead of wrapping. */
+#topErrors { flex: none; color: #ff8080; font-weight: 700; }
+#topErrors:empty { display: none; }
 .top-sep { color: #3a4249; }
 
 #layout { display: flex; flex: 1; min-height: 0; }

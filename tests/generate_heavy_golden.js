@@ -32,14 +32,22 @@
  * HASHING: 4 independent 32-bit FNV-1a lanes over the RAW IEEE-754 bytes, so
  * equality here is bit equality, not tolerance equality.
  *
- * KNOWN PRE-EXISTING DEFECT PINNED BY `full` (2026-10-03, unchanged by the
- * module split): with par.gbModel === "obc2" AND ff.trackTerms === true,
- * _nonBondedGridNoGB evaluates `ligStart` before its `const` declaration (TDZ)
- * and throws ReferenceError; compute() catches it and falls back to
- * _nonBondedGrid — but the OBC2 forces were already merged into `f` before the
- * throw, so forces carry OBC2 GB + HCT-everything. The `full` row therefore
- * pins the buggy numbers on purpose: fixing the TDZ makes this fixture fail,
- * which is the correct and visible outcome for a physics change.
+ * REGENERATED 2026-10-03, AFTER A DELIBERATE PHYSICS FIX (not a refactor)
+ *   The `full` row used to pin a BUG on purpose: with par.gbModel === "obc2"
+ *   AND ff.trackTerms === true, _nonBondedGridNoGB evaluated `ligStart` before
+ *   its `const` declaration (TDZ) and threw; compute() caught it and fell back
+ *   to _nonBondedGrid — but the OBC2 forces had already been merged into `f`
+ *   before the throw, so forces carried OBC2-GB + HCT-everything while the
+ *   energy was pure HCT. Fixed in src/heavy/nonbonded.js + src/heavy/energy.js
+ *   (transactional OBC2 kernel, snapshot/restore around every substitutable
+ *   stage, loud ff.physicsFallbacks). This fixture was then regenerated.
+ *
+ *   Only `obc2` forces, `full` (energy + forces + elecU + gbU) and the
+ *   trajectory differ; `legacy`, `amber14`, `lcpo` and the whole `topo` block
+ *   are byte-identical. No tolerance exists in this fixture to loosen — it is
+ *   bit-exact by construction. The independent correctness proof for the new
+ *   numbers (per-term tracking ON vs OFF agree bit-for-bit) is in
+ *   tests/test_heavy_obc2_trackterms.js.
  */
 
 import fs from "node:fs";

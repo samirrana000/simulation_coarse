@@ -29,6 +29,7 @@
 
 import { parseMol2, mol2Element } from "./mol2.js";
 import { parseAltLoc, parseOccupancy, shouldReplaceAltloc } from "./pdb_altloc.js";
+import { ignore } from "./errors.js";
 export { parseMol2, mol2Element };
 
 /**
@@ -80,8 +81,14 @@ export async function fetchPdb(id) {
         const text = await res.text();
         if (text.includes("ATOM")) return text;
       }
-    } catch (_) {
-      /* try next mirror */
+    } catch (e) {
+      // COUNTED, not silent: this is a mirror list, so the catch is the control
+      // flow (try the next one). The loop's own throw below is what the user
+      // sees when every mirror fails — but if one mirror fails while another
+      // succeeds, that used to leave no trace at all, which is exactly the
+      // "it worked, so nothing is wrong" failure mode. ignore() keeps the
+      // fallback and makes the occurrence countable.
+      ignore(e, `fetchPdb@${url.split("/").pop()}`, "mirror list: the next URL is tried, and the loop throws with every mirror named if all fail");
     }
   }
   throw new Error(`Could not download PDB ${clean} from local presets, RCSB, or PDBe.`);

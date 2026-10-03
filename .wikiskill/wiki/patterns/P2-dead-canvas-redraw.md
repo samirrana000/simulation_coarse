@@ -6,7 +6,7 @@ empty-state or legend.
 
 **Evidence:** src/network-panel.js:11 updateNetworkPlot() called (a) once at
 init (src/network-panel.js:186-191) and (b) only inside
-`if (curMacroState !== networkModel.currentState)` (src/controllers/tick.js:214-223).
+`if (curMacroState !== networkModel.currentState)` (src/controllers/tick.js:215-224).
 With no ligand placed or stable state, zero redraws after paint;
 index.html:174 canvas has no empty-state text, no axes, no legend.
 

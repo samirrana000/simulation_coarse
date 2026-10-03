@@ -17,19 +17,34 @@
  *                        physics/solvation/gb_obc2.js, short range delegated
  *                        to _nonBondedGridNoGB
  *
- * KNOWN PRE-EXISTING DEFECT, NOT INTRODUCED BY THE SPLIT and NOT FIXED HERE
- *   (a fix is a physics change, which this refactor is not allowed to be):
- *   _nonBondedGridNoGB reads `ligStart` in its `trk` initializer, five lines
- *   BEFORE the `const nProt = ..., ligStart = ...` declaration that introduces
- *   it. With ff.trackTerms !== true the initializer short-circuits and never
- *   evaluates `ligStart`, so the temporal-dead-zone ReferenceError is latent.
- *   With par.gbModel === "obc2" AND ff.trackTerms === true it throws, compute()
- *   catches it and falls back to _nonBondedGrid — but the OBC2 forces were
- *   already merged into the force buffer before the throw, so the returned
- *   forces are OBC2-GB plus HCT-everything while the returned energy is pure
- *   HCT. tests/test_heavy_golden.js pins those numbers on purpose: fixing the
- *   TDZ makes that test go red, which is the correct outcome for a physics
- *   change and cannot be mistaken for a refactor.
+ * FIXED 2026-10-03 — the temporal-dead-zone defect and the hybrid it produced
+ *   _nonBondedGridNoGB used to read `ligStart` in its `trk` initializer, five
+ *   lines BEFORE the `const nProt = ..., ligStart = ...` declaration that
+ *   introduces it. With ff.trackTerms !== true the initializer short-circuits
+ *   and never evaluates `ligStart`, so the ReferenceError was latent; with
+ *   par.gbModel === "obc2" AND ff.trackTerms === true it threw, and compute()'s
+ *   catch then ran the HCT fallback ON TOP of forces that _nonBondedGridOBC2
+ *   had already merged — so the field reported pure-HCT energies with
+ *   OBC2-GB + HCT-everything forces. A force field that is neither model, and
+ *   neither energy nor forces agreed with it.
+ *   Three changes, all required — reordering the declaration alone would only
+ *   have silenced the throw and left the hybrid reachable for any FUTURE throw
+ *   inside the short-range pass:
+ *     1. `nProt` / `ligStart` are declared before their first use.
+ *     2. _nonBondedGridOBC2 is TRANSACTIONAL: the OBC-II reaction field is
+ *        accumulated into the scratch buffer `gbF` and merged into `f` only
+ *        after _nonBondedGridNoGB has returned. A throw inside the short-range
+ *        pass therefore leaves the OBC2 contribution unmerged.
+ *     3. `this._obc2Radii` is published after the merge, so a failed pass does
+ *        not leave Born radii on the field that no force term ever used.
+ *   The energy.js catch additionally snapshots/restores `f` around each
+ *   substitutable stage, so even a throw from inside the short-range loop
+ *   cannot leave partial contributions behind; and every substitution now
+ *   increments ff.physicsFallbacks / sets ff.lastPhysicsFallback instead of
+ *   only writing to the console.
+ *   tests/test_heavy_golden.js was regenerated from the fixed tree (the `full`
+ *   configuration is the one that changed); see the commit message. The golden
+ *   is a bit-exact net, NOT a tolerance, and was not loosened.
  *
  * Zero DOM globals. Node-importable.
  */
@@ -63,40 +78,58 @@ export const nonBondedKernels = {
       intrinsic[i] = GB_RADII[el] ?? GB_RADII.DEFAULT ?? 1.6;
     }
     const born = computeOBC2Radii(pos, intrinsic, {});
-    this._obc2Radii = born;
-    // GB pair energy/forces accumulated on a scratch buffer, then merged, so
-    // the grid LJ/Coulomb pass below stays identical to the HCT path.
+    // The GB pair energy/forces go into a private scratch buffer, never
+    // straight into the caller's `f`, so this kernel is transactional in `f`.
     const gbF = new Float64Array(this.n * 3);
     const kappa = debyeKappa(this.gbSaltM, 300, this.gbEpsOut);
     const gbRes = gbOBC2Forces(pos, this._charges, born, gbF, {
       epsIn: this.gbEpsIn, epsOut: this.gbEpsOut, kappa,
       excluded: this._excluded, scale14: this._scale14,
     });
-    for (let i = 0; i < f.length; i++) f[i] += gbF[i];
-    // LJ + H-bond (no GB double-count): reuse grid loop for short-range only.
-    // To avoid duplicating the full kernel, call the legacy grid then subtract
-    // its HCT GB contribution and add OBC2 instead.
+    // TRANSACTIONAL ORDER: the short-range pass runs FIRST and the OBC-II
+    // reaction field is merged into the shared force buffer only after it has
+    // returned. _nonBondedGridNoGB writes into `f` pair by pair, so if it
+    // throws the caller must not find a half-merged GB contribution already
+    // sitting in `f` — energy.js's catch restores from a snapshot, and this
+    // ordering is what makes the snapshot's restore exact rather than
+    // best-effort. See the FIXED 2026-10-03 note in the header.
+    // LJ + H-bond + solute-dielectric Coulomb, no GB double-count: the short-
+    // range grid loop _nonBondedGridNoGB computes those three terms and skips
+    // the HCT pairInteraction() entirely.
     const base = this._nonBondedGridNoGB(pos, f);
+    for (let i = 0; i < f.length; i++) f[i] += gbF[i];
+    this._obc2Radii = born; // published only once the whole pass has succeeded
     return {
       lj: base.lj, elec: base.elec, gb: gbRes.gbEnergy, hbond: base.hbond,
+      // `* 0`: the OBC-II reaction field is NOT attributed to the protein-ligand
+      // binding cross term. Unchanged by the 2026-10-03 fix and deliberately
+      // left alone — turning it on is a physics DECISION (how much of the
+      // reaction field counts as "binding"), not a defect repair, and flipping
+      // it would silently change bindingU/desolvU for every OBC2 user.
+      // Recorded here because it is a genuine asymmetry with the HCT path,
+      // whose bindE at _nonBondedGrid DOES include gbRes.energy.
       bindE: base.bindE + gbRes.gbEnergy * 0,
       bindTerms: base.bindTerms, // S4 per-term trackers pass through (null when off)
     };
   },
 
   /**
-   * Grid LJ + Coulomb(screened via GB pair coulomb part) + H-bond without GB.
-   * Helper for the OBC2 branch; mirrors _nonBondedGrid minus pairInteraction GB.
+   * Grid LJ + Coulomb(solute dielectric, NO GB reaction field) + H-bond.
+   * Short-range half of the OBC2 branch, mirroring _nonBondedGrid minus
+   * pairInteraction(). The OBC-II reaction field is added by
+   * _nonBondedGridOBC2, AFTER this method returns — do not move that merge
+   * above this call (see the transactional-order note there).
    * @param {ArrayLike<number>} pos
    * @param {Float64Array} f
    */
   _nonBondedGridNoGB(pos, f) {
-    // Delegate to the standard grid but with GB charges zeroed is wasteful;
-    // instead run the standard grid and rely on _nonBondedGridOBC2 to have
-    // already added OBC2 GB: here we compute LJ/H-bond/Coulomb-only by calling
-    // _nonBondedGrid on a probe that skips GB via zero Born radii trick is not
-    // clean, so implement the short-range loop directly (no GB term).
+    // The full loop is written out here rather than delegated: it has to skip
+    // the HCT `gb.pairInteraction()` term entirely (no double-counting with the
+    // OBC-II reaction field that _nonBondedGridOBC2 merges afterwards) and to
+    // charge Coulomb to the solute dielectric, which pairInteraction() folds
+    // together with the HCT descreening.
     const n = this.n;
+    const nProt = this.nProt, ligStart = this.ligandStart;
     let ljTot = 0, elecTot = 0, hbondTot = 0, bindTot = 0;
     // Loop-2 S4: per-term trackers (skipped when trackTerms is off)
     const trk = this.trackTerms === true && ligStart > 0;
@@ -104,7 +137,6 @@ export const nonBondedKernels = {
     this.grid.build(pos, n);
     const isDonor = this._hbClassification.isDonor;
     const isAcceptor = this._hbClassification.isAcceptor;
-    const nProt = this.nProt, ligStart = this.ligandStart;
     this.grid.forEachPair(pos, n, R_CUT, (i, j, dx, dy, dz, r2, r) => {
       const k = pairKey(i, j);
       if (this._excluded.has(k)) return;

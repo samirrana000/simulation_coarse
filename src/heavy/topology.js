@@ -18,6 +18,7 @@
  *   angleAt, improperAngleFlat  reference geometry at the current pose
  */
 import { METAL_ELEMENT, METAL_ELEMENT_DEFAULT, COVALENT_RADIUS, BOND_SLACK } from "../ff-params.js";
+import { ignore } from "../errors.js";
 
 /**
  * Build covalent topology from geometry.
@@ -200,7 +201,7 @@ export async function buildTopologyChunked(atoms, opts = {}) {
     const i1 = Math.min(n, i0 + chunkRows);
     topologyBondRows(atoms, bonds, nbond, i0, i1);
     if (onProgress) {
-      try { onProgress(i1, n); } catch (_) { /* progress must never fail the build */ }
+      try { onProgress(i1, n); } catch (e) { ignore(e, "onProgress@buildTopologyChunked", "progress must never fail the build; the chunk loop owns the result"); }
     }
     if (i1 < n) await new Promise((r) => setTimeout(r, 0));
   }

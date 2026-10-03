@@ -33,6 +33,7 @@ import { fetchPdb, parseCa, parseMol2, summarizeStructure } from "../pdb.js";
 import { parseHeavy } from "../heavy.js";
 import { classifyInputError, formatInputError, validatePdbText } from "../input_errors.js";
 import { updateMol2PlaceButton } from "../ligand-panel.js";
+import { ignore } from "../errors.js";
 
 /** Build-system entry point, injected by initStructureInput. */
 let _buildSystem = null;
@@ -132,7 +133,7 @@ export function initStructureInput({ buildSystem, updateGuide }) {
     ui.sampleBtn.addEventListener("click", () => {
       if (ui.pdbId) ui.pdbId.value = "4W52";
       if (ui.fetchBtn) ui.fetchBtn.click();
-      try { _updateGuide(); } catch (_) { /* headless */ }
+      try { _updateGuide(); } catch (e) { ignore(e, "_updateGuide@load", "checklist DOM absent headless"); }
     });
   }
 

@@ -5,10 +5,10 @@ axe-core audit for `index.html:1` and the settings modal.
 
 ## Keyboard contract (measurable in index.html + src/main.js)
 
-- **ESC closes modal** (`src/controllers/transport.js:67` `if(e.key==="Escape")`):
+- **ESC closes modal** (`src/controllers/transport.js:68` `if(e.key==="Escape")`):
   When `settingsModal` (`index.html:480` `id="settingsModal" role="dialog" aria-modal="true"`) is open (`display:flex`), pressing **Escape** closes it and returns focus to `settingsBtn` (`index.html:55` `id="settingsBtn"`). Also cancels ligand placement (`ui.cancelPlace`).
   ```js
-  // src/controllers/transport.js:67 — ESC closes modal, Space toggles run, tab order logical
+  // src/controllers/transport.js:68 — ESC closes modal, Space toggles run, tab order logical
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       const modal = document.getElementById("settingsModal");
@@ -33,7 +33,7 @@ axe-core audit for `index.html:1` and the settings modal.
 - **Tab order logical** (`index.html:10` body → header → `#controls` → `#viewerCol`):
   Natural DOM order is the tab order — no positive `tabindex`. Sequence:
   `settingsBtn` → `pdbId` → `fetchBtn` → `fileInput` → preset links (`data-ex`) → `includeLig` → `mol2File` → `chainsInput` → `resFrom`/`resTo` → `buildBtn` → hetero buttons → `ligFilter` → `ligSelect` → `placeBtn`/`cancelPlace` → `placePocketBtn` → physics sliders (`rc`/`gamma`/`temp`/`fric`/`mass`/`motionGain`) → `rec` controls → `playBtn`/`resetBtn` → viewer checkboxes → modal `backendSelect` → `threadsInput` → `solventSelect` → modal `saveSettingsBtn` / `closeSettingsBtn`.
-  Modal uses `aria-modal="true"` + `role="dialog"` + `aria-labelledby="settingsModalHeading"` (`index.html:480`); focus is restored to opener on close. No focus trap is needed because modal is the only dialog; Esc or backdrop click closes it (`src/settings-panel.js:74`).
+  Modal uses `aria-modal="true"` + `role="dialog"` + `aria-labelledby="settingsModalHeading"` (`index.html:480`); focus is restored to opener on close. No focus trap is needed because modal is the only dialog; Esc or backdrop click closes it (`src/settings-panel.js:75`).
 
 - **Other hotkeys** (`src/controllers/transport.js:94+`): `R` resets, `C` toggles recording, `Digit 1-7` toggles control panels — all gated by `isEditing` so they do not fire while typing; Digit index derives from `e.code` (layout-independent, `src/controllers/transport.js:119`).
 
@@ -68,7 +68,7 @@ axe-core 4.8.2 — index.html:1
 
 - **Color contrast:** `css/style.css:1` palette (`--txt:#f8fafc` on `--bg:#07090e`, `--accent:#38bdf8` on `--panel:#0d121d`) passes WCAG AA (ratio ≥4.5:1 for normal text, ≥3:1 for large). Checked via axe `color-contrast` rule.
 - **Labels:** All `input`/`select` have associated `<label>` or `aria-label` (`index.html:27` `PDB ID`, `index.html:34` `PDB file`, `index.html:59` `Simulation Model`, etc.). Axe `label` passes.
-- **ARIA:** Modal `role="dialog"` + `aria-modal="true"` + `aria-labelledby` (`index.html:480`), close button `aria-label="Close settings"` (`index.html:484`).
+- **ARIA:** Modal `role="dialog"` + `aria-modal="true"` + `aria-labelledby` (`index.html:480`), close button `aria-label="Close settings"` (`index.html:490`).
 - **Keyboard:** All interactive elements are native `<button>`, `<input>`, `<select>`, `<a>` — focusable without `tabindex` hack. Axe `keyboard` and `focus-order-semantics` pass.
 
 **CI note:** `.github/workflows/check.yml:19` `CI budget warn` is performance-only; accessibility is checked locally via the snippet above. A future CI step can run `npx axe` and fail on `violations>0`.
@@ -80,4 +80,4 @@ axe-core 4.8.2 — index.html:1
 3. With no input focused, press **Space** → Run/Pause toggles (HUD `t=` advances/pauses).
 4. Run axe snippet above — expect `violations: 0`.
 
-*Last updated: 2026-09-01 — J98. See `index.html:55` settings button, `index.html:425` play button, `index.html:480` modal, `src/controllers/transport.js:67` Escape, `src/controllers/transport.js:90` Space.*
+*Last updated: 2026-09-01 — J98. See `index.html:55` settings button, `index.html:431` play button, `index.html:480` modal, `src/controllers/transport.js:68` Escape, `src/controllers/transport.js:90` Space.*

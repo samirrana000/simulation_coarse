@@ -18,6 +18,7 @@
  */
 
 import { kabsch } from "../analysis.js";
+import { ignore } from "../errors.js";
 
 /**
  * @typedef {object} DCCMResult
@@ -250,14 +251,14 @@ export function highlightCorrelatedPair(viewer, i, j, opts = {}) {
               ctx.stroke();
             }
             ctx.restore();
-          } catch (_) { /* overlay must never break rendering */ }
+} catch (e) { ignore(e, "dccmHighlight@overlay", "the highlight overlay must never break the render that follows"); }
         };
         viewer._dccmWrapped = true;
       }
       if (typeof viewer.render === "function" && viewer._lastPos && viewer.canvas) {
         viewer.render(viewer._lastPos);
       }
-    } catch (_) { /* record-only fallback */ }
+} catch (e) { ignore(e, "dccmHighlight@record", "record-only fallback: the matrix is already computed without it"); }
   }
   return { i, j };
 }
@@ -274,5 +275,5 @@ export function clearCorrelatedPair(viewer) {
         viewer.render(viewer._lastPos);
       }
     }
-  } catch (_) {}
+  } catch (e) { ignore(e, "dccmClearHighlight", "viewer may be null headless or _lastPos absent before the first frame; the next render drops the highlight anyway"); }
 }

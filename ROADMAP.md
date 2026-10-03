@@ -70,7 +70,7 @@ from `TRANSFORMATION_PLAN_100.md:1`.
 |---|---|---|---|
 | `v1.0-jpcb` | 2026-09-01 | Tag + `CITATION.cff:13` + Zenodo `10.5281/zenodo.XXXXXXX` placeholder (`docs/CITATION.md`) | Pending deposition — placeholder in `manuscript/manuscript_jpcb.tex:359` |
 | Reproducibility | 2026-09-01 | `manuscript/reproduce.sh` (bench/perf + figs), `docs/TUTORIAL.md` Where it fails | Done (J92, J93) |
-| Accessibility | 2026-09-01 | `docs/ACCESSIBILITY.md` axe 0 violations, ESC + Space in `index.html:480`/`src/controllers/transport.js:67` | Done (J98) |
+| Accessibility | 2026-09-01 | `docs/ACCESSIBILITY.md` axe 0 violations, ESC + Space in `index.html:480`/`src/controllers/transport.js:68` | Done (J98) |
 | Performance budget | 2026-09-01, rebaselined 2026-09-30 | `bench/budget.json`, `docs/PERFORMANCE.md`, `bench/budget_check.js` CI warn | Done (J99). The original `heavy_compute_ms: 2.0` and `fps: 30` were both fiction: 2.0 was 7× under the measured 14.1 ms and had never once been met (one-commit file history); fps was measured by nothing at all. Both are corrected. |
 | Browser v1 scope lock | 2026-09-01 | This file `ROADMAP.md:3` **No QM/MM, no explicit membrane, no PME** | Done (J100) |
 

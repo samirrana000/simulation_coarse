@@ -1013,7 +1013,7 @@ Settings → panel summaries → inputs → viewer → canvas); the Digit1-7
   `role="img"` + viewer `aria-label`; 6 data canvases
   (`:239,303,345,361-363`) + 2 dock strips (`:410,412`) gain `role="img"` +
   `aria-label` (display-only, no new tab stops).
-- Tiny JS guards (`src/controllers/transport.js:84-126` + same-shape fallback
+- Tiny JS guards (`src/controllers/transport.js:85-127` + same-shape fallback
   `index.html:517`): Space no longer hijacks focused BUTTON/A/SUMMARY
   (native activation wins; Space on a focused Run button still toggles via
   its native click); Digit index derives from `e.code` (layout-independent;
@@ -1142,7 +1142,7 @@ top-level panels — 8 unchanged, Digit1-7 intact; +1 DOM id, in `src/ui.js`):
   cancelled`). `HeavyForceField` takes an optional 4th `opts.topo` (prebuilt
   topo skips the sync O(n²); absent → legacy path bit-identical, all 3-arg
   callers untouched).
-- Build wiring (`src/controllers/system-build.js:159-273,320-380`): CG path stays fully
+- Build wiring (`src/controllers/system-build.js:160-279,320-380`): CG path stays fully
   synchronous (fast, no flicker). Heavy prep (ligands/protonation) stays
   sync, then `runHeavyBuildAsync` chunks topology (11 slices on 4W52) with
   `Building heavy… topology d/n rows` captions to the reused `#selSummary`,

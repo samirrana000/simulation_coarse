@@ -80,7 +80,7 @@ This document describes trajectory export formats implemented in `src/recorder.j
 ## UI Flow
 
 1. Set `stridePs` and `maxFrames` (`index.html` `#stridePs`, `#maxFrames` in `Recording` panel).
-2. Press **● Rec** (`src/controllers/recording.js:155` `recBtn` → `recorder.start`) — HUD `recStatus` shows `count`/`spanNs` (`src/ui.js:173` `updateRecStatus`).
+2. Press **● Rec** (`src/controllers/recording.js:155` `recBtn` → `recorder.start`) — HUD `recStatus` shows `count`/`spanNs` (`src/ui.js:174` `updateRecStatus`).
 3. Run simulation (`▶ Run`), **Stop** (`src/controllers/recording.js:162` `recStopBtn`), choose format `XYZ`/`PDB` (`index.html` `#exportFmt`), click **Download** (`src/controllers/recording.js:185` `dlBtn` → `downloadText` via `src/recorder.js:168` `downloadText` creating `Blob` + `URL.createObjectURL`).
 
 ## Grep & Files

@@ -4,6 +4,8 @@
  * Spawns and coordinates Web Workers across available CPU cores.
  */
 
+import { ignore } from "./errors.js";
+
 /**
  * Guard: ensure an ArrayBuffer-backed typed array was not detached
  * by an accidental transfer of its underlying buffer. Transferring
@@ -167,7 +169,7 @@ export class WorkerPool {
 
   terminate() {
     for (const w of this.workers) {
-      try { w.terminate(); } catch (_) {}
+      try { w.terminate(); } catch (e) { ignore(e, "terminate@WorkerPool.terminate", "a worker whose onerror already fired may be un-terminatable; the page is going away regardless"); }
     }
     this.workers = [];
   }

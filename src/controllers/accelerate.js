@@ -22,6 +22,7 @@
  */
 
 import { ui, state } from "../ui.js";
+import { ignore } from "../errors.js";
 import { settingsState, workerPool } from "../settings-panel.js";
 import { RESPAStepper, splitForceField } from "../physics/integrators/respa.js";
 
@@ -61,7 +62,7 @@ let respaCache = { ff: null, stepper: null, split: null, disabled: false, reason
 export function respaWanted() {
   try {
     if (ui.respaToggle && typeof ui.respaToggle.checked === "boolean") return ui.respaToggle.checked;
-  } catch (_) {}
+  } catch (e) { ignore(e, "respaToggle@respaWanted", "ui ref null in a headless import; the persisted setting below is the documented fallback"); }
   return !!settingsState.respaOn;
 }
 

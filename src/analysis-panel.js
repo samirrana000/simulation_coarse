@@ -30,6 +30,7 @@ import {
 import { ForceField } from "./forcefield.js";
 import { LangevinIntegrator } from "./integrator.js";
 import { findRotatableBonds } from "./analysis/rotbonds.js";
+import { ignore } from "./errors.js";
 
 /**
  * Count rotatable bonds in the selected thermo ligand subset (Stage-5 display
@@ -147,7 +148,7 @@ export function drawDccmEmpty(reason) {
     ctx.font = "9.5px sans-serif";
     ctx.fillStyle = "#334155";
     ctx.fillText("cross-correlation −1 (blue) … +1 (amber)", w / 2, h / 2 + 10);
-  } catch (_) { /* headless: caption only */ }
+} catch (e) { ignore(e, "dccmEmptyDraw", "2-D canvas draw; a throw here loses an empty-state caption, not data"); }
   setDccmCaption("DCCM: record ≥ 3 frames, then compute. Legend −1…+1.");
 }
 
@@ -161,7 +162,7 @@ export function dccmTick(now) {
 }
 
 // Paint the empty state once at startup (no-data, before any trajectory).
-try { drawDccmEmpty(); } catch (_) {}
+try { drawDccmEmpty(); } catch (e) { ignore(e, "drawDccmEmpty@load", "empty-state caption; a throw leaves the canvas blank until the first frame"); }
 
 // ---- Thermodynamics ΔH/ΔS (Loop-2 S5, Stage-5 async, Stage-2 ligand picker) --
 // Holo leg = recorded trajectory (needs ≥30 frames); apo leg = internal
@@ -188,8 +189,8 @@ let _thermoGen = 0;
  */
 export function invalidateThermo() {
   _thermoGen++;
-  try { if (ui.thermoBtn) ui.thermoBtn.disabled = false; } catch (_) {}
-  try { if (ui.thermoCancelBtn) ui.thermoCancelBtn.disabled = true; } catch (_) {}
+  try { if (ui.thermoBtn) ui.thermoBtn.disabled = false; } catch (e) { ignore(e, "thermoBtn@invalidateThermo", "ui ref null in a headless import; the generation bump still cancels the run"); }
+  try { if (ui.thermoCancelBtn) ui.thermoCancelBtn.disabled = true; } catch (e) { ignore(e, "thermoCancelBtn@invalidateThermo", "ui ref null in a headless import"); }
 }
 /**
  * Toggle the thermo run/cancel button pair (Stage-7 cancel UX: Cancel is
@@ -199,18 +200,17 @@ export function invalidateThermo() {
  * @param {boolean} running true while the apo/SASA legs are in flight
  */
 function setThermoRunning(running) {
-  try { if (ui.thermoBtn) ui.thermoBtn.disabled = !!running; } catch (_) {}
+  try { if (ui.thermoBtn) ui.thermoBtn.disabled = !!running; } catch (e) { ignore(e, "thermoBtn@setThermoRunning", "ui ref null in a headless import"); }
   try {
-    const cb = ui.thermoCancelBtn
-      ?? (typeof document !== "undefined" ? document.getElementById("thermoCancelBtn") : null);
+    const cb = ui.thermoCancelBtn ?? (typeof document !== "undefined" ? document.getElementById("thermoCancelBtn") : null);
     if (cb) cb.disabled = !running;
-  } catch (_) {}
+  } catch (e) { ignore(e, "thermoCancelBtn@setThermoRunning", "button is optional markup; absent in older index.html"); }
 }
 // Idle state at load: Cancel disabled until a run starts (HTML also ships disabled).
 try {
   const cb0 = typeof document !== "undefined" ? document.getElementById("thermoCancelBtn") : null;
   if (cb0) cb0.disabled = true;
-} catch (_) {}
+} catch (e) { ignore(e, "thermoCancelBtn@loadIdle", "button is optional markup; absent in older index.html"); }
 if (ui.thermoCancelBtn) ui.thermoCancelBtn.addEventListener("click", () => {
   invalidateThermo(); // bump generation → stale stepChunk/SASA continuations return early
   setThermoRunning(false); // belt-and-braces idle state (invalidateThermo already resets)
@@ -223,7 +223,7 @@ function setThermoCaption(txt) {
       const el = document.getElementById("thermoCaption");
       if (el) el.textContent = txt;
     }
-  } catch (_) {}
+  } catch (e) { ignore(e, "thermoCaption@setThermoCaption", "caption is cosmetic; the full report still goes to #analysisOut"); }
 }
 /**
  * Refresh the thermo ligand picker from the live ligand list (Stage-2).
@@ -238,7 +238,7 @@ export function refreshThermoLigPicker() {
     return refreshThermoLigOptions(el, state.ligands ?? [], el?.value ?? THERMO_LIG_AUTO);
   } catch (_) { return THERMO_LIG_AUTO; }
 }
-try { refreshThermoLigPicker(); } catch (_) {}
+try { refreshThermoLigPicker(); } catch (e) { ignore(e, "refreshThermoLigPicker@load", "picker repopulate is additive; thermoLigValue() falls back to auto"); }
 /** Read the picker value with a headless-safe fallback (default auto). */
 function thermoLigValue() {
   try {
@@ -260,7 +260,7 @@ if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
     // Stage-2: pocket COM from the SELECTED ligand only (default auto→BNZ).
     // Record path ("all") keeps the old all-mol COM bit-identically.
     let thermoSel = thermoLigValue();
-    try { thermoSel = refreshThermoLigPicker() && thermoLigValue(); } catch (_) {}
+    try { thermoSel = refreshThermoLigPicker() && thermoLigValue(); } catch (e) { ignore(e, "refreshThermoLigPicker@runThermo", "the previous picker value stays in thermoSel"); }
     const resolved = resolveThermoLigand(state.ligands ?? [], thermoSel);
     const selAtomIdx = selectedLigandAtomIndices(state.ligands ?? [], resolved.molIdx);
     // Stage-5 display only: rotatable-bond count for the selected ligand subset
@@ -414,7 +414,7 @@ if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
             ui.analysisOut.textContent = _lastThermoText;
             setThermoCaption("thermo done (legacy solvent term — SASA failed).");
           } catch (err2) {
-            try { ui.analysisOut.textContent = "⚠ " + (err2 && err2.message ? err2.message : String(err2)); } catch (_) {}
+            try { ui.analysisOut.textContent = "⚠ " + (err2 && err2.message ? err2.message : String(err2)); } catch (e) { ignore(e, "analysisOut@thermoLegacyLeg", "#analysisOut is null in a headless import"); }
             setThermoCaption("thermo failed — see report above.");
           }
         }).finally(() => {
@@ -425,7 +425,7 @@ if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
         return;
       } catch (err) {
         if (myGen !== _thermoGen) return;
-        try { ui.analysisOut.textContent = "⚠ " + (err && err.message ? err.message : String(err)); } catch (_) {}
+        try { ui.analysisOut.textContent = "⚠ " + (err && err.message ? err.message : String(err)); } catch (e) { ignore(e, "analysisOut@thermo", "#analysisOut is null in a headless import"); }
         setThermoCaption("thermo failed — see report above.");
       } finally {
         if (myGen === _thermoGen) {
@@ -435,8 +435,8 @@ if (ui.thermoBtn) ui.thermoBtn.addEventListener("click", () => {
     };
     setTimeout(stepChunk, 0);
   } catch (err) {
-    try { ui.analysisOut.textContent = "⚠ " + (err && err.message ? err.message : String(err)); } catch (_) {}
-    try { if (myGen === _thermoGen) setThermoRunning(false); } catch (_) {}
+    try { ui.analysisOut.textContent = "⚠ " + (err && err.message ? err.message : String(err)); } catch (e) { ignore(e, "analysisOut@thermo", "#analysisOut is null in a headless import"); }
+    try { if (myGen === _thermoGen) setThermoRunning(false); } catch (e) { ignore(e, "setThermoRunning@thermoOuter", "button state only; a stuck Cancel is recoverable by reload"); }
   }
 });
 function centroidOf(ref, n) {

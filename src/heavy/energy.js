@@ -12,6 +12,20 @@
  * change, not a style change. tests/test_heavy_golden.js pins all 24
  * accumulators bit-exactly for this reason.
  *
+ * SUBSTITUTION POLICY (2026-10-03)
+ *   Three stages here are wrapped in try/catch that runs a DIFFERENT physics
+ *   kernel on failure: OBC2 -> HCT non-bonded, LCPO -> legacy SASA, membrane
+ *   slab -> omitted. Those are force-field substitutions, so they must never be
+ *   silent and must never leave two models' forces in one buffer. Hence:
+ *     • _forceSnapshot() / _forceRestore() bracket each stage, so a substitute
+ *       kernel sees the pre-stage force state and its forces exactly match its
+ *       energy.
+ *     • _notePhysicsFallback() prints, increments ff.physicsFallbacks and sets
+ *       ff.lastPhysicsFallback {stage, substitutedTo, error, count}.
+ *   See the FIXED 2026-10-03 note in heavy/nonbonded.js for the OBC2 case that
+ *   motivated this: it silently produced pure-HCT energy with OBC2-GB +
+ *   HCT-everything forces.
+ *
  * Zero DOM globals. Node-importable.
  */
 import { springForces, dihedralForcesAnalytic } from "../ff-harmonic.js";
@@ -24,6 +38,76 @@ import { METAL_K } from "./params.js";
 /** Attached to HeavyForceField.prototype by heavy/forcefield.js. */
 export const energyMethods = {
   /**
+   * Copy the live force buffer into the reusable snapshot slot.
+   *
+   * WHY THIS EXISTS — every substitutable physics stage in compute() is
+   * wrapped in a try/catch that runs a DIFFERENT kernel on failure. A kernel
+   * that throws part-way through has already added some of its contributions to
+   * `f`, so the substitute then adds its own on top: the caller ends up with
+   * forces from BOTH models and an energy from only one. That is not a
+   * degraded answer, it is a wrong one, and it was exactly what happened to
+   * the OBC2 path (see the FIXED 2026-10-03 note in heavy/nonbonded.js).
+   *
+   * Cost: lazily allocated on first use and REUSED, so the default HCT path
+   * never allocates and the guarded paths allocate once for the life of the
+   * field rather than once per step — the same hoist-to-constructor-buffer
+   * pattern the G65 audit note above asks for. It is deliberately NOT
+   * initialised in the constructor: two of the three guarded stages are
+   * off by default, and paying for a buffer nobody uses is exactly the
+   * allocation churn this audit is about.
+   * @returns {Float64Array} snapshot buffer, already filled from `this.forces`
+   */
+  _forceSnapshot() {
+    const f = this.forces;
+    let snap = this._forceSnap;
+    if (snap === null || snap === undefined || snap.length !== f.length) {
+      snap = this._forceSnap = new Float64Array(f.length);
+    }
+    snap.set(f);
+    return snap;
+  },
+
+  /**
+   * Undo every force contribution written since the matching _forceSnapshot(),
+   * so the substitute kernel starts from exactly the pre-stage state.
+   * @param {Float64Array} snap  buffer returned by _forceSnapshot()
+   */
+  _forceRestore(snap) {
+    const f = this.forces;
+    if (snap.length !== f.length) return;
+    f.set(snap);
+  },
+
+  /**
+   * Record that a physics path was substituted for another, LOUDLY.
+   *
+   * Silent substitution of a force field is the failure mode this project's
+   * honest-scope discipline exists to prevent: the run continues, the HUD
+   * shows a plausible number, and nothing in the reported energies says which
+   * model produced them. So every substitution now (a) prints, (b) counts
+   * itself on the field as `physicsFallbacks`, and (c) leaves a queryable
+   * `lastPhysicsFallback` record naming the stage and the original error. A
+   * caller that never looks at these still sees the console; a caller that
+   * does look can refuse the result.
+   *
+   * @param {string} stage    which compute() stage was substituted
+   * @param {string} substitutedTo  short name of the kernel now being used
+   * @param {unknown} e       the thrown value
+   */
+  _notePhysicsFallback(stage, substitutedTo, e) {
+    const message = e && e.message ? e.message : String(e);
+    this.physicsFallbacks = (this.physicsFallbacks ?? 0) + 1;
+    this.lastPhysicsFallback = {
+      stage, substitutedTo, error: message, count: this.physicsFallbacks,
+    };
+    console.warn(
+      `[HeavyForceField] ${stage} failed (${message}) — substituted ${substitutedTo}. ` +
+      `Forces rolled back to the pre-stage state so they match ${substitutedTo} exactly; ` +
+      `ff.physicsFallbacks=${this.physicsFallbacks}. Results are NOT the model requested.`,
+    );
+  },
+
+  /**
    * Total potential energy and forces evaluation.
    *
    * G65 ZERO-ALLOC AUDIT — hot loop (called every integration step):
@@ -33,8 +117,11 @@ export const energyMethods = {
    *   to HeavyForceField scratch buffers (e.g., this._sasaS0, this._sasaRadii, this._sasaBurial) allocated
    *   once at construction and reused — same pattern as ForceField's _dens/_bp* buffers. Until then,
    *   ~zero-alloc claim does not hold for heavy mode; see bench/alloc.js for heap delta measurement.
-   *   Remaining kernels (harmonicFlat, angleFlat, dihedralForcesAnalytic, _nonBondedGrid via
-   *   SpatialGrid.head/next/cellCoords) are zero-alloc in steady state (grid resizes only when n exceeds maxAtoms).
+   *   _forceSnapshot() above follows that same recommended pattern for the
+   *   guarded stages (lazily allocated + reused, so steady-state alloc count is
+   *   unchanged). Remaining kernels (harmonicFlat, angleFlat, dihedralForcesAnalytic,
+   *   _nonBondedGrid via SpatialGrid.head/next/cellCoords) are zero-alloc in steady
+   *   state (grid resizes only when n exceeds maxAtoms).
    */
 
   compute(pos) {
@@ -85,12 +172,20 @@ export const energyMethods = {
     // gbModel "obc2" routes the GB reaction field through gb_obc2.js with
     // OBC-II radii (LJ/Coulomb/H-bond stay on the grid kernel); default "hct"
     // preserves the legacy GeneralizedBorn path so existing tests pass.
+    //
+    // The try/catch is a physics substitution, not an error swallow: OBC2 and
+    // HCT are DIFFERENT force fields, so falling back changes the answer. The
+    // snapshot makes the substitution self-consistent (the substitute sees the
+    // pre-OBC2 force state, so forces are pure HCT to match the pure-HCT
+    // energy) and _notePhysicsFallback makes it visible on the field.
     let nb;
     if (this.gbModel === "obc2") {
+      const snap = this._forceSnapshot();
       try {
         nb = this._nonBondedGridOBC2(pos, f);
       } catch (e) {
-        console.warn(`[HeavyForceField] OBC2 path failed (${e.message}) — HCT fallback`);
+        this._forceRestore(snap);
+        this._notePhysicsFallback("OBC2 non-bonded", "HCT non-bonded", e);
         nb = this._nonBondedGrid(pos, f);
       }
     } else {
@@ -117,6 +212,7 @@ export const energyMethods = {
 
     // 5. Hydrophobic SASA burial ("lcpo" routes through lcpo_sasa.js)
     if (this.sasaModel === "lcpo") {
+      const snap = this._forceSnapshot();
       try {
         const res = lcpoSasa(pos, this._lcpoElements, { gamma: this.sasa.gamma, excluded: this._excluded, forces: f });
         this.sasaU = res.energy;
@@ -124,7 +220,13 @@ export const energyMethods = {
         if (this.trackTerms === true) this._bindSasaE = 0; // LCPO: bindE carries no SASA part
         U += this.sasaU;
       } catch (e) {
-        console.warn(`[HeavyForceField] LCPO SASA failed (${e.message}) — legacy SASA fallback`);
+        // Same defect class as the OBC2 catch above: lcpoSasa accumulates into
+        // `f` per pair, so a mid-pass throw would leave burial forces behind for
+        // the legacy SASA kernel to double up on. Roll back first, then
+        // substitute. (Unreachable today — lcpo_sasa.js has no throw statement —
+        // but the invariant is what makes that fact unimportant.)
+        this._forceRestore(snap);
+        this._notePhysicsFallback("LCPO SASA", "legacy SASA", e);
         const sasaRes = this.sasa.compute(pos, f, this._elem, this.n, this.nProt, this.ligandStart);
         this.sasaU = sasaRes.energy;
         this.bindingU = nb.bindE + sasaRes.bindSasaE;
@@ -164,6 +266,7 @@ export const energyMethods = {
 
     // 5b. Implicit membrane slab (opt-in via par.membrane = {on:true,...})
     if (this.membraneOpts?.on) {
+      const snap = this._forceSnapshot();
       try {
         const radii = new Float64Array(this.n);
         for (let i = 0; i < this.n; i++) radii[i] = 2.0;
@@ -177,7 +280,11 @@ export const energyMethods = {
         this.membraneU = mem.energy;
         U += mem.energy;
       } catch (e) {
-        console.warn(`[HeavyForceField] membrane slab failed (${e.message}) — skipped`);
+        // "skipped" is only true if the slab's forces are removed too — a
+        // mid-loop throw in membraneEnergyForces leaves per-atom z-forces in `f`
+        // that no energy term accounts for. Roll back, then skip.
+        this._forceRestore(snap);
+        this._notePhysicsFallback("membrane slab", "no membrane term", e);
         this.membraneU = 0;
       }
     } else {

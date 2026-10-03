@@ -10,7 +10,8 @@
  *  - Multi-touch and mouse trackball controls with perspective picking
  */
 
-import { VERSION } from "./version.js"; // A01 provenance — viewer knows build version (unused but validates deterministic import)
+import { VERSION } from "./version.js";
+import { ignore } from "./errors.js"; // A01 provenance — viewer knows build version (unused but validates deterministic import)
 
 const CHAIN_PALETTE = [
   [86, 156, 214], // blue
@@ -98,14 +99,12 @@ export class Viewer {
       window.addEventListener("resize", () => this._resize());
       // Observe flex layout changes (details toggle, sidebar collapse, DPR switch)
       if (typeof ResizeObserver !== "undefined") {
-        try { new ResizeObserver(() => this._resize()).observe(this.canvas); } catch (_) {}
-        try { new ResizeObserver(() => this._resize()).observe(this.canvas.parentElement); } catch (_) {}
+        try { new ResizeObserver(() => this._resize()).observe(this.canvas); } catch (e) { ignore(e, "ResizeObserver(canvas)@Viewer.setup", "already gated by typeof ResizeObserver; only a browser that defines it and then throws is unreachable in practice, and _resize() is also bound to window resize"); }
+        try { new ResizeObserver(() => this._resize()).observe(this.canvas.parentElement); } catch (e) { ignore(e, "ResizeObserver(parent)@Viewer.setup", "a detached parentElement throws NotFoundError; the canvas observer above still covers the canvas itself"); }
       }
       if (typeof window.matchMedia === "function") {
-        try {
-          window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
-            .addEventListener("change", () => this._resize());
-        } catch (_) {}
+        const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+        if (typeof mq.addEventListener === "function") mq.addEventListener("change", () => this._resize());
       }
     }
   }

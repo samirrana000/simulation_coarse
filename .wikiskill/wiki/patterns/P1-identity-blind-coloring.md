@@ -12,7 +12,7 @@ boundary was known but not applied in heavy mode.
 
 **Fix that works (validated):** Keep protein CPK; shift ligand to a distinct
 saturated palette + white halo ring (i >= nProt test already exists in the
-render loop at src/viewer.js:552-561 as `isLig`). Measure: visual
+render loop at src/viewer.js:551-560 as `isLig`). Measure: visual
 differentiation is testable headlessly — assert `colors[i]` for ligand
 indices differs from ELEMENT_COLOR of same element.
 

@@ -411,7 +411,7 @@ PY
 - [ ] `src/integrator.js` + `src/forcefield.js`/`src/heavy.js` sanitize `pos` on `!isFinite(energy|pos[0])` (rollback to `ref`).
 - [ ] `src/viewer.js:301` handle `Infinity` and clamp to `center ± 1e3`.
 - [ ] `src/placement.js:262` guard NaN COM, validate `target` finite.
-- [ ] `src/pdb.js:45` allow `ATOM` **or** `HETATM` in `fetchPdb` gate; add `console.warn` on dropped lines.
+- [ ] `src/pdb.js:46` allow `ATOM` **or** `HETATM` in `fetchPdb` gate; add `console.warn` on dropped lines.
 
 ### Before enabling workers/GPU (P2 guard)
 - [ ] `src/worker-pool.js:88` never transfer live `pos.buffer`; add `this.busy` mutex; validate `pos.byteLength>0` before render.

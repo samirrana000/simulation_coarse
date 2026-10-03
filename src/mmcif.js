@@ -1,15 +1,19 @@
 /**
- * mmcif.js — PDBx/mmCIF stub (I81).
+ * mmcif.js — PDBx/mmCIF: NOT SUPPORTED (absent, not pending).
  *
  * Primary structure I/O in this app is PDB via src/pdb.js:parseCa.
- * mmCIF is reserved for future native support; this stub detects the
- * mmCIF `data_` block header and either delegates to the PDB parser
- * when ATOM-compatible records exist or throws a clear guidance error.
+ * mmCIF is absent by scope, not queued for implementation: ROADMAP.md §1
+ * lists the browser-v1 hard no's, and a native `_atom_site` loop parser
+ * would be a format project of its own. This module therefore does exactly
+ * two things and nothing more: detect a mmCIF `data_` block so the caller
+ * can say so precisely, and delegate to the PDB parser when the input
+ * already carries ATOM-compatible records (some exporters emit both).
  *
- * See docs/MMCIF.md for status and migration notes.
+ * See docs/MMCIF.md for the honest-scope entry and what to use instead.
  */
 
 import { parseCa } from "./pdb.js";
+import { ignore } from "./errors.js";
 
 /**
  * Parse a PDBx/mmCIF string into the same {beads, chains, nAtoms} shape
@@ -17,7 +21,7 @@ import { parseCa } from "./pdb.js";
  *
  * Detection: mmCIF files start with a `data_<entryId>` block (case-insensitive
  * check for `data_` at top-of-file). If detected, we attempt a best-effort
- * ATOM fallback; otherwise we throw "mmCIF not yet supported, use PDB".
+ * ATOM fallback; otherwise we throw an honest-scope error naming the converter.
  *
  * @param {string} text raw file text
  * @returns {{beads: Array, chains: string[], nAtoms: number}}
@@ -33,21 +37,27 @@ export function parseMMCIF(text) {
     return parseCa(text);
   }
 
-  // I81 — mmCIF detection hit: file contains `data_` (PDBx/mmCIF block)
-  // Future: parse _atom_site.* loop properly (mmCIF spec: _atom_site.group_PDB,
-  // _atom_site.label_atom_id, _atom_site.Cartn_x/y/z, _atom_site.B_iso_or_equiv).
-  // For now, if the mmCIF text also carries ATOM-like lines (some exporters do),
-  // delegate to parseCa so coarse-grained Cα path keeps working.
+  // mmCIF detection hit: file contains `data_` (PDBx/mmCIF block).
+  // A native _atom_site.* loop parser is ABSENT, not pending — see ROADMAP.md §1
+  // for the project's hard-no list and docs/MMCIF.md for the honest-scope entry.
+  // Do not read "not supported" as a queued feature. If the mmCIF text also
+  // carries ATOM-like lines (some exporters do), delegate to parseCa so the
+  // coarse-grained Cα path keeps working.
   if (text.includes("ATOM") && text.includes(" CA ")) {
     try {
       return parseCa(text);
-    } catch (_) {
-      // fall through to guidance error
+    } catch (e) {
+      // The file IS mmCIF, so surfacing parseCa's "no Cα found in this PDB"
+      // would be a misleading message; fall through to the honest-scope error
+      // below. Counted, because a silent fallback here is how a user ends up
+      // believing a structure was parsed when it was not.
+      ignore(e, "parseCa fallback@parseMMCIF", "input is mmCIF (has a data_ block), so parseCa's PDB-shaped error would misattribute the cause; the honest-scope throw below replaces it");
     }
   }
 
-  // Preferred error message required by I81 spec (grep-visible)
-  throw new Error("mmCIF not yet supported, use PDB — convert to PDB via pdb_extract or gemmi: gemmi convert input.cif output.pdb");
+  // Preferred error message (the string is grep-visible and asserted by
+  // tests/test_error_surfacing.js): ABSENT capability, stated as absent.
+  throw new Error("mmCIF is not supported by this simulator — PDB is the ingest format. Convert with pdb_extract or gemmi: gemmi convert input.cif output.pdb");
 }
 
 /**

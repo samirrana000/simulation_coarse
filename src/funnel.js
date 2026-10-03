@@ -298,7 +298,7 @@ export class Funnel {
     *   ΔG° = −kT ln[ ∫_bound r² e^(−βW) dr / ∫_unbound r² e^(−βW) dr ] + dG_vol
     * with volume correction dG_vol = −kT ln(V_rest/V°) (Boresch Eq. 6, V°=STANDARD_VOLUME).
     * This two-point estimate (`estimateDG`) approximates the integral by pmf(rFar)−pmf(rBound);
-    * see `integrateDGJacobian()` stub for full quadrature.
+    * `integrateDGJacobian()` has the full quadrature but is not on the display path (docs/FUNNEL.md §7).
     * @returns {{r: Float64Array, pmf: Float64Array, dG_vol: number, c_t: number}}
     */
   getPMF() {
@@ -359,10 +359,11 @@ export class Funnel {
     *   K_eq = ∫_bound r² exp(−βW(r)) dr / ∫_unbound r² exp(−βW) dr
     *   ΔG° = −kT ln K_eq + dG_vol,  dG_vol = −kT ln(V_rest/V°)
     * where V_rest = 4/3 π rFlat³ and V° = STANDARD_VOLUME = 1660.54 Å³ (Boresch Eq. 6).
-    * The full integral (r² weighting) is documented in `integrateDGJacobian()` stub;
-    * `getPMF()` already applies the Tiwary-Parrinello c(t) offset so that
-    * F(r)= −γ/(γ−1)·V(r)+c(t) is the unbiased PMF. For quick HUD use, two-point is sufficient
-    * but biased if PMF plateau not flat; convergence requires nHills>=50.
+    * The full integral (r² weighting) is implemented in `integrateDGJacobian()`, which this
+    * two-point path does NOT call (docs/FUNNEL.md §7); `getPMF()` already applies the
+    * Tiwary-Parrinello c(t) offset so that F(r)= −γ/(γ−1)·V(r)+c(t) is the unbiased PMF.
+    * For quick HUD use, two-point is sufficient but biased if PMF plateau not flat;
+    * convergence requires nHills>=50.
     * Uses pmf array from getPMF() so shift and c(t) are consistently applied.
     * @returns {number} kcal/mol
     */
@@ -393,26 +394,22 @@ export class Funnel {
   }
 
   /**
-    * Integrating helper stub: rigorous ΔG° via ∫ r² exp(−β W(r)) dr.
-    * Partitions CV into bound (r ≤ rFlat) and unbound (r > rFlat) and integrates
-    * the reconstructed PMF with Jacobian r²: ΔG = −kT ln(∫_bound r² e^(−βW) / ∫_unbound r² e^(−βW)) + dG_vol.
-    * Currently `estimateDG()` uses two-point V_bias(rFar)−V_bias(rBound) as a fast approximation;
-    * this stub documents the full quadrature and can be expanded to numerical integration.
+    * Rigorous ΔG° via the r²-weighted quadrature ∫ r² exp(−β W(r)) dr, partitioning
+    * the CV into bound (r ≤ rFlat) and unbound: ΔG = −kT ln(∫_bound/∫_unbound) + dG_vol.
+    *
+    * STATUS: implemented and numerically exercised by tests/test_funnel_grid.js, but NOT
+    * on the live ΔG path — every displayed number comes from `estimateDG()` (two-point
+    * V_bias(rFar)−V_bias(rBound)); see docs/FUNNEL.md §7. Do not read a HUD ΔG as this
+    * integral: switching the display over is a physics change. (It was labelled a
+    * "stub"/"placeholder" — the lie the other way; the quadrature below was always real.)
     * @param {Float64Array} [pmf] optional PMF (defaults to getPMF().pmf)
     * @param {Float64Array} [r] optional CV grid (defaults to getPMF().r)
-    * @returns {{dG_int: number, note: string}} placeholder (NaN until quadrature implemented)
+    * @returns {{dG_int: number, note: string}} ΔG in kcal/mol; NaN when not converged
     */
   integrateDGJacobian(pmf = null, r = null) {
-    // Placeholder: full implementation would do trapezoidal integration over r²·exp(−β·pmf)
-    // For now, delegate to two-point estimate and annotate as approximate.
-    // Future: replace with numeric quadrature when nHills>=50 converged.
     if (!this.active || this._nHills === 0) return { dG_int: NaN, note: "not converged (nHills<50)" };
     let _r = r, _pmf = pmf;
-    if (!_r || !_pmf) {
-      const out = this.getPMF();
-      _r = out.r; _pmf = out.pmf;
-    }
-    // Simple trapezoidal stub (still approximate — illustrates Jacobian weighting)
+    if (!_r || !_pmf) { const out = this.getPMF(); _r = out.r; _pmf = out.pmf; }
     const kBT = KB_KCAL * this.T;
     const beta = 1.0 / Math.max(1e-6, kBT);
     let num = 0, den = 0;
@@ -424,8 +421,11 @@ export class Funnel {
     }
     const vRest = (4.0 / 3.0) * Math.PI * (this.rFlat ** 3);
     const dG_vol = -kBT * Math.log(Math.max(1e-6, vRest / STANDARD_VOLUME)); // Boresch Eq.6
-    const dG_int = den > 0 && num > 0 ? -kBT * Math.log(num / den) - dG_vol : this.estimateDG();
-    return { dG_int, note: "stub: trapezoidal r² exp(-βW) quadrature; two-point fallback if den=0" };
+    const ok = den > 0 && num > 0;
+    return {
+      dG_int: ok ? -kBT * Math.log(num / den) - dG_vol : this.estimateDG(),
+      note: ok ? "trapezoidal r² exp(-βW) quadrature over the reconstructed PMF" : "unbound integral underflowed (den<=0); fell back to the two-point estimateDG()",
+    };
   }
 
   /**

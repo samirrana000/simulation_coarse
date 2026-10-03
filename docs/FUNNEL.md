@@ -64,6 +64,10 @@
 ## 7. Convergence
 
 - HUD grays out `ΔG` until `nHills ≥ 50`; `convergenceSE()` ≈ `kT/√nHills`.
-- Rigorous `ΔG°` integrates `r² exp(−βW)` over bound vs unbound (see `integrateDGJacobian()`).
+- **Which ΔG the HUD shows:** `estimateDG()` — a *two-point* approximation,
+  `pmf(rFar) − pmf(rBound)` with `rFar ≈ cv0+8 Å`. The rigorous `r² exp(−βW)`
+  integral is implemented in `integrateDGJacobian()` (`src/funnel.js`) but is
+  **not on the display path**, so do not read a displayed ΔG as that integral.
+  Switching the display over is a physics change and is out of scope.
 
 *Last updated: 2026-09-01 — D32/D34/D35/D36/D39/D40.*
