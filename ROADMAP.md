@@ -12,18 +12,18 @@ If you need them, use GROMACS / AMBER / OpenMM / NAMD / CHARMM as noted in
 
 - **No QM/MM** — No quantum Hamiltonian, no SCF, no bond breaking/formation, no
   catalysis or metal redox. The heavy force field is LJ + screened Coulomb +
-  GB/SA + harmonic bonds/angles/dihedrals (`src/heavy.js:415`), not a
+  GB/SA + harmonic bonds/angles/dihedrals (`src/heavy/forcefield.js:82`), not a
   semi-empirical or DFT engine. *Use instead:* CP2K, ORCA, NAMD/QM-MM, OpenMM
   + psi4 for reactive chemistry.
 - **No explicit membrane** — No lipid bilayer, no lateral pressure coupling,
   no anisotropic barostat, no CHARMM36 lipid parameters. The model is
   protein-only Cα ENM (`src/forcefield.js:91`) or heavy-atom GB/SA
-  (`src/heavy.js:415`) in implicit solvent. Simulating a GPCR, channel, or
+  (`src/heavy/forcefield.js:82`) in implicit solvent. Simulating a GPCR, channel, or
   transporter with this model produces qualitatively wrong energetics.
   *Use instead:* GROMACS/CHARMM-GUI + explicit lipids, NAMD, OpenMM membrane
   builder.
 - **No PME in browser v1** — No Particle-Mesh Ewald. Long-range electrostatics
-  beyond 8.5 Å are truncated via `switchFunc` 6.5→8.5 Å (`src/heavy.js:32`)
+  beyond 8.5 Å are truncated via `switchFunc` 6.5→8.5 Å (`src/heavy/params.js:36`)
   with no PME and no lattice sum. The 8.5→12 Å energy convergence test shows
   ≈5% residual error (`docs/LIMITATIONS.md:17`) — unacceptable for highly
   charged nucleic acids or membranes. *Use instead:* GROMACS/AMBER/OpenMM

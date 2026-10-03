@@ -29,7 +29,7 @@
 // call sites must survive stripping, or the validator fails loudly. Under-
 // stripping is caught the other way — a surviving comment makes an absence
 // assertion fail loudly. Neither direction can pass silently.
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { strict as assert } from "node:assert";
 
 const R = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
@@ -152,7 +152,22 @@ const ffp = R("../src/ff-params.js");
 // canonical home, because that is where the literals now live — asking the
 // facade would be asking a file that no longer contains a single number.
 const paramsMod = R("../src/physics/params.js");
-const heavy = R("../src/heavy.js");
+// M8 (2026-10 heavy split): src/heavy.js was 1674 LOC and became a facade over
+// eleven modules under src/heavy/. Every "does the HEAVY ENGINE implement X"
+// question below is asked of that whole family, so the premise ("the heavy
+// kernel") is unchanged while its file layout is not. Reading the family is a
+// STRICTER subject than reading one file for the positive assertions (the
+// kernels now have to be imported, wired and called across module edges) and an
+// equally strict one for the absence assertions (no heavy/ module may smuggle
+// in the forbidden terms). The directory is read from disk, so a new heavy/
+// module cannot opt out of these checks by existing.
+const HEAVY_FILES = [
+  R("../src/heavy.js"),
+  ...readdirSync(new URL("../src/heavy/", import.meta.url))
+    .filter((n) => n.endsWith(".js")).sort()
+    .map((n) => R(`../src/heavy/${n}`)),
+];
+const heavy = HEAVY_FILES.join("\n");
 const hb = R("../src/physics/hbond.js");
 const gb = R("../src/physics/gb.js");
 const sasa = R("../src/physics/sasa.js");
@@ -203,8 +218,12 @@ for (const t of ["_nonBondedGrid", "pairInteraction", "evaluatePair", "Generaliz
 
 // R3 weak interactions ARE implemented in heavy mode. Each link in the chain
 // is checked, so removing any single link turns this validator red.
+// M8 (2026-10 heavy split): the weakint import moved from src/heavy.js to
+// src/heavy/weak.js, so its specifier is now "../physics/weakint.js". The
+// requirement — that all three kernels come from physics/weakint.js and not from
+// a local reimplementation — is unchanged; only the relative depth changed.
 check(
-  /import\s*\{[^}]*piStackForces[^}]*cationPiForces[^}]*halogenForces[^}]*\}\s*from\s*"\.\/physics\/weakint\.js/.test(heavyImports),
+  /import\s*\{[^}]*piStackForces[^}]*cationPiForces[^}]*halogenForces[^}]*\}\s*from\s*"(?:\.\.\/)*physics\/weakint\.js/.test(heavyImports),
   "heavy imports piStackForces/cationPiForces/halogenForces from physics/weakint.js",
 );
 check(

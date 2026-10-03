@@ -325,7 +325,7 @@ path bit-identical; full record in `docs/BINDING_LOOP2_DONE.md`):
 
 > **Honest scope:** This browser model is not production MD — see the explicit list in **[docs/LIMITATIONS.md](docs/LIMITATIONS.md)** for full detail.
 
-- **GB cutoff, no PME** — 6.5→8.5 Å switching, no PME (`src/heavy.js:32`); not for highly charged systems.
+- **GB cutoff, no PME** — 6.5→8.5 Å switching, no PME (`src/heavy/params.js:36`); not for highly charged systems.
 - **1D funnel CV only** — PMF along `r = |COM_lig − COM_pocket|` (`src/funnel.js:165`); orthogonal barriers invisible.
 - **4-state kinetics toy** — Bulk/Encounter/Intermediate/Bound Kramers network (`src/physics/network.js:13`); illustrative, not a converged MSM. **4-state toy, not full MSM; use PyEMMA for production** — see `docs/NETWORK.md` (`src/physics/network.js:13`).
 - **Canvas2D only, no WebGL** — 2-D Canvas painter's sort (`src/viewer.js:481`), no depth buffer, and no WebGL renderer exists in this project; see `docs/VIEWER.md`.

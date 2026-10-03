@@ -62,6 +62,24 @@ function maxAbsDiff(a, b) {
   return m;
 }
 
+/**
+ * Concatenated source of the heavy engine: the src/heavy.js facade plus every
+ * module under src/heavy/. Used by the [0] source-wiring greps below, which pin
+ * facts about the heavy engine as a whole (since the 2026-10 split out of the
+ * 1674-LOC monolith). Sorted so the order is deterministic; the directory is
+ * read from disk rather than hardcoded so a new heavy/ module cannot be omitted
+ * from the greps.
+ */
+function heavyModuleSources() {
+  const srcDir = path.resolve(__dirname, "..", "src");
+  const files = [path.join(srcDir, "heavy.js")];
+  const heavyDir = path.join(srcDir, "heavy");
+  for (const name of fs.readdirSync(heavyDir).sort()) {
+    if (name.endsWith(".js")) files.push(path.join(heavyDir, name));
+  }
+  return files.map((f) => fs.readFileSync(f, "utf-8")).join("\n");
+}
+
 function main() {
   console.log("=== Rev3/Issue1: HeavyForceField mirrors physicsLevel (4W52 heavy) ===");
   const pdbText = fs.readFileSync(findPdb(), "utf-8");
@@ -73,9 +91,14 @@ function main() {
   // [0] source wiring (grep, no kernel edits)
   // -----------------------------------------------------------------
   console.log("\n[0] source wiring (grep, no kernel edits)...");
-  const heavySrc = fs.readFileSync(path.resolve(__dirname, "..", "src", "heavy.js"), "utf-8");
+  // 2026-10 split: src/heavy.js became a facade and the implementation moved
+  // into eleven modules under src/heavy/ (see the layout map in src/heavy.js).
+  // These five greps pin facts about the HEAVY ENGINE, not about one file, so
+  // they are asked of the whole heavy module family. The patterns themselves are
+  // UNCHANGED — none was weakened, relaxed or reworded to make the split pass.
+  const heavySrc = heavyModuleSources();
   assert(/resolveHeavyPhysicsLevel/.test(heavySrc),
-    `heavy.js defines resolveHeavyPhysicsLevel`);
+    `the heavy engine defines resolveHeavyPhysicsLevel`);
   assert(/this\.physicsLevel\s*=\s*_phys\.level/.test(heavySrc),
     `constructor stores this.physicsLevel`);
   assert(/this\.chargesOn\s*=\s*_phys\.charges/.test(heavySrc),

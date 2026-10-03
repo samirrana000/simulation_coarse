@@ -1,37 +1,36 @@
 {
   "_meta": {
     "planner": "evolve/evolve.mjs plan",
-    "cycle": 14,
-    "generatedAt": "2026-10-03T04:50:20.612Z",
+    "cycle": 16,
+    "generatedAt": "2026-10-03T05:37:31.975Z",
     "gateVector": {
-      "cycle": 14,
-      "score": 0.799,
+      "cycle": 16,
+      "score": 0.3744,
       "parts": {
         "syntax": 1,
-        "testPass": 1,
+        "testPass": 0,
         "coverage": 1,
         "dom": 1,
-        "bloat": 0.798991,
+        "bloat": 0.84237,
         "science": 1
       },
       "saturated": [
-        "testPass",
         "syntax",
         "dom",
         "science",
         "coverage"
       ]
     },
-    "R_best": 0.799,
+    "R_best": 0.3744,
     "PLAN_SIZE": 15,
-    "candidatesMeasured": 15,
-    "emitted": 15,
-    "deficitPoolExhausted": false,
-    "deficitPoolNote": "15 measurable deficits, top 15 emitted, 0 below the cut (see \"considered\").",
+    "candidatesMeasured": 14,
+    "emitted": 14,
+    "deficitPoolExhausted": true,
+    "deficitPoolNote": "Only 14 distinct measurable deficits were found; emitted 14 of a nominal 15. NOT padded — an unmeasured filler goal costs a full agent call and returns nothing. Remaining debt is listed under \"considered\" with the reason it produced no goal.",
     "probeCensus": [
       {
         "source": "gate-vector",
-        "found": 4
+        "found": 3
       },
       {
         "source": "gate-blind-spot",
@@ -103,16 +102,14 @@
     ],
     "authoredCarry": {
       "openIds": [
-        "M6",
-        "M7",
         "M9",
         "L11",
         "L12",
         "L13",
         "L14"
       ],
-      "openCount": 7,
-      "closedCount": 8,
+      "openCount": 5,
+      "closedCount": 10,
       "drainedBefore": "generated",
       "rule": "`next` drains evolve/queue/goals.json (authored) before evolve/queue/generated.json, so a re-plan can never starve the authored backlog. `plan` writes generated.json ONLY; goals.json is read-only to it."
     },
@@ -190,23 +187,21 @@
     },
     {
       "id": "P03",
-      "horizon": "mid",
-      "priority": 1,
-      "title": "src/heavy.js is 1674 LOC against a src/ median of 246 — 6.8x the typical module",
-      "thesis": "Measured: line counts of every src/**/*.js. Largest is src/heavy.js 1674, src/forcefield.js 948; median is 246 LOC. src/heavy.js at 1674 LOC is 6.8x the median and is a single point of syntactic failure: the project's own AUDIT_REPORT.md §1.1 names the god-module failure mode, and one unparseable line inside it takes down every importer. Split by responsibility so the failure domain shrinks.",
-      "acceptance": "src/heavy.js is under 400 LOC of pure wiring, its responsibilities live in >= 4 extracted modules that are each independently node --check-able, no behaviour changes (test count >= the pre-split high-water mark), and the DOM contract test still passes. Documented in the README project layout.",
+      "horizon": "short",
+      "priority": 2,
+      "title": "40 of 595 `file:line` citations across 80 markdown files point at nothing",
+      "thesis": "Measured by resolving every `name.ext:NN` citation in every tracked *.md against the working tree: 595 citations checked, 40 unresolvable — AUDIT_REPORT.md:169 -> src/main.js:620 (file has 160 lines); AUDIT_REPORT.md:172 -> src/main.js:538 (file has 160 lines); AUDIT_REPORT.md:244 -> src/main.js:206 (file has 160 lines); AUDIT_REPORT.md:253 -> src/main.js:206 (file has 160 lines); .... These are the load-bearing sentences of the project's validation record (\"all §0 code claims machine-verified\"), and one of the failures is a citation to a file that a previous evolution DELETED, so the record now describes code that does not exist. A claim that cannot be resolved is a claim nobody can check, and a doc that is wrong about the code is worse than a doc that is silent.",
+      "acceptance": "Every `file:line` citation in tracked *.md resolves to an existing file with at least that many lines. The check runs as a test in the FAST tier (or tests/manual/ with a README entry), so drift fails a gate rather than being found by a reader.",
       "read_only": [
-        "src/heavy.js",
-        "src/ui.js",
-        "src/integrator.js",
-        "index.html",
-        "README.md",
-        "CHANGELOG.md"
+        "AUDIT_REPORT.md",
+        "ROADMAP.md",
+        "TRANSFORMATION_PLAN_100.md",
+        "docs/BINDING_LOOP2_DONE.md",
+        "docs/"
       ],
       "touch": [
-        "src/",
-        "tests/",
-        "README.md"
+        "docs/",
+        "tests/"
       ],
       "do_not_touch": [
         "data/coreset/**",
@@ -215,21 +210,20 @@
         "evolve/traces/**"
       ],
       "patterns": [
-        "P5-ui-contract-fragility",
-        "P6-node-gates-blind-to-dom"
+        "P3-unsurfaced-value"
       ],
       "status": "open",
-      "origin": "deficit-analysis:size-outlier",
-      "deficit": 0.952,
-      "measurement": "src-size-outlier",
+      "origin": "deficit-analysis:doc-citation-drift",
+      "deficit": 1,
+      "measurement": "doc-citation-drift",
       "read_onlyDropped": []
     },
     {
       "id": "P04",
       "horizon": "mid",
       "priority": 0,
-      "title": "The gate's only live gradient punishes the work the loop exists to do: dR/dLOC = -0.0009 R per 100 LOC",
-      "thesis": "Measured: bloat is the only non-saturated component (all others are pinned at 1.0), and its src-LOC term is 1/(1+(L-20000)/20000) with L = 24226. The derivative is dR/dL = -0.25 x 20000/L^2 = -8.519e-6 per LOC, i.e. -0.0009 R per 100 lines. Two consequences, both measured: (1) writing correct code LOWERS R, so a goal that improves the science and adds 500 LOC is scored as a regression; (2) the composite on the CURRENT, UNMODIFIED tree is 0.7990 while R_best is 0.799, so `node evolve/evolve.mjs gate` prints \"CLOSED (roll back)\" for a no-op — the loop is currently in a state where nothing it evaluates can be accepted. An incentive gradient that points away from the loop's purpose is worse than no gradient, because it is trusted.",
+      "title": "The gate's only live gradient punishes the work the loop exists to do: dR/dLOC = -0.0008 R per 100 LOC",
+      "thesis": "Measured: bloat is the only non-saturated component (all others are pinned at 1.0), and its src-LOC term is 1/(1+(L-20000)/20000) with L = 24600. The derivative is dR/dL = -0.25 x 20000/L^2 = -8.262e-6 per LOC, i.e. -0.0008 R per 100 lines. Two consequences, both measured: (1) writing correct code LOWERS R, so a goal that improves the science and adds 500 LOC is scored as a regression; (2) the composite on the CURRENT, UNMODIFIED tree is 0.8424 while R_best is 0.3744, so `node evolve/evolve.mjs gate` prints \"CLOSED (roll back)\" for a no-op — the loop is currently in a state where nothing it evaluates can be accepted. An incentive gradient that points away from the loop's purpose is worse than no gradient, because it is trusted.",
       "acceptance": "The composite is monotonically non-decreasing in work that improves the project: a change that raises any other component and adds LOC does not lower R. Demonstrated by a test that evaluates the score function at srcLoc and srcLoc+1000 with all other components held fixed and asserts score(L+1000) >= score(L); OR by replacing the LOC term with a justified one and re-baselining R_best with an updated rBaselineNote.",
       "read_only": [
         "evolve/evolve.mjs",
@@ -261,42 +255,9 @@
     {
       "id": "P05",
       "horizon": "short",
-      "priority": 2,
-      "title": "18 of 595 `file:line` citations across 78 markdown files point at nothing",
-      "thesis": "Measured by resolving every `name.ext:NN` citation in every tracked *.md against the working tree: 595 citations checked, 18 unresolvable — AUDIT_REPORT.md:169 -> src/main.js:620 (file has 160 lines); AUDIT_REPORT.md:172 -> src/main.js:538 (file has 160 lines); AUDIT_REPORT.md:244 -> src/main.js:206 (file has 160 lines); AUDIT_REPORT.md:253 -> src/main.js:206 (file has 160 lines); .... These are the load-bearing sentences of the project's validation record (\"all §0 code claims machine-verified\"), and one of the failures is a citation to a file that a previous evolution DELETED, so the record now describes code that does not exist. A claim that cannot be resolved is a claim nobody can check, and a doc that is wrong about the code is worse than a doc that is silent.",
-      "acceptance": "Every `file:line` citation in tracked *.md resolves to an existing file with at least that many lines. The check runs as a test in the FAST tier (or tests/manual/ with a README entry), so drift fails a gate rather than being found by a reader.",
-      "read_only": [
-        "AUDIT_REPORT.md",
-        "ROADMAP.md",
-        "TRANSFORMATION_PLAN_100.md",
-        "docs/BINDING_LOOP2_DONE.md",
-        "docs/"
-      ],
-      "touch": [
-        "docs/",
-        "tests/"
-      ],
-      "do_not_touch": [
-        "data/coreset/**",
-        "node_modules/**",
-        "evolve/queue/goals.json",
-        "evolve/traces/**"
-      ],
-      "patterns": [
-        "P3-unsurfaced-value"
-      ],
-      "status": "open",
-      "origin": "deficit-analysis:doc-citation-drift",
-      "deficit": 0.9,
-      "measurement": "doc-citation-drift",
-      "read_onlyDropped": []
-    },
-    {
-      "id": "P06",
-      "horizon": "short",
       "priority": 1,
-      "title": "science=1.0000 is saturated, but the overclaim check reads only 4000 of README.md's 24816 chars and passes on a keyword regex",
-      "thesis": "scienceScore() computes have/must for 7 files, then multiplies by (overclaim ? 1 : 0.5) where overclaim = /NOT a replacement|qualitative|not FEP|trust boundary/i.test(README.md.slice(0,4000)). Measured: README.md is 24816 chars, so 20816 chars (83.9%) of the project's honest-scope surface is never examined, and the check that IS run is satisfied by a single matching phrase rather than by the absence of an overclaim. Deleting the phrase halves the component; writing a false claim anywhere past char 4000 changes nothing.",
+      "title": "science=1.0000 is saturated, but the overclaim check reads only 4000 of README.md's 24823 chars and passes on a keyword regex",
+      "thesis": "scienceScore() computes have/must for 7 files, then multiplies by (overclaim ? 1 : 0.5) where overclaim = /NOT a replacement|qualitative|not FEP|trust boundary/i.test(README.md.slice(0,4000)). Measured: README.md is 24823 chars, so 20823 chars (83.9%) of the project's honest-scope surface is never examined, and the check that IS run is satisfied by a single matching phrase rather than by the absence of an overclaim. Deleting the phrase halves the component; writing a false claim anywhere past char 4000 changes nothing.",
       "acceptance": "The overclaim check examines 100% of README.md (and the docs it summarises) and asserts the ABSENCE of specific overclaim patterns rather than the presence of a disclaimer phrase. A test plants a known overclaim sentence and asserts science < 1.0.",
       "read_only": [
         "evolve/evolve.mjs",
@@ -321,44 +282,12 @@
       ],
       "status": "open",
       "origin": "deficit-analysis:gate-blind-spot",
-      "deficit": 0.838814,
+      "deficit": 0.838859,
       "measurement": "gate-science-window",
       "read_onlyDropped": []
     },
     {
-      "id": "P07",
-      "horizon": "mid",
-      "priority": 0,
-      "title": "Give the gate a live gradient: 5/6 components are saturated",
-      "thesis": "gate vector = {\"syntax\":1,\"testPass\":1,\"coverage\":1,\"dom\":1,\"bloat\":0.798991,\"science\":1}; saturated = [testPass, syntax, dom, science, coverage]; only [bloat] still carries gradient. Weights are renormalised over non-saturated components (evolve.mjs:SAT=0.999), so R is currently a function of 1 number(s) alone. A goal that moves any saturated component scores exactly 0 change, so the loop cannot tell \"improved\" from \"unchanged\" on 5 of 6 axes. Measured cost: the R_best-vs-current gap is 0.0000 and 0 of 5 saturated components can close it.",
-      "acceptance": "A new discriminating component exists with measured spread across the repo (report min/median/max over >= 5 real samples) and it appears unsaturated in `node evolve/evolve.mjs gate` output; OR the saturated components are replaced by metrics that provably move. `node evolve/evolve.mjs gate` shows saturated.length <= 4.",
-      "read_only": [
-        "evolve/evolve.mjs",
-        "evolve/queue/state.json",
-        "evolve/traces/"
-      ],
-      "touch": [
-        "evolve/evolve.mjs",
-        "tests/",
-        "evolve/reports/"
-      ],
-      "do_not_touch": [
-        "data/coreset/**",
-        "node_modules/**",
-        "evolve/queue/goals.json",
-        "evolve/traces/**"
-      ],
-      "patterns": [
-        "P3-unsurfaced-value"
-      ],
-      "status": "open",
-      "origin": "deficit-analysis:gate-vector",
-      "deficit": 0.833333,
-      "measurement": "gate-saturation",
-      "read_onlyDropped": []
-    },
-    {
-      "id": "P08",
+      "id": "P06",
       "horizon": "short",
       "priority": 2,
       "title": "2 docs/ files exceed 400 LOC (largest docs/BINDING_LOOP2_DONE.md at 1326 LOC, 1746 LOC combined)",
@@ -393,11 +322,47 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P09",
+      "id": "P07",
+      "horizon": "mid",
+      "priority": 1,
+      "title": "src/forcefield.js is 948 LOC against a src/ median of 218 — 4.3x the typical module",
+      "thesis": "Measured: line counts of every src/**/*.js. Largest is src/forcefield.js 948; median is 218 LOC. src/forcefield.js at 948 LOC is 4.3x the median and is a single point of syntactic failure: the project's own AUDIT_REPORT.md §1.1 names the god-module failure mode, and one unparseable line inside it takes down every importer. Split by responsibility so the failure domain shrinks.",
+      "acceptance": "src/forcefield.js is under 400 LOC of pure wiring, its responsibilities live in >= 4 extracted modules that are each independently node --check-able, no behaviour changes (test count >= the pre-split high-water mark), and the DOM contract test still passes. Documented in the README project layout.",
+      "read_only": [
+        "src/forcefield.js",
+        "src/ui.js",
+        "src/integrator.js",
+        "index.html",
+        "README.md",
+        "CHANGELOG.md"
+      ],
+      "touch": [
+        "src/",
+        "tests/",
+        "README.md"
+      ],
+      "do_not_touch": [
+        "data/coreset/**",
+        "node_modules/**",
+        "evolve/queue/goals.json",
+        "evolve/traces/**"
+      ],
+      "patterns": [
+        "P5-ui-contract-fragility",
+        "P6-node-gates-blind-to-dom"
+      ],
+      "status": "open",
+      "origin": "deficit-analysis:size-outlier",
+      "deficit": 0.486667,
+      "measurement": "src-size-outlier",
+      "read_onlyDropped": []
+    },
+    {
+      "id": "P08",
       "horizon": "mid",
       "priority": 1,
       "title": "6 declared constants (SCREAMING_CASE = number) are defined in more than one src/ file",
-      "thesis": "Measured: every `NAME = <number>` literal in src/**/*.js, indexed by name and value. 6 appear in >= 2 files: SASA=0 in src/analysis/thermo_sasa.js+src/analysis/thermodynamics.js+src/analysis-panel.js; R_CUT=8.5 in src/force-worker.js+src/heavy.js; STANDARD_VOLUME=1660.54 in src/funnel.js+src/units.js; BOND_SLACK=1.15 in src/heavy.js+src/pdb.js+src/physics/params.js; KCONV=418.4 in src/integrator.js+src/units.js; COULOMB_CONST=332.06371 in src/physics/solvation/gb_obc2.js+src/units.js. A duplicated physical constant means the CG path and the heavy path can disagree about the same quantity — the class of defect docs/BINDING_PHYSICS_R* spent seven review rounds finding, one of which (KB_KCAL defined twice) was a real 5.03e-8 divergence caught only because a parity test happened to exist. Each duplicate is a future divergence waiting for someone to edit one side.",
+      "thesis": "Measured: every `NAME = <number>` literal in src/**/*.js, indexed by name and value. 6 appear in >= 2 files: SASA=0 in src/analysis/thermo_sasa.js+src/analysis/thermodynamics.js+src/analysis-panel.js; R_CUT=8.5 in src/force-worker.js+src/heavy/forcefield.js+src/heavy/params.js; STANDARD_VOLUME=1660.54 in src/funnel.js+src/units.js; BOND_SLACK=1.15 in src/heavy/topology.js+src/pdb.js+src/physics/params.js; KCONV=418.4 in src/integrator.js+src/units.js; COULOMB_CONST=332.06371 in src/physics/solvation/gb_obc2.js+src/units.js. A duplicated physical constant means the CG path and the heavy path can disagree about the same quantity — the class of defect docs/BINDING_PHYSICS_R* spent seven review rounds finding, one of which (KB_KCAL defined twice) was a real 5.03e-8 divergence caught only because a parity test happened to exist. Each duplicate is a future divergence waiting for someone to edit one side.",
       "acceptance": "Every duplicated declared constant is defined in exactly one module and imported by the others, and a parity test asserts CG and heavy agree to < 1e-12 for each one. The duplication scan itself becomes a test so the class cannot regrow.",
       "read_only": [
         "src/units.js",
@@ -427,40 +392,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P10",
-      "horizon": "mid",
-      "priority": 1,
-      "title": "Cut src LOC below the bloat knee: 24226 LOC vs the 20000 penalty start",
-      "thesis": "bloat=0.7990 is the only non-saturated gate component (everything else is pinned at 1.0), and 21.7% of its remaining headroom is the src-LOC term 1/(1+(L-20000)/20000) evaluated at L=24226. dR/dL = -0.093 per 100 LOC at this point, so the loop currently pays a measurable price for every line of science code it writes — an incentive pointing the wrong way. Cutting L to 20000 recovers 0.0436 of the 0.2010 deficit.",
-      "acceptance": "src LOC (sum of lines over src/**/*.js as counted by evolve.mjs readTrackedStats) <= 20000, or the bloat LOC term is replaced by a term with an argued-for justification. `node evolve/evolve.mjs gate` reports bloat >= 0.8426.",
-      "read_only": [
-        "evolve/evolve.mjs",
-        "docs/PERFORMANCE.md",
-        "bench/budget.json",
-        "CHANGELOG.md"
-      ],
-      "touch": [
-        "src/",
-        "tests/",
-        "evolve/reports/"
-      ],
-      "do_not_touch": [
-        "data/coreset/**",
-        "node_modules/**",
-        "evolve/queue/goals.json",
-        "evolve/traces/**"
-      ],
-      "patterns": [
-        "P3-unsurfaced-value"
-      ],
-      "status": "open",
-      "origin": "deficit-analysis:gate-vector",
-      "deficit": 0.201009,
-      "measurement": "bloat-srcloc",
-      "read_onlyDropped": []
-    },
-    {
-      "id": "P11",
+      "id": "P09",
       "horizon": "mid",
       "priority": 1,
       "title": "2 of 39 TODO/stub/placeholder hits in src/ are on lines that EXECUTE, not in comments",
@@ -495,7 +427,7 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P12",
+      "id": "P10",
       "horizon": "mid",
       "priority": 0,
       "title": "The DOM gate checks 112 ids from src/ui.js and misses 23 of the 135 ids the app actually references",
@@ -531,11 +463,44 @@
       "read_onlyDropped": []
     },
     {
-      "id": "P13",
+      "id": "P11",
+      "horizon": "mid",
+      "priority": 1,
+      "title": "Cut src LOC below the bloat knee: 24600 LOC vs the 20000 penalty start",
+      "thesis": "bloat=0.8424 is the only non-saturated gate component (everything else is pinned at 1.0), and 29.7% of its remaining headroom is the src-LOC term 1/(1+(L-20000)/20000) evaluated at L=24600. dR/dL = -0.093 per 100 LOC at this point, so the loop currently pays a measurable price for every line of science code it writes — an incentive pointing the wrong way. Cutting L to 20000 recovers 0.0467 of the 0.1576 deficit.",
+      "acceptance": "src LOC (sum of lines over src/**/*.js as counted by evolve.mjs readTrackedStats) <= 20000, or the bloat LOC term is replaced by a term with an argued-for justification. `node evolve/evolve.mjs gate` reports bloat >= 0.8891.",
+      "read_only": [
+        "evolve/evolve.mjs",
+        "docs/PERFORMANCE.md",
+        "bench/budget.json",
+        "CHANGELOG.md"
+      ],
+      "touch": [
+        "src/",
+        "tests/",
+        "evolve/reports/"
+      ],
+      "do_not_touch": [
+        "data/coreset/**",
+        "node_modules/**",
+        "evolve/queue/goals.json",
+        "evolve/traces/**"
+      ],
+      "patterns": [
+        "P3-unsurfaced-value"
+      ],
+      "status": "open",
+      "origin": "deficit-analysis:gate-vector",
+      "deficit": 0.15763,
+      "measurement": "bloat-srcloc",
+      "read_onlyDropped": []
+    },
+    {
+      "id": "P12",
       "horizon": "short",
       "priority": 0,
-      "title": "The syntax gate checks 79 files under src/ and ZERO of the 15 .mjs files that run the loop itself",
-      "thesis": "evolve.mjs:runGate walks path.join(ROOT,\"src\") for *.js and scripts/check.sh does `find src -type f -name '*.js'` — both scoped to src/. The 15 non-src modules (evolve/evolve.mjs, scripts/calibration_4w52.mjs, scripts/fetch_coreset.mjs, scripts/pareto_bench.mjs, scripts/smoke_browsers.mjs, scripts/test_bindlog.mjs, ...) are never node --check'd by any gate, including evolve/evolve.mjs itself. The loop that gates the project is ungated: a syntax error in it makes the loop silently do nothing while CI stays green. Measured: 79 gated vs 15 ungated.",
+      "title": "The syntax gate checks 91 files under src/ and ZERO of the 15 .mjs files that run the loop itself",
+      "thesis": "evolve.mjs:runGate walks path.join(ROOT,\"src\") for *.js and scripts/check.sh does `find src -type f -name '*.js'` — both scoped to src/. The 15 non-src modules (evolve/evolve.mjs, scripts/calibration_4w52.mjs, scripts/fetch_coreset.mjs, scripts/pareto_bench.mjs, scripts/smoke_browsers.mjs, scripts/test_bindlog.mjs, ...) are never node --check'd by any gate, including evolve/evolve.mjs itself. The loop that gates the project is ungated: a syntax error in it makes the loop silently do nothing while CI stays green. Measured: 91 gated vs 15 ungated.",
       "acceptance": "scripts/check.sh (and the gate's syntax component) covers every tracked .js/.mjs outside node_modules/ and tests/ — at minimum all of: evolve/evolve.mjs, scripts/calibration_4w52.mjs, scripts/fetch_coreset.mjs, scripts/pareto_bench.mjs. A planted syntax error in evolve/evolve.mjs makes `npm run check` exit non-zero.",
       "read_only": [
         "scripts/check.sh",
@@ -561,16 +526,16 @@
       ],
       "status": "open",
       "origin": "deficit-analysis:gate-blind-spot",
-      "deficit": 0.159574,
+      "deficit": 0.141509,
       "measurement": "gate-syntax-scope",
       "read_onlyDropped": []
     },
     {
-      "id": "P14",
+      "id": "P13",
       "horizon": "mid",
       "priority": 1,
       "title": "coverage=1.0000 is saturated by counting only tests/test_*.js — 9 scripts/ validators are outside the denominator",
-      "thesis": "countTests() globs the tests/ directory for /^test_.*\\.js$/ and finds 58, all wired, so coverage = (58+0)/58 = 1.0 and is reported saturated. The scripts/ directory holds 9 more test-bearing files (scripts/test_bindlog.mjs, scripts/test_bindlog_integration.mjs, scripts/test_bindviz.mjs, scripts/test_pocket_entropy.mjs, scripts/test_thermo.mjs, scripts/test_thermo_heavy.mjs, scripts/validate_1crn_null.mjs, scripts/validate_binding_physics_r1.mjs, scripts/validate_flexlig.mjs) that no component counts. One of them, scripts/validate_binding_physics_r1.mjs, currently exits 1 — the gate is saturated on a population that excludes the failing member. Measured coverage of the real population is 58/67 = 86.6%, not 100%.",
+      "thesis": "countTests() globs the tests/ directory for /^test_.*\\.js$/ and finds 60, all wired, so coverage = (60+0)/60 = 1.0 and is reported saturated. The scripts/ directory holds 9 more test-bearing files (scripts/test_bindlog.mjs, scripts/test_bindlog_integration.mjs, scripts/test_bindviz.mjs, scripts/test_pocket_entropy.mjs, scripts/test_thermo.mjs, scripts/test_thermo_heavy.mjs, scripts/validate_1crn_null.mjs, scripts/validate_binding_physics_r1.mjs, scripts/validate_flexlig.mjs) that no component counts. One of them, scripts/validate_binding_physics_r1.mjs, currently exits 1 — the gate is saturated on a population that excludes the failing member. Measured coverage of the real population is 60/69 = 87.0%, not 100%.",
       "acceptance": "The coverage component counts every test-bearing file (tests/test_*.js AND scripts/{test,validate}_*.mjs not in tests/manual/), and the number it reports equals (wired+manual)/total over that full population. A validator moved into scripts/ can change the score.",
       "read_only": [
         "evolve/evolve.mjs",
@@ -595,16 +560,16 @@
       ],
       "status": "open",
       "origin": "deficit-analysis:gate-blind-spot",
-      "deficit": 0.134328,
+      "deficit": 0.130435,
       "measurement": "gate-coverage-blind",
       "read_onlyDropped": []
     },
     {
-      "id": "P15",
+      "id": "P14",
       "horizon": "short",
       "priority": 1,
       "title": "Eliminate the tracked files >1MB that hold the bloat file penalty open: 1 file(s)",
-      "thesis": "bloat=0.7990; the filePenalty term is 1/(1+bigFiles/20) = 0.9524 with bigFiles = 1: data/pdbbind_parsed.csv 1147KB. Each big file costs ~0.0227 of R, 11.8% of the live deficit. Total tracked is 15.2MB over 329 files, so the size term is nearly satisfied and the penalty is entirely about 1 outlier file(s).",
+      "thesis": "bloat=0.8424; the filePenalty term is 1/(1+bigFiles/20) = 0.9524 with bigFiles = 1: data/pdbbind_parsed.csv 1147KB. Each big file costs ~0.0227 of R, 15.1% of the live deficit. Total tracked is 15.4MB over 349 files, so the size term is nearly satisfied and the penalty is entirely about 1 outlier file(s).",
       "acceptance": "Zero tracked files exceed 1MB (evolve.mjs readTrackedStats bigFiles == []) OR each remaining one is a regenerable artifact with a recorded fetch manifest. `node evolve/evolve.mjs gate` reports filePenalty == 1.",
       "read_only": [
         "data/README.md",
@@ -628,7 +593,7 @@
       ],
       "status": "open",
       "origin": "deficit-analysis:gate-vector",
-      "deficit": 0.120605,
+      "deficit": 0.094578,
       "measurement": "bloat-bigfiles",
       "read_onlyDropped": []
     }

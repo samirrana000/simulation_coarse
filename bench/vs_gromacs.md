@@ -17,14 +17,14 @@ Heavy: n=1308  14 – 16 ms/compute       (mean 15.99 ± 1.52 ms over 30, min 14
 
 Rounded for the table below to **0.16 ms** (CG 164) and **14 ms** (Heavy 1308) — representative of many runs (spec cites 0.16 ms vs 14 ms; your machine may show 0.18 ms vs 16 ms depending on CPU).
 
-Source: `bench/perf.js:53` `benchCompute()` and `src/forcefield.js:403` `compute()` / `src/heavy.js:593` `compute()`.
+Source: `bench/perf.js:53` `benchCompute()` and `src/forcefield.js:403` `compute()` / `src/heavy/energy.js:40` `compute()`.
 
 ## Comparison table (same system size, single core, implicit notes)
 
 | System | Particles | Model | Measured browser (`bench/perf.js`) | Hypothetical GROMACS (explicit solvent, PME) | Ratio (browser / GROMACS) | Notes |
 |---|---|---|---|---|---:|---|
 | **4W52 CG** | **164 Cα beads** | Cα ENM + LJ/EEF1 + 1-D funnel (`src/forcefield.js`) | **0.16 ms** / `compute` (0.18 ms on test machine) | **0.003 ms** (≈ 3 µs) estimated single-core GROMACS CG/ENM | **≈ 53× slower** | GROMACS CG is C, no JS overhead, no GC, SIMD. |
-| **4W52 Heavy** | **1308 heavy atoms** | All-atom LJ+GB/SASA+HB (`src/heavy.js:415` `HeavyForceField`) with 8.5 Å cutoff, no PME | **14 ms** / `compute` (15.99 ms on test machine, 14.2 min) | **0.25 ms** estimated GROMACS GB implicit (single core) ; **0.08 ms** with GPU (OpenMM) | **≈ 56× slower** (implicit) ; **≈ 175× slower** (GPU) | Browser JS has no CUDA, no AVX intrinsics; `SpatialGrid` (`src/spatial-grid.js:74` `forEachPair`) is O(N) but still JS loops. |
+| **4W52 Heavy** | **1308 heavy atoms** | All-atom LJ+GB/SASA+HB (`src/heavy/forcefield.js:82` `HeavyForceField`) with 8.5 Å cutoff, no PME | **14 ms** / `compute` (15.99 ms on test machine, 14.2 min) | **0.25 ms** estimated GROMACS GB implicit (single core) ; **0.08 ms** with GPU (OpenMM) | **≈ 56× slower** (implicit) ; **≈ 175× slower** (GPU) | Browser JS has no CUDA, no AVX intrinsics; `SpatialGrid` (`src/spatial-grid.js:74` `forEachPair`) is O(N) but still JS loops. |
 | **4W52 Explicit** | ~25 k atoms (protein + water, 1 nm buffer) | GROMACS TIP3P + PME, 1 fs step | —  | **0.3 ms / step** single-core ; **0.02 ms** GPU (1 GPU, 4W52) | Browser has no explicit water (intentionally out of scope) | Heavy browser is **implicit** — not comparable to explicit solvent energetics; GROMACS explicit is `docs/LIMITATIONS.md:8` out-of-scope for this project. |
 | **Time to first viz** | 164 or 1308 | `simulation_coarse` (static ES modules) | **< 2 s** `python3 -m http.server` + fetch 4W52 | **hours** (compile GROMACS + `gmx pdb2gmx` + solvate + minimize + equilibrate) | **≈ 100× faster** to interactive picture | Zero install, no `conda`, no CUDA driver, no queue. |
 
@@ -32,8 +32,8 @@ Source: `bench/perf.js:53` `benchCompute()` and `src/forcefield.js:403` `compute
 
 ## Why browser JS is slower (honest causes)
 
-- **No PME, no SIMD:** `src/heavy.js:32` uses a switched cutoff 6.5→8.5 Å (`switchFunc`) on a JS `SpatialGrid` (`src/spatial-grid.js:13`). GROMACS uses PME (`docs/LIMITATIONS.md:8` **no PME**) + SIMD/AVX + GPU kernels — that alone is 10–20×.
-- **GC & bounds checks:** `Float64Array` forces (`src/heavy.js:593` `compute`) are looped in JS; GROMACS forces are C arrays with pointer arithmetic and no GC pauses.
+- **No PME, no SIMD:** `src/heavy/params.js:36` uses a switched cutoff 6.5→8.5 Å (`switchFunc`) on a JS `SpatialGrid` (`src/spatial-grid.js:13`). GROMACS uses PME (`docs/LIMITATIONS.md:8` **no PME**) + SIMD/AVX + GPU kernels — that alone is 10–20×.
+- **GC & bounds checks:** `Float64Array` forces (`src/heavy/energy.js:40` `compute`) are looped in JS; GROMACS forces are C arrays with pointer arithmetic and no GC pauses.
 - **Single-threaded:** Browser main thread runs `integrator.js:187` BAOAB + `viewer.js:303` Canvas2D in the same thread; GROMACS overlaps PME / bonded / non-bonded across MPI+OpenMP+CUDA. (Frame rate itself is not measured in this repo — see `docs/PERFORMANCE.md`.)
 - **Implicit vs explicit:** Browser heavy is implicit GB/SASA (`src/physics/gb.js:13` `GeneralizedBorn`, `src/physics/sasa.js`) — cheaper than explicit water but still JS-slow; GROMACS explicit adds ~20 k waters and PME lattice, yet still wins per ns on hardware acceleration.
 

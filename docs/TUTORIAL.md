@@ -59,7 +59,7 @@ re-check `T`, `γ`, or contact map — see diagnosis below.
 > **This section is the point.** A tutorial that always succeeds teaches
 > nothing about model scope. Both cases below produce reproducible but
 > **wrong** free energies with the current HCT-GB/SA + LCPO + 6.5→8.5 Å cutoff
-> (no PME) physics (`src/heavy.js:32` `switchFunc`, `docs/LIMITATIONS.md:8`).
+> (no PME) physics (`src/heavy/params.js:36` `switchFunc`, `docs/LIMITATIONS.md:8`).
 
 ### Case A — Highly charged / polar ligand (e.g., phosphate, ATP analogue, charged sulfonamide on 4W52 scaffold)
 
@@ -110,7 +110,7 @@ cannot capture.
   (`src/funnel.js:convergenceSE`).
 
 **Why it fails:** Force fields are protein Cα ENM (`src/forcefield.js:91`)
-or heavy LJ/GB/SASA (`src/heavy.js:415`) — no lipid TIP3P, no
+or heavy LJ/GB/SASA (`src/heavy/forcefield.js:82`) — no lipid TIP3P, no
 CHARMM36 lipid dihedrals, no membrane insertion free energy
 (`docs/LIMITATIONS.md:39` **Out of scope: membranes, nucleic acids, QM**).
 
@@ -118,7 +118,7 @@ CHARMM36 lipid dihedrals, no membrane insertion free energy
 
 | Symptom | Check | Where |
 |---|---|---|
-| `ΔG` far from ITC (>2 kcal/mol) on charged ligand | Net charge `Σq ≠ 0`, `κ` mismatch, cutoff 8.5 Å truncation `ΔU≈5%` | `src/ff-params.js` charges, `src/heavy.js:32` switch, `docs/CHARGES.md`, `settings-panel.js:saltM` |
+| `ΔG` far from ITC (>2 kcal/mol) on charged ligand | Net charge `Σq ≠ 0`, `κ` mismatch, cutoff 8.5 Å truncation `ΔU≈5%` | `src/ff-params.js` charges, `src/heavy/params.js:36` switch, `docs/CHARGES.md`, `settings-panel.js:saltM` |
 | PMF plateau not flat (`W(r≥9)` drifts) | 1-D CV misses orthogonal barrier, `rFlat` mis-set, `nHills<50` | `src/funnel.js:165` `cv()`, `docs/FUNNEL.md`, HUD `ΔG not converged (nHills<50)` |
 | B-factor `R<0.45` | Cutoff `Rc` wrong, ENM uniform `γ` | `bench/b_factors.js`, `docs/CG_HEAVY.md` |
 | Kinetics `k_on` off by 100× | CNM is **4-state toy**, not MSM, `ν0=1e10` | `src/physics/network.js:13` `NETWORK_STATES` |

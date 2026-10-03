@@ -177,3 +177,15 @@ cites the wiki pattern that motivated it and the gating outcome.
 - **Motivated by:** P3-unsurfaced-value
 - **Verdict:** ACCEPTED
 - **Note:** fps 30 measured by nothing, ever; now null with _meta.measured=false, plus 9 more published fps claims the planner missed
+## Evolution 15 — M6 — Break up the main.js god module (1685 LOC, 30 fns, 23 imports)
+
+- **Horizon:** mid (priority P1)
+- **Motivated by:** P2-dead-canvas-redraw, P5-ui-contract-fragility, P6-node-gates-blind-to-dom
+- **Verdict:** ACCEPTED
+- **Note:** main.js 1686->160 LOC, 12 controllers, tick fingerprint identical, size+shape guard registered
+## Evolution 16 — M7 — Single source of truth for LJ/charge parameter tables
+
+- **Horizon:** mid (priority P1)
+- **Motivated by:** P5-ui-contract-fragility
+- **Verdict:** ACCEPTED
+- **Note:** canonical physics/params.js; 0 ulp divergence for 9 elements; dead duplicate deleted; LIVE CG-metal gap measured+pinned

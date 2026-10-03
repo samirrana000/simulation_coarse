@@ -82,7 +82,8 @@ export const SUITES = [
   { file: "tests/test_dt.js", tier: "FAST", note: "auto-tuned dt per system size" },
   { file: "tests/test_enm_seq.js", tier: "FAST", note: "sequence-weighted ENM springs" },
   { file: "tests/test_nve.js", tier: "FAST", note: "NVE energy conservation" },
-  { file: "tests/test_golden.js", tier: "FAST", note: "10-step golden trajectory regression" },
+  { file: "tests/test_golden.js", tier: "FAST", note: "10-step golden trajectory regression (CG)" },
+  { file: "tests/test_heavy_golden.js", tier: "FAST", note: "bit-exact heavy-mode regression: tests/golden/4w52_10steps.json is CG-only and never imports heavy.js, so before this the heavy engine had FD tests at a 1e-3 RELATIVE tolerance and no bit-level net at all. 6 constructor configs x 12 poses x 24 accumulators + a 10-step heavy Langevin run, compared as 4-lane FNV-1a over raw IEEE-754 bytes. COMPARE-only; tests/generate_heavy_golden.js regenerates and is not a test." },
   { file: "tests/test_mol2_fidelity.js", tier: "FAST", note: "MOL2 united-atom handling" },
   { file: "tests/test_b_factors.js", tier: "FAST", note: "B-factor <-> contact Pearson R" },
   { file: "tests/test_parity.js", tier: "FAST", note: "determinism / headless parity" },
@@ -114,6 +115,7 @@ export const SUITES = [
   { file: "tests/test_element_params.js", tier: "FAST", note: "one element, one sigma/eps/q: CG (forcefield.js) and heavy (heavy.js) resolve byte-identically; re-planting the deleted HEAVY_ELEMENT_DEFAULT fails; pins + prints the live CG-vs-heavy metal coverage gap" },
   { file: "tests/test_cache_contract.js", tier: "FAST", note: "no version query literal on any module edge (121 were hand-typed); sw.js exists, is wired up, and re-fetches with cache:no-store — executed in a node:vm sandbox, not grepped" },
   { file: "tests/test_main_module_size.js", tier: "FAST", note: "main.js stays a composition root: <= 400 LOC (was 1686), <= 20 module specifiers (was 23), no physics/rendering imports, and every controllers/ module its header advertises must exist. A refactor without this guard regrows." },
+  { file: "tests/test_module_size.js", tier: "FAST", note: "class-level god-module guard, because a per-file limit only guards the file it names: main.js was split in 2026-09 and heavy.js (1674 LOC) silently inherited the crown in 2026-10 without tripping that guard. Every src/ module <= 600 LOC unless it is in a ratchet budget pinned to its exact measured size; the 8 pre-existing over-size modules may shrink but never grow; src/main.js and src/heavy.js additionally <= 400/200 as facades; largest/median module ratio <= 6x (the ratio evolve/evolve.mjs penalises); and the src/ import graph is acyclic (Tarjan SCC over comment-stripped specifiers). A 700-LOC probe and a 2-module cycle both turn it red." },
   // anti-rot self-checks: registry wiring + docs/ index no-orphans
   { file: "tests/test_suite_registry.js", tier: "FAST" },
   { file: "tests/test_docs_index.js", tier: "FAST", note: "every file under docs/ linked from docs/README.md" },

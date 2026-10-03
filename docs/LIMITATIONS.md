@@ -4,7 +4,7 @@ This document enumerates known model limitations that affect interpretation of r
 
 ## Explicit honest limitations (bullet list)
 
-- **GB cutoff, no PME:** Electrostatics uses a screened Generalized Born / Coulomb kernel with a smooth switching cutoff 6.5 → 8.5 Å (`src/heavy.js:32` `switchFunc`) and **no PME** — long-range interactions beyond 8.5 Å are neglected, so highly charged systems accrue 5 % truncation error and must use GROMACS/AMBER PME instead.
+- **GB cutoff, no PME:** Electrostatics uses a screened Generalized Born / Coulomb kernel with a smooth switching cutoff 6.5 → 8.5 Å (`src/heavy/params.js:36` `switchFunc`) and **no PME** — long-range interactions beyond 8.5 Å are neglected, so highly charged systems accrue 5 % truncation error and must use GROMACS/AMBER PME instead.
 - **1D funnel CV only:** Binding PMF is reconstructed only along the single radial collective variable `r = |COM_lig − COM_pocket|` (`src/funnel.js:165` `cv()`) — orthogonal barriers (rotation, pocket dehydration) are invisible, so the 1-D PMF can hide hidden slow degrees of freedom.
 - **4-state kinetics toy:** The Chemical Network Model discretizes binding into exactly 4 macrostates (Bulk, Encounter, Intermediate, Bound) with Kramers rates (`src/physics/network.js:13` `NETWORK_STATES`) — this **4-state** toy illustrates timescale separation but is not a converged MSM and cannot replace PyEMMA/MSMBuilder.
 - **Canvas2D vs WebGL:** Rendering is 2-D Canvas2D with painter's depth sorting (`src/viewer.js:481` `order.sort` by `pz`) and no depth buffer — overlapping spheres at high depth complexity produce z-fighting that WebGL depth buffering would eliminate. Whether that costs frame rate on a given integrated GPU is **not measured in this repo** (no canvas in the headless gate), so no fps figure is quoted; the tradeoff is qualitative and the cost/benefit reasoning is in `docs/VIEWER.md`.
@@ -13,7 +13,7 @@ This document enumerates known model limitations that affect interpretation of r
 
 ## Long-range electrostatics: cutoff 8.5 Å, no PME
 
-- **Model:** Electrostatics uses a screened Coulomb / Generalized Born kernel with a smooth switching cutoff from **6.5 Å → 8.5 Å** (AMBER-style switch `switchFunc` in `src/heavy.js:32`) and **no Particle-Mesh Ewald (PME)**. There is **no PME** — long-range interactions beyond 8.5 Å are neglected.
+- **Model:** Electrostatics uses a screened Coulomb / Generalized Born kernel with a smooth switching cutoff from **6.5 Å → 8.5 Å** (AMBER-style switch `switchFunc` in `src/heavy/params.js:36`) and **no Particle-Mesh Ewald (PME)**. There is **no PME** — long-range interactions beyond 8.5 Å are neglected.
 - **Implication:** Not for highly charged systems (nucleic acids, membranes, poly-electrolytes, high ionic strengths that alter screening). Errors grow with net charge and system size; use GROMACS/AMBER/OpenMM with PME for those.
 - **Convergence check:** Increasing the cutoff from 8.5 Å to 12 Å changes the total non-bonded + GB energy by **≈5 %** for the 4W52 test system (164 residues + benzene), consistent with an approximate truncation error. The 8.5 Å choice trades accuracy for browser O(N) grid speed; energy drift is monitored in tests but not converged to production-MD tolerances.
 - **Recommendation:** If your system is highly charged, has multivalent ions, or requires <1 % electrostatic convergence, do not use this browser model — use explicit-solvent PME in a production MD engine.
@@ -38,7 +38,7 @@ This document enumerates known model limitations that affect interpretation of r
 
 ## Out of scope: membranes, nucleic acids, QM
 
-- **Model scope:** Force fields are protein Cα ENM (`src/forcefield.js:91` `ForceField`) or all-atom heavy with LJ/GB/SASA/h-bonds (`src/heavy.js:415` `HeavyForceField`) — no lipid force fields, no nucleic-acid sugar-pucker/dihedral corrections, no QM/MM.
+- **Model scope:** Force fields are protein Cα ENM (`src/forcefield.js:91` `ForceField`) or all-atom heavy with LJ/GB/SASA/h-bonds (`src/heavy/forcefield.js:82` `HeavyForceField`) — no lipid force fields, no nucleic-acid sugar-pucker/dihedral corrections, no QM/MM.
 - **Impact:** Simulating a membrane protein, DNA folding, or catalytic bond breaking with this model produces qualitatively wrong energetics and should not be attempted.
 - **Use instead:** GROMACS/CHARMM-GUI for membranes, AMBER OL3/bcs1 for nucleic acids, CP2K/ORCA + NAMD/OpenMM for QM/MM.
 

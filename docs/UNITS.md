@@ -81,7 +81,7 @@ Thermal velocity scale: `σ_v = sqrt(k_B T * KCONV / m)` Å/ps, validated as
 
 - `src/units.js:22` — KCONV=418.4
 - `src/integrator.js:22` — derivation KCONV, thermal scale
-- `src/heavy.js:28` — K_ELEC, screening lengths
+- `src/heavy/params.js:31` — K_ELEC, screening lengths
 - `src/physics/charges.js` — partial charges in e
 - `src/version.js` — VERSION, BUILD_DATE for provenance
 

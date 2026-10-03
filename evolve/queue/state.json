@@ -1,23 +1,22 @@
 {
-  "cycle": 14,
-  "R_best": 0.799,
+  "cycle": 16,
+  "R_best": 0.8424,
   "closed": [],
   "rejected": [],
-  "testHighWater": 957,
+  "testHighWater": 1112,
   "rBaselineNote": "R rebaselined at cycle 7: bloat now scores STRUCTURE (max/median module ratio) not volume, so adding a test or a shared kernel no longer lowers R. Previous scores are NOT comparable. The old metric punished good work and made R_best unreachable, which blocked the entire loop.",
   "prevGateVector": {
-    "cycle": 14,
-    "score": 0.799,
+    "cycle": 16,
+    "score": 0.3744,
     "parts": {
       "syntax": 1,
-      "testPass": 1,
+      "testPass": 0,
       "coverage": 1,
       "dom": 1,
-      "bloat": 0.798991,
+      "bloat": 0.84237,
       "science": 1
     },
     "saturated": [
-      "testPass",
       "syntax",
       "dom",
       "science",
@@ -25,14 +24,14 @@
     ]
   },
   "gateVector": {
-    "cycle": 14,
-    "score": 0.799,
+    "cycle": 16,
+    "score": 0.8424,
     "parts": {
       "syntax": 1,
       "testPass": 1,
       "coverage": 1,
       "dom": 1,
-      "bloat": 0.798991,
+      "bloat": 0.84237,
       "science": 1
     },
     "saturated": [
@@ -44,9 +43,9 @@
     ]
   },
   "benchVector": {
-    "heavyMs": 13.625,
-    "cgMs": 0.163,
-    "treeKey": "9f456af05b563edfc2c1ac6a46b1a9c3896a676c:329",
-    "measuredAt": "2026-10-03T04:37:17.873Z"
+    "heavyMs": 15.297,
+    "cgMs": 0.221,
+    "treeKey": "7c99b8b88bed0ea0c04ec9dc7ba5e783dfd797c5:349",
+    "measuredAt": "2026-10-03T05:33:12.130Z"
   }
 }

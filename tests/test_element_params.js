@@ -269,21 +269,34 @@ assert(amberWorstEps > 0.81 && amberWorstEps < 0.82,
 assert(NONBONDED_DEFAULT.sigma === 3.400 && NONBONDED_DEFAULT.eps === 0.1200,
   "AMBER NONBONDED_DEFAULT pinned (3.4 / 0.12) — its own fallback, deliberately separate");
 
-// ── [7] heavy.js carries no per-element parameter literal of its own ─────
-console.log("\n[7] src/heavy.js declares no per-element parameter literal...");
-const heavySrc = fs.readFileSync(path.join(ROOT, "src", "heavy.js"), "utf-8");
+// ── [7] heavy carries no per-element parameter literal of its own ────────
+console.log("\n[7] the heavy engine declares no per-element parameter literal...");
+// 2026-10 split: src/heavy.js became a facade over eleven modules under
+// src/heavy/. These three assertions are about the heavy ENGINE's rule for
+// per-element parameters, so they are asked of the whole family. The patterns
+// are UNCHANGED — the point of this rule is that NO heavy module may declare a
+// private table, and scanning the family is a STRICTER subject than scanning
+// one file: a new src/heavy/*.js cannot opt out of the rule by existing.
+const heavySrc = (() => {
+  const dir = path.join(ROOT, "src", "heavy");
+  const files = [path.join(ROOT, "src", "heavy.js")];
+  for (const name of fs.readdirSync(dir).sort()) {
+    if (name.endsWith(".js")) files.push(path.join(dir, name));
+  }
+  return files.map((f) => fs.readFileSync(f, "utf-8")).join("\n");
+})();
 const strip = (s) => s
   .replace(/\/\*[\s\S]*?\*\//g, "")
   .replace(/\/\/[^\n]*/g, "");
 const heavyCode = strip(heavySrc);
 const dupDefault = heavyCode.match(/(?:const|let|var)\s+[A-Z][A-Z0-9_]+\s*=\s*\{[^}]*\b(?:sigma|eps)\b[^}]*\}/g) || [];
 assert(dupDefault.length === 0,
-  `no SCREAMING_CASE object literal with sigma/eps in src/heavy.js code; found ${dupDefault.length}` +
+  `no SCREAMING_CASE object literal with sigma/eps in heavy-engine code; found ${dupDefault.length}` +
   `${dupDefault.length ? ` (${dupDefault.join(" | ")})` : ""}`);
 assert(!/\bHEAVY_ELEMENT_DEFAULT\b/.test(heavyCode),
-  "the private HEAVY_ELEMENT_DEFAULT is gone from src/heavy.js");
+  "the private HEAVY_ELEMENT_DEFAULT is gone from the heavy engine");
 assert(/resolveHeavyElementParams\(el\)/.test(heavyCode),
-  "heavy.js resolves element parameters through the canonical resolver");
+  "the heavy engine resolves element parameters through the canonical resolver");
 const ffCode = strip(fs.readFileSync(path.join(ROOT, "src", "forcefield.js"), "utf-8"));
 assert(/resolveElementParams\(/.test(ffCode) &&
   !/LIG_ELEMENT\[/.test(ffCode),

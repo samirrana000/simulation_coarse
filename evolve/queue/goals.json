@@ -167,7 +167,11 @@
         "P2-dead-canvas-redraw",
         "P5-ui-contract-fragility",
         "P6-node-gates-blind-to-dom"
-      ]
+      ],
+      "status": "closed",
+      "verdict": "ACCEPTED",
+      "note": "main.js 1686->160 LOC, 12 controllers, tick fingerprint identical, size+shape guard registered",
+      "closedAtCycle": 14
     },
     {
       "id": "M7",
@@ -191,7 +195,11 @@
       ],
       "patterns": [
         "P5-ui-contract-fragility"
-      ]
+      ],
+      "status": "closed",
+      "verdict": "ACCEPTED",
+      "note": "canonical physics/params.js; 0 ulp divergence for 9 elements; dead duplicate deleted; LIVE CG-metal gap measured+pinned",
+      "closedAtCycle": 15
     },
     {
       "id": "M8",

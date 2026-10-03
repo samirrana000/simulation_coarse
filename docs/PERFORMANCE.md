@@ -18,7 +18,7 @@ This document tracks HPC-related performance wiring. All targets marked aspirati
 ## Neighbor List Skin (G66)
 
 - **Verlet skin 2Å, rebuild every 10 steps, 20% cut** — aspirational target, not yet implemented.
-- Current: `SpatialGrid` rebuilds every `compute()` call with `R_CUT=8.5Å` and no skin (`src/heavy.js:473`, `src/spatial-grid.js:9`).
+- Current: `SpatialGrid` rebuilds every `compute()` call with `R_CUT=8.5Å` and no skin (`src/heavy/nonbonded.js:162`, `src/spatial-grid.js:9`).
 - Desired: introduce 2 Å skin (effective cutoff 10.5 Å), rebuild every 10 steps, yielding ~20% reduction in pair-list rebuild cost. Until implemented, the O(N) grid still beats O(N²) but incurs per-step hash cost.
 
 ## dt Auto-Tuning Honest (G67)

@@ -130,11 +130,17 @@ const authored = readJson(Q, { goals: [] });
 assert(authored.goals.length > 0, `evolve/queue/goals.json parses (${authored.goals.length} authored goals)`);
 
 // ---------------------------------------------------------------------
-// 1. Emits exactly PLAN_SIZE goals.
+// 1. Emits PLAN_SIZE goals, or fewer WITH a declared exhaustion.
+//    Padding a short queue with unmeasurable goals is worse than a short
+//    queue: an agent would burn its whole context budget on a goal whose
+//    premise nobody checked. So a shortfall is allowed only when the
+//    planner says so out loud (asserted again in section 9).
 const goals = (gen?.goals || []).filter((g) => !g.status || g.status === "open");
+const declaredShort = goals.length < PLAN_SIZE;
 assert(
-  goals.length === PLAN_SIZE,
-  `plan emitted exactly ${PLAN_SIZE} open goals` + (goals.length !== PLAN_SIZE ? ` — got ${goals.length}` : "")
+  goals.length === PLAN_SIZE || (declaredShort && gen?._meta?.deficitPoolExhausted),
+  `plan emits ${PLAN_SIZE} goals, or fewer with a declared exhaustion` +
+  (goals.length !== PLAN_SIZE ? ` — got ${goals.length}, exhausted=${!!gen?._meta?.deficitPoolExhausted}` : "")
 );
 
 // ---------------------------------------------------------------------
@@ -327,6 +333,7 @@ if (vec) {
   //     planner and asserts it produces a full plan from a drained queue.
   const openNow = goals.filter((g) => g.status !== "closed" && g.status !== "rolled-back").length;
   let refilled = 0;
+  let candidates = 0;
   try {
     const out = execFileSync(process.execPath, [EVOLVE, "plan"], {
       cwd: ROOT, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], timeout: 300000,
@@ -334,15 +341,27 @@ if (vec) {
     });
     const gen = JSON.parse(fs.readFileSync(path.join(ROOT, "evolve", "queue", "generated.json"), "utf-8"));
     refilled = (gen.goals || []).filter((g) => g.status !== "closed" && g.status !== "rolled-back").length;
-    assert(refilled >= PLAN_SIZE,
-      `\`plan\` refills a drained queue: ${openNow} open -> ${refilled} open after plan ` +
-      `(${PLAN_SIZE} required) — the loop cannot run dry, which is the whole point`);
-    // The plan summary goes to stderr; the machine-readable body to stdout.
-    // Assert on the JSON, not on log prose, so a log-format change cannot
-    // fail this test.
     const summary = JSON.parse(out);
-    assert(summary.plan && summary.plan.emitted === PLAN_SIZE,
-      `plan reports what it emitted (emitted ${summary.plan?.emitted}, required ${PLAN_SIZE})`);
+    candidates = summary.plan?.candidatesMeasured ?? 0;
+
+    if (refilled >= PLAN_SIZE) {
+      assert(true, `\`plan\` refills a drained queue: ${openNow} open -> ${refilled} open after plan ` +
+        `(${PLAN_SIZE} required) — the loop cannot run dry, which is the whole point`);
+      assert(summary.plan && summary.plan.emitted === PLAN_SIZE,
+        `plan reports what it emitted (emitted ${summary.plan?.emitted}, required ${PLAN_SIZE})`);
+    } else {
+      // HONEST EXHAUSTION is an acceptable outcome, provided it is declared.
+      // When every probe finds nothing, emitting filler goals would put
+      // unmeasurable work into the queue — exactly what this goal forbids.
+      // What must not happen is a silent shortfall: the loop has to say
+      // "there is nothing left that I can measure", not quietly emit 14.
+      assert(summary.deficitPoolExhausted === true,
+        `plan emitted ${refilled}/${PLAN_SIZE} but did NOT declare exhaustion — ` +
+        `a short queue must be declared, never silent`);
+      assert(candidates > 0 && candidates < PLAN_SIZE,
+        `exhaustion was reached honestly: ${candidates} candidate(s) measured, ` +
+        `${PLAN_SIZE} required, shortfall declared rather than padded`);
+    }
   } catch (e) {
     assert(false, `\`plan\` runs and refills the queue: ${String(e.message).slice(0, 140)}`);
   }

@@ -121,6 +121,43 @@ export const ALLOWLIST = [
   { doc: "TRANSFORMATION_PLAN_100.md", cite: "src/main.js:595", why: "2026-08-29 line number of the funnel nHills HUD row in the D33 verification table" },
   { doc: "TRANSFORMATION_PLAN_100.md", cite: "src/main.js:665", why: "2026-08-29 line number of the HUD version prefix in the A01 verification table" },
   { doc: "TRANSFORMATION_PLAN_100.md", cite: "src/main.js:232", why: "2026-08-29 line number of console.error in buildSystem in the A03 verification table" },
+
+  // --- 2026-10 heavy.js split (1674 LOC -> src/heavy.js facade + src/heavy/*) ---
+  // Same situation, same recorded policy as the src/main.js split above: a
+  // dated artifact's `file:line` values are a snapshot of the tree on the day
+  // it was written, the surrounding prose is part of the record, and repointing
+  // a dated pointer at today's layout would falsify that record. These are not
+  // claims about today's code; they are the R-round evidence trail.
+  //
+  // The LIVE scope surfaces WERE repointed at the split: README.md, ROADMAP.md,
+  // bench/vs_gromacs.md and docs/{CG_HEAVY,EXCLUSIONS,LIMITATIONS,OPENMM_REF,
+  // PERFORMANCE,PLACEMENT,TUTORIAL,UNITS}.md. Several of those were already
+  // pointing at the WRONG LINE before the split — docs/LIMITATIONS.md cited
+  // src/heavy.js:32 for switchFunc and line 32 was an import statement,
+  // src/heavy.js:415 for HeavyForceField was `const n = atoms.length;` — which
+  // is how they survived, since this test checks only that a cited line exists
+  // and is non-blank. Those are fixed to the true anchors; the entries below
+  // stay frozen as the record.
+  { doc: "AUDIT_REPORT.md", cite: "heavy.js:196-206", why: "2026-08-29 line numbers in the elementFromName CA defect write-up, inside a section that quotes the old source verbatim" },
+  { doc: "AUDIT_REPORT.md", cite: "heavy.js:633-639", why: "2026-08-29 line numbers of the NaN-force line in the browser-consequence list" },
+  { doc: "AUDIT_REPORT.md", cite: "src/heavy.js:196", why: "2026-08-29 line number of the elementFromName guard in the fix checklist" },
+  { doc: "TRANSFORMATION_PLAN_100.md", cite: "heavy.js:314", why: "2026-08-29 rationale pointer in the B18 row of a dated delivery log" },
+  { doc: "TRANSFORMATION_PLAN_100.md", cite: "src/heavy.js:597", why: "2026-08-29 pointer to the zero-alloc audit in the G65 rationale column" },
+  { doc: "docs/BINDING_PHYSICS_R1.md", cite: "src/heavy.js:947-1015", why: "R1 snapshot of the heavy non-bonded kernel range; the file no longer holds a single one of those lines" },
+  { doc: "docs/BINDING_PHYSICS_R1.md", cite: "src/heavy.js:501", why: "R1 snapshot of the chunked topology build" },
+  { doc: "docs/BINDING_PHYSICS_R1.md", cite: "src/heavy.js:632-655", why: "R1 snapshot of the opt-in adapter block" },
+  { doc: "docs/BINDING_PHYSICS_R1.md", cite: "src/heavy.js:278-299", why: "R1 snapshot of the ligand-append block" },
+  { doc: "docs/BINDING_PHYSICS_R1.md", cite: "src/heavy.js:383-404", why: "R1 snapshot of the metal distance springs, in the chelate-effect row" },
+  { doc: "docs/BINDING_PHYSICS_R1.md", cite: "src/heavy.js:215-248", why: "R1 snapshot of the system-selection block" },
+  { doc: "docs/BINDING_PHYSICS_R1.md", cite: "src/heavy.js:680", why: "R1 snapshot of the constructor tier mirror" },
+  { doc: "docs/BINDING_PHYSICS_R1.md", cite: "heavy.js:383-404", why: "R1 snapshot, shorthand form of the same metal-spring range" },
+  { doc: "docs/BINDING_PHYSICS_R2.md", cite: "heavy.js:383-404", why: "R2 snapshot of the same metal distance springs" },
+  { doc: "docs/BINDING_PHYSICS_R3.md", cite: "src/heavy.js:947-1015", why: "R3 snapshot of the heavy non-bonded kernel range" },
+  { doc: "docs/BINDING_PHYSICS_R3.md", cite: "src/heavy.js:383-404", why: "R3 snapshot of the metal distance springs it replaced" },
+  { doc: "docs/BINDING_PHYSICS_R3.md", cite: "heavy.js:568-583", why: "R3 snapshot of the exclusion/angle reference-geometry block" },
+  { doc: "docs/BINDING_PHYSICS_REVIEW_LOOP1.md", cite: "heavy.js:947-1015", why: "loop-1 review snapshot of the heavy non-bonded kernel range" },
+  { doc: "docs/BINDING_LOOP2_DONE.md", cite: "src/heavy.js:1395", why: "loop-2 closeout snapshot of the protein-only rmsd" },
+  { doc: "docs/BINDING_LOOP2_DONE.md", cite: "src/heavy.js:1413", why: "loop-2 closeout snapshot of rmsdLig" },
 ];
 
 let pass = 0;

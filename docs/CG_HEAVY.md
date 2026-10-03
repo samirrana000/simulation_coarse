@@ -55,8 +55,8 @@ Both tables are re-exported from `src/ff-params.js` for backward compatibility;
 ## 2. Heavy (All-Atom) — `src/heavy.js`
 
 **Beads:** all heavy atoms (protein `ATOM` + `HETATM` hetero/metal/ligand,
-solvent `HOH` dropped) via `parseHeavy` at `src/heavy.js:82`; `selectHeavy`
-at `src/heavy.js:165` partitions `nProt / nHetero / nLigAtoms`.
+solvent `HOH` dropped) via `parseHeavy` at `src/heavy/parse.js:43`; `selectHeavy`
+at `src/heavy/select.js:18` partitions `nProt / nHetero / nLigAtoms`.
 
 **Potential:** covalent bonds (`buildTopology` CSD radii
 `src/physics/params.js:246` `COVALENT_RADIUS` + `BOND_SLACK=1.15` hard cap 2.2 Å — disulfide S–S 2.04 Å
@@ -66,7 +66,7 @@ angles, proper/improper dihedrals (analytic), metal coordination springs
 (`GeneralizedBorn`) + screened Coulomb + directional H-bond (`DirectionalHBond`),
 spatial-grid non-bonded (`SpatialGrid` RCUT=8.5 Å).
 
-**Disulfides & PTMs (C28):** `src/heavy.js:248` covalent scan captures
+**Disulfides & PTMs (C28):** `src/heavy/topology.js:45` covalent scan captures
 `CYS SG–SG 2.03–2.05 Å` (CSD S 1.02×2=2.04 Å, 2.04×1.15=2.35→capped 2.20 still
 passes with 0.16 Å margin). PTMs appear as explicit heavy atoms (e.g.
 SEP phosphoserine). CG mode intentionally coalesces them to Cα; see
